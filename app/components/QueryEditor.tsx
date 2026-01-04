@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from './ToastContext';
 import { useActiveConnection } from '../lib/monkdb-context';
@@ -101,20 +101,11 @@ export default function QueryEditor() {
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
+  // Guard against infinite schema loading
+  const isLoadingSchemaRef = useRef(false);
+
   const toast = useToast();
   const activeConnection = useActiveConnection();
-
-  // CRITICAL: Guard against no connection - prevent query execution without database connection
-  if (!activeConnection) {
-    return (
-      <ConnectionPrompt
-        onConnect={() => router.push('/connections')}
-        title="No Database Connection"
-        message="Please connect to a MonkDB database to use the Query Editor."
-        buttonText="Go to Connections"
-      />
-    );
-  }
 
   // Derived state from active tab
   const query = activeTab?.query || '';
@@ -183,6 +174,13 @@ export default function QueryEditor() {
   const loadSchemaMetadata = useCallback(async () => {
     if (!activeConnection) return;
 
+    // Prevent concurrent schema loading
+    if (isLoadingSchemaRef.current) {
+      console.log('[Schema Load] Already loading, skipping...');
+      return;
+    }
+
+    isLoadingSchemaRef.current = true;
     setLoadingSchema(true);
 
     // Retry configuration
@@ -194,7 +192,9 @@ export default function QueryEditor() {
 
     // Try Tauri-based loading with retry
     if (typeof window !== 'undefined' && window.__TAURI__) {
-      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      let shouldRetry = true;
+
+      for (let attempt = 1; attempt <= MAX_RETRIES && shouldRetry; attempt++) {
         try {
           console.log(`[Schema Load] Attempt ${attempt}/${MAX_RETRIES} using Tauri...`);
 
@@ -229,52 +229,146 @@ export default function QueryEditor() {
           console.log('[Schema Load] Success via Tauri');
           toast.success('Schema Loaded', `Loaded ${metadata.schemas.length} schemas`);
           setLoadingSchema(false);
+          isLoadingSchemaRef.current = false;
           return; // Success!
         } catch (err) {
-          console.error(`[Schema Load] Tauri attempt ${attempt} failed:`, err);
+          // Extract error details
+          let errorMessage = 'Unknown error';
+          let isCommandNotFound = false;
+
+          if (err && typeof err === 'object') {
+            // Check for Tauri error format
+            if ('message' in err && typeof err.message === 'string') {
+              errorMessage = err.message;
+            } else if ('error' in err && typeof err.error === 'string') {
+              errorMessage = err.error;
+            } else {
+              errorMessage = JSON.stringify(err);
+            }
+
+            // Check if command doesn't exist
+            isCommandNotFound = errorMessage.includes('command') &&
+                               (errorMessage.includes('not found') || errorMessage.includes('not registered'));
+          } else if (err instanceof Error) {
+            errorMessage = err.message;
+          }
+
+          // If command not found, skip retries and go straight to SQL fallback
+          if (isCommandNotFound) {
+            console.log('[Schema Load] Tauri command not available, using SQL fallback...');
+            shouldRetry = false;
+            break;
+          }
+
+          // Log error with details
+          if (attempt === 1) {
+            console.warn(`[Schema Load] Tauri loading failed: ${errorMessage}`);
+          }
 
           if (attempt < MAX_RETRIES) {
             console.log(`[Schema Load] Retrying in ${RETRY_DELAY}ms...`);
             await wait(RETRY_DELAY);
           } else {
             console.log('[Schema Load] All Tauri attempts failed, falling back to SQL...');
-            toast.warning('Schema Load', 'Tauri loading failed, using SQL fallback...');
           }
         }
       }
     }
 
-    // Fallback to SQL-based loading
+    // Fallback to SQL-based loading - Load complete metadata (schemas, tables, columns)
     try {
-      console.log('[Schema Load] Using SQL fallback...');
+      console.log('[Schema Load] Using SQL fallback - loading complete metadata...');
 
-      const result = await activeConnection.client.query(`
-        SELECT DISTINCT table_schema
-        FROM information_schema.tables
+      // Load all columns from all tables in user schemas
+      const columnsResult = await activeConnection.client.query(`
+        SELECT
+          table_schema,
+          table_name,
+          column_name,
+          data_type,
+          is_nullable,
+          ordinal_position
+        FROM information_schema.columns
         WHERE table_schema NOT IN ('pg_catalog', 'information_schema', 'sys')
-        ORDER BY table_schema
+        ORDER BY table_schema, table_name, ordinal_position
       `);
 
-      const schemas = result.rows.map((row: any[]) => row[0]);
+      // Build complete schema metadata structure
+      const schemaMap: Record<string, Record<string, any[]>> = {};
 
-      // Create minimal metadata structure
+      columnsResult.rows.forEach((row: any[]) => {
+        const schemaName = row[0];
+        const tableName = row[1];
+        const columnName = row[2];
+        const dataType = row[3];
+        const isNullable = row[4] === 'YES';
+
+        // Initialize schema if not exists
+        if (!schemaMap[schemaName]) {
+          schemaMap[schemaName] = {};
+        }
+
+        // Initialize table if not exists
+        if (!schemaMap[schemaName][tableName]) {
+          schemaMap[schemaName][tableName] = [];
+        }
+
+        // Add column
+        schemaMap[schemaName][tableName].push({
+          name: columnName,
+          type: dataType,
+          nullable: isNullable,
+        });
+      });
+
+      // Convert to SchemaMetadata format
       const fallbackMetadata: SchemaMetadata = {
-        schemas: schemas.map((schemaName: string) => ({
+        schemas: Object.entries(schemaMap).map(([schemaName, tables]) => ({
           name: schemaName,
-          tables: [], // Tables will be loaded on demand
+          tables: Object.entries(tables).map(([tableName, columns]) => ({
+            name: tableName,
+            columns: columns,
+          })),
         })),
       };
 
       setSchemaMetadata(fallbackMetadata);
 
+      // Transform for SchemaExplorer
+      const transformedMetadata = {
+        schemas: fallbackMetadata.schemas.map((schema) => ({
+          name: schema.name,
+          tables: schema.tables.map((table) => ({
+            name: table.name,
+            schema: schema.name,
+            columns: table.columns.map((column) => ({
+              name: column.name,
+              type: column.type,
+              nullable: column.nullable,
+              isPrimaryKey: false,
+              isForeignKey: false,
+              hasIndex: false,
+            })),
+            primaryKeys: [],
+            foreignKeys: [],
+            indexes: [],
+          })),
+        })),
+      };
+      setSchemaExplorerMetadata(transformedMetadata);
+
+      const totalTables = Object.values(schemaMap).reduce((sum, tables) => sum + Object.keys(tables).length, 0);
+      const totalColumns = columnsResult.rows.length;
+
       console.log('[Schema Load] Success via SQL fallback');
-      toast.success('Schema Loaded', `Loaded ${schemas.length} schemas (SQL fallback)`);
+      toast.success('Schema Loaded', `Loaded ${Object.keys(schemaMap).length} schemas, ${totalTables} tables, ${totalColumns} columns`);
     } catch (err) {
       console.error('[Schema Load] SQL fallback failed:', err);
       const errorMessage = err instanceof Error ? err.message : 'Could not load schema';
       toast.error('Schema Load Failed', errorMessage);
     } finally {
       setLoadingSchema(false);
+      isLoadingSchemaRef.current = false;
     }
   }, [activeConnection, toast]);
 
@@ -351,7 +445,8 @@ export default function QueryEditor() {
     if (sidebarTab === 'schema' && !schemaExplorerMetadata) {
       loadSchemaMetadata();
     }
-  }, [sidebarTab, schemaExplorerMetadata, loadSchemaMetadata]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sidebarTab, schemaExplorerMetadata]); // Don't include loadSchemaMetadata to avoid infinite loop
 
   // Detect dangerous/destructive queries
   const isDangerousQuery = (sql: string): { dangerous: boolean; type: string } => {
@@ -1477,6 +1572,18 @@ WITH (max_num_segments = 1);`,
           </a>
         </div>
       </div>
+    );
+  }
+
+  // CRITICAL: Guard against no connection - prevent query execution without database connection
+  if (!activeConnection) {
+    return (
+      <ConnectionPrompt
+        onConnect={() => router.push('/connections')}
+        title="No Database Connection"
+        message="Please connect to a MonkDB database to use the Query Editor."
+        buttonText="Go to Connections"
+      />
     );
   }
 

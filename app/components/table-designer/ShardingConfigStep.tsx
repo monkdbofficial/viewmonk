@@ -129,8 +129,8 @@ export default function ShardingConfigStep({ design, setDesign }: ShardingConfig
           className="w-full rounded-lg border border-gray-300 p-2 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
         >
           <option value="">No clustering column (random distribution)</option>
-          {design.columns.map((column) => (
-            <option key={column.name} value={column.name}>
+          {design.columns.map((column, index) => (
+            <option key={`column-${index}-${column.name}`} value={column.name}>
               {column.name} ({column.column_type})
             </option>
           ))}

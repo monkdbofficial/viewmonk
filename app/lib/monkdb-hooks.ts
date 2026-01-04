@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useMonkDBClient } from './monkdb-context';
 import type { NodeInfo, TableMetadata, ColumnMetadata, TableTreeNode } from './monkdb-client';
 
@@ -64,7 +64,8 @@ export function useMonkDBQuery<T = any>(
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client]); // Only depend on client, not fetchData to avoid infinite loop
 
   return { data, loading, error, refetch: fetchData };
 }
@@ -105,7 +106,8 @@ export function useNodes(): UseQueryResult<NodeInfo[]> {
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client]); // Only depend on client, not fetchData to avoid infinite loop
 
   return { data, loading, error, refetch: fetchData };
 }
@@ -146,7 +148,8 @@ export function useClusterUptime(): UseQueryResult<number> {
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client]); // Only depend on client, not fetchData to avoid infinite loop
 
   return { data, loading, error, refetch: fetchData };
 }
@@ -188,7 +191,8 @@ export function useTables(schemaName: string = 'doc'): UseQueryResult<TableMetad
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client]); // Only depend on client, not fetchData to avoid infinite loop
 
   return { data, loading, error, refetch: fetchData };
 }
@@ -203,6 +207,7 @@ export function useSchemas(): UseQueryResult<string[]> {
   const [data, setData] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isFetchingRef = useRef(false);
 
   const fetchData = useCallback(async () => {
     // CRITICAL: Guard against no connection
@@ -213,6 +218,12 @@ export function useSchemas(): UseQueryResult<string[]> {
       return;
     }
 
+    // Prevent concurrent fetches
+    if (isFetchingRef.current) {
+      return;
+    }
+
+    isFetchingRef.current = true;
     setLoading(true);
     setError(null);
 
@@ -224,12 +235,14 @@ export function useSchemas(): UseQueryResult<string[]> {
       setData(null);
     } finally {
       setLoading(false);
+      isFetchingRef.current = false;
     }
   }, [client]);
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client]); // Only depend on client, not fetchData to avoid infinite loop
 
   return { data, loading, error, refetch: fetchData };
 }
@@ -283,7 +296,8 @@ export function useTableColumns(
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client]); // Only depend on client, not fetchData to avoid infinite loop
 
   return { data, loading, error, refetch: fetchData };
 }
@@ -337,7 +351,8 @@ export function useTableTree(
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client]); // Only depend on client, not fetchData to avoid infinite loop
 
   return { data, loading, error, refetch: fetchData };
 }
@@ -386,7 +401,8 @@ export function useDatabaseStats(): UseQueryResult<{
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client]); // Only depend on client, not fetchData to avoid infinite loop
 
   return { data, loading, error, refetch: fetchData };
 }
@@ -435,7 +451,8 @@ export function useClusterHealth(): UseQueryResult<{
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client]); // Only depend on client, not fetchData to avoid infinite loop
 
   return { data, loading, error, refetch: fetchData };
 }
@@ -516,7 +533,8 @@ export function useReadWriteRatio(): UseQueryResult<{
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client]); // Only depend on client, not fetchData to avoid infinite loop
 
   return { data, loading, error, refetch: fetchData };
 }

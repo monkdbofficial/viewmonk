@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -10,12 +10,34 @@ interface SidebarProps {}
 
 export default function Sidebar({}: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const pathname = usePathname();
+  const nextPathname = usePathname();
 
-  // Debug pathname in desktop app
-  useEffect(() => {
-    console.log('[Sidebar] Current pathname:', pathname);
-  }, [pathname]);
+  // Get normalized pathname that works in both web and Tauri
+  const pathname = useMemo(() => {
+    // Try Next.js pathname first
+    if (nextPathname && nextPathname !== '/') {
+      return nextPathname;
+    }
+
+    // Fallback to window.location for Tauri
+    if (typeof window !== 'undefined') {
+      let path = window.location.pathname;
+
+      // Handle Tauri protocol (tauri://localhost/path)
+      if (window.location.protocol === 'tauri:') {
+        path = window.location.pathname;
+      }
+
+      // Handle hash routing (/#/path)
+      if (window.location.hash && window.location.hash.startsWith('#/')) {
+        path = window.location.hash.substring(1);
+      }
+
+      return path || nextPathname;
+    }
+
+    return nextPathname;
+  }, [nextPathname]);
 
   const menuItems = [
     {
@@ -42,6 +64,15 @@ export default function Sidebar({}: SidebarProps) {
       icon: (
         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+        </svg>
+      )
+    },
+    {
+      href: '/table-designer',
+      label: 'Table Designer',
+      icon: (
+        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
         </svg>
       )
     },
@@ -178,6 +209,7 @@ export default function Sidebar({}: SidebarProps) {
           <div className="space-y-0.5">
             {menuItems.map((item) => {
               const isActive = pathname === item.href;
+
               return (
                 <Link
                   key={item.href}
@@ -195,7 +227,11 @@ export default function Sidebar({}: SidebarProps) {
                   <span className={isActive ? 'text-blue-700 dark:text-blue-300' : 'text-gray-500 group-hover:text-gray-700 dark:text-gray-400 dark:group-hover:text-gray-300'}>
                     {item.icon}
                   </span>
-                  {!isCollapsed && <span className="truncate">{item.label}</span>}
+                  {!isCollapsed && (
+                    <span className="truncate">
+                      {item.label}
+                    </span>
+                  )}
                 </Link>
               );
             })}
