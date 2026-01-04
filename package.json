@@ -16,7 +16,8 @@
     "lint": "eslint",
     "tauri:dev": "tauri dev",
     "tauri:build": "npm run build:standalone && tauri build",
-    "tauri:build:mac": "npm run build:standalone && tauri build --target universal-apple-darwin",
+    "tauri:build:mac": "npm run build:standalone && tauri build --target universal-apple-darwin --bundles app",
+    "tauri:build:mac:dmg": "npm run tauri:build:mac && ./scripts/create-dmg.sh",
     "tauri:build:win": "npm run build:standalone && tauri build --target x86_64-pc-windows-msvc",
     "tauri:build:linux": "npm run build:standalone && tauri build --target x86_64-unknown-linux-gnu",
     "tauri:icon": "tauri icon public/icon.png"

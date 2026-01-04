@@ -32,7 +32,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["dmg", "app", "msi", "nsis", "deb", "appimage"],
+    "targets": "all",
     "category": "DeveloperTool",
     "copyright": "Copyright © 2025 MonkDB Team",
     "shortDescription": "Professional database workbench for MonkDB",
@@ -47,8 +47,24 @@
     "macOS": {
       "minimumSystemVersion": "10.15",
       "signingIdentity": null,
-      "entitlements": "entitlements.plist",
-      "providerShortName": null
+      "hardenedRuntime": false,
+      "entitlements": null,
+      "providerShortName": null,
+      "dmg": {
+        "background": null,
+        "windowSize": {
+          "width": 600,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 180,
+          "y": 170
+        },
+        "applicationFolderPosition": {
+          "x": 420,
+          "y": 170
+        }
+      }
     },
     "windows": {
       "webviewInstallMode": {
