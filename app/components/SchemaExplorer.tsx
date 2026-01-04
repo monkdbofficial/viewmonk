@@ -1,0 +1,597 @@
+'use client';
+
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { useDrag } from 'react-dnd';
+import {
+  ChevronRight,
+  ChevronDown,
+  Database,
+  Table,
+  Columns,
+  Search,
+  Key,
+  Link,
+  FileText,
+  Circle,
+  RefreshCw,
+  Copy,
+  FileCode,
+  Info,
+  Plus,
+} from 'lucide-react';
+import TableDesignerWizard from './table-designer/TableDesignerWizard';
+
+// Types
+export interface SchemaNode {
+  name: string;
+  tables: TableNode[];
+}
+
+export interface TableNode {
+  name: string;
+  schema: string;
+  columns: ColumnNode[];
+  primaryKeys?: string[];
+  foreignKeys?: ForeignKeyInfo[];
+  indexes?: IndexInfo[];
+}
+
+export interface ColumnNode {
+  name: string;
+  type: string;
+  nullable: boolean;
+  isPrimaryKey?: boolean;
+  isForeignKey?: boolean;
+  hasIndex?: boolean;
+  defaultValue?: string;
+}
+
+export interface ForeignKeyInfo {
+  columnName: string;
+  referencedTable: string;
+  referencedColumn: string;
+}
+
+export interface IndexInfo {
+  name: string;
+  columns: string[];
+  unique: boolean;
+}
+
+export interface SchemaMetadata {
+  schemas: SchemaNode[];
+}
+
+interface SchemaExplorerProps {
+  metadata?: SchemaMetadata;
+  onRefresh?: () => void;
+  onInsertText?: (text: string) => void;
+  loading?: boolean;
+  connectionId?: string;
+}
+
+// Drag types
+const ItemTypes = {
+  TABLE: 'table',
+  COLUMN: 'column',
+};
+
+// Draggable Table Component
+interface DraggableTableProps {
+  table: TableNode;
+  schema: SchemaNode;
+  isExpanded: boolean;
+  onToggle: () => void;
+  onInsertText?: (text: string) => void;
+}
+
+const DraggableTable: React.FC<DraggableTableProps> = ({
+  table,
+  schema,
+  isExpanded,
+  onToggle,
+  onInsertText,
+}) => {
+  const [showContextMenu, setShowContextMenu] = useState(false);
+  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const [{ isDragging }, drag] = useDrag(() => ({
+    type: ItemTypes.TABLE,
+    item: {
+      type: ItemTypes.TABLE,
+      schema: schema.name,
+      table: table.name,
+    },
+    collect: (monitor) => ({
+      isDragging: monitor.isDragging(),
+    }),
+  }), [table, schema]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowContextMenu(false);
+      }
+    };
+
+    if (showContextMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showContextMenu]);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenuPos({ x: e.clientX, y: e.clientY });
+    setShowContextMenu(true);
+  };
+
+  const handleCopyName = () => {
+    const fullName = `"${schema.name}"."${table.name}"`;
+    navigator.clipboard.writeText(fullName);
+    setShowContextMenu(false);
+  };
+
+  const handleGenerateSelect = () => {
+    const text = `SELECT * FROM "${schema.name}"."${table.name}" LIMIT 100;`;
+    if (onInsertText) {
+      onInsertText(text);
+    }
+    setShowContextMenu(false);
+  };
+
+  const handleShowTableInfo = () => {
+    const info = `-- Table: ${schema.name}.${table.name}\n-- Columns: ${table.columns.length}\n-- Primary Keys: ${table.primaryKeys?.join(', ') || 'None'}\n`;
+    if (onInsertText) {
+      onInsertText(info);
+    }
+    setShowContextMenu(false);
+  };
+
+  const opacity = isDragging ? 0.5 : 1;
+
+  return (
+    <div style={{ opacity }}>
+      <div
+        ref={drag as any}
+        onContextMenu={handleContextMenu}
+        className="group flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        onClick={onToggle}
+      >
+        <button className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors">
+          {isExpanded ? (
+            <ChevronDown className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
+          )}
+        </button>
+        <Table className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+        <span className="text-sm font-medium text-gray-900 dark:text-gray-100 flex-1">
+          {table.name}
+        </span>
+        <span className="text-xs text-gray-500 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
+          {table.columns.length} cols
+        </span>
+      </div>
+
+      {/* Context Menu */}
+      {showContextMenu && (
+        <div
+          ref={menuRef}
+          className="fixed z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 min-w-[180px]"
+          style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
+        >
+          <button
+            onClick={() => {
+              onToggle();
+              setShowContextMenu(false);
+            }}
+            className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+          >
+            <Columns className="h-3.5 w-3.5" />
+            View Columns
+          </button>
+          <button
+            onClick={handleCopyName}
+            className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+          >
+            <Copy className="h-3.5 w-3.5" />
+            Copy Name
+          </button>
+          <button
+            onClick={handleGenerateSelect}
+            className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+          >
+            <FileCode className="h-3.5 w-3.5" />
+            Generate SELECT
+          </button>
+          <button
+            onClick={handleShowTableInfo}
+            className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+          >
+            <Info className="h-3.5 w-3.5" />
+            Show Table Info
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Draggable Column Component
+interface DraggableColumnProps {
+  column: ColumnNode;
+  table: TableNode;
+  schema: SchemaNode;
+  onInsertText?: (text: string) => void;
+}
+
+const DraggableColumn: React.FC<DraggableColumnProps> = ({
+  column,
+  table,
+  schema,
+  onInsertText,
+}) => {
+  const [showContextMenu, setShowContextMenu] = useState(false);
+  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const [{ isDragging }, drag] = useDrag(() => ({
+    type: ItemTypes.COLUMN,
+    item: {
+      type: ItemTypes.COLUMN,
+      schema: schema.name,
+      table: table.name,
+      column: column.name,
+    },
+    collect: (monitor) => ({
+      isDragging: monitor.isDragging(),
+    }),
+  }), [column, table, schema]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowContextMenu(false);
+      }
+    };
+
+    if (showContextMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showContextMenu]);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenuPos({ x: e.clientX, y: e.clientY });
+    setShowContextMenu(true);
+  };
+
+  const handleCopyName = () => {
+    navigator.clipboard.writeText(column.name);
+    setShowContextMenu(false);
+  };
+
+  const opacity = isDragging ? 0.5 : 1;
+
+  return (
+    <div style={{ opacity }}>
+      <div
+        ref={drag as any}
+        onContextMenu={handleContextMenu}
+        className="group flex items-center gap-2 px-2 py-1 ml-6 rounded cursor-move hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+      >
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {column.isPrimaryKey && (
+            <Key className="h-3 w-3 text-yellow-600 dark:text-yellow-400" /* Primary Key */ />
+          )}
+          {column.isForeignKey && (
+            <Link className="h-3 w-3 text-purple-600 dark:text-purple-400" /* Foreign Key */ />
+          )}
+          {column.hasIndex && !column.isPrimaryKey && (
+            <FileText className="h-3 w-3 text-green-600 dark:text-green-400" /* Indexed */ />
+          )}
+          {!column.isPrimaryKey && !column.isForeignKey && !column.hasIndex && (
+            <Circle className="h-2 w-2 text-gray-400" />
+          )}
+        </div>
+        <span className="text-xs font-medium text-gray-900 dark:text-gray-100 flex-1 truncate">
+          {column.name}
+        </span>
+        <span className="text-xs text-gray-500 dark:text-gray-400 font-mono truncate max-w-[80px]" title={column.type}>
+          {column.type}
+        </span>
+        {column.nullable && (
+          <span className="text-xs text-orange-600 dark:text-orange-400 flex-shrink-0" title="Nullable">
+            NULL
+          </span>
+        )}
+      </div>
+
+      {/* Context Menu */}
+      {showContextMenu && (
+        <div
+          ref={menuRef}
+          className="fixed z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 min-w-[180px]"
+          style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
+        >
+          <button
+            onClick={handleCopyName}
+            className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+          >
+            <Copy className="h-3.5 w-3.5" />
+            Copy Name
+          </button>
+          <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
+          <div className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+            <div>Type: {column.type}</div>
+            <div>Nullable: {column.nullable ? 'Yes' : 'No'}</div>
+            {column.defaultValue && <div>Default: {column.defaultValue}</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Main SchemaExplorer Component
+const SchemaExplorer: React.FC<SchemaExplorerProps> = ({
+  metadata,
+  onRefresh,
+  onInsertText,
+  loading = false,
+  connectionId,
+}) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [expandedSchemas, setExpandedSchemas] = useState<Set<string>>(new Set());
+  const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
+  const [showTableDesigner, setShowTableDesigner] = useState(false);
+
+  const toggleSchema = useCallback((schemaName: string) => {
+    setExpandedSchemas((prev) => {
+      const next = new Set(prev);
+      if (next.has(schemaName)) {
+        next.delete(schemaName);
+      } else {
+        next.add(schemaName);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleTable = useCallback((schemaName: string, tableName: string) => {
+    const key = `${schemaName}.${tableName}`;
+    setExpandedTables((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
+
+  // Filter schemas and tables based on search term
+  const filteredMetadata = React.useMemo(() => {
+    if (!metadata || !searchTerm) return metadata;
+
+    const filtered: SchemaMetadata = { schemas: [] };
+
+    metadata.schemas.forEach((schema) => {
+      const filteredTables = schema.tables.filter((table) => {
+        const tableMatch = table.name.toLowerCase().includes(searchTerm.toLowerCase());
+        const columnMatch = table.columns.some((col) =>
+          col.name.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+        return tableMatch || columnMatch;
+      });
+
+      if (filteredTables.length > 0 || schema.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+        filtered.schemas.push({
+          ...schema,
+          tables: filteredTables,
+        });
+      }
+    });
+
+    return filtered;
+  }, [metadata, searchTerm]);
+
+  // Auto-expand search results
+  useEffect(() => {
+    if (searchTerm && filteredMetadata) {
+      const newExpandedSchemas = new Set<string>();
+      const newExpandedTables = new Set<string>();
+
+      filteredMetadata.schemas.forEach((schema) => {
+        newExpandedSchemas.add(schema.name);
+        schema.tables.forEach((table) => {
+          newExpandedTables.add(`${schema.name}.${table.name}`);
+        });
+      });
+
+      setExpandedSchemas(newExpandedSchemas);
+      setExpandedTables(newExpandedTables);
+    }
+  }, [searchTerm, filteredMetadata]);
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3 px-1">
+        <h4 className="text-xs font-bold uppercase text-gray-500 dark:text-gray-400">
+          Database Schema
+        </h4>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setShowTableDesigner(true)}
+            disabled={!connectionId}
+            className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors disabled:opacity-50"
+            title="Create new table"
+          >
+            <Plus className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
+          </button>
+          <button
+            onClick={onRefresh}
+            disabled={loading}
+            className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors disabled:opacity-50"
+            title="Refresh schema"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 text-blue-600 dark:text-blue-400 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="mb-3">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search tables, columns..."
+            className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+      </div>
+
+      {/* Schema Tree */}
+      <div className="flex-1 overflow-y-auto space-y-1">
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <RefreshCw className="h-5 w-5 animate-spin text-gray-400" />
+          </div>
+        ) : !filteredMetadata || filteredMetadata.schemas.length === 0 ? (
+          <div className="text-center py-8">
+            <Database className="h-8 w-8 mx-auto text-gray-300 dark:text-gray-600 mb-2" />
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {searchTerm ? 'No results found' : 'No schema found'}
+            </p>
+          </div>
+        ) : (
+          filteredMetadata.schemas.map((schema) => (
+            <div key={schema.name} className="space-y-0.5">
+              {/* Schema Node */}
+              <div
+                className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                onClick={() => toggleSchema(schema.name)}
+              >
+                <button className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors">
+                  {expandedSchemas.has(schema.name) ? (
+                    <ChevronDown className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
+                  ) : (
+                    <ChevronRight className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
+                  )}
+                </button>
+                <Database className={`h-3.5 w-3.5 ${
+                  schema.name === 'sys' || schema.name === 'information_schema'
+                    ? 'text-orange-600 dark:text-orange-400'
+                    : 'text-purple-600 dark:text-purple-400'
+                }`} />
+                <span className={`text-sm font-semibold flex-1 ${
+                  schema.name === 'sys' || schema.name === 'information_schema'
+                    ? 'text-orange-900 dark:text-orange-300'
+                    : 'text-gray-900 dark:text-gray-100'
+                }`}>
+                  {schema.name}
+                </span>
+                {(schema.name === 'sys' || schema.name === 'information_schema') && (
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 font-medium">
+                    SYSTEM
+                  </span>
+                )}
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {schema.tables.length}
+                </span>
+              </div>
+
+              {/* Tables */}
+              {expandedSchemas.has(schema.name) && (
+                <div className="ml-2 space-y-0.5">
+                  {schema.tables.map((table) => {
+                    const tableKey = `${schema.name}.${table.name}`;
+                    const isTableExpanded = expandedTables.has(tableKey);
+
+                    return (
+                      <div key={tableKey}>
+                        <DraggableTable
+                          table={table}
+                          schema={schema}
+                          isExpanded={isTableExpanded}
+                          onToggle={() => toggleTable(schema.name, table.name)}
+                          onInsertText={onInsertText}
+                        />
+
+                        {/* Columns */}
+                        {isTableExpanded && (
+                          <div className="space-y-0.5">
+                            {table.columns.map((column) => (
+                              <DraggableColumn
+                                key={column.name}
+                                column={column}
+                                table={table}
+                                schema={schema}
+                                onInsertText={onInsertText}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Legend */}
+      <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+        <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+          <div className="flex items-center gap-2">
+            <Key className="h-3 w-3 text-yellow-600 dark:text-yellow-400" />
+            <span>Primary Key</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link className="h-3 w-3 text-purple-600 dark:text-purple-400" />
+            <span>Foreign Key</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <FileText className="h-3 w-3 text-green-600 dark:text-green-400" />
+            <span>Index</span>
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+          Drag to editor or right-click for options
+        </p>
+      </div>
+
+      {/* Table Designer Wizard */}
+      {showTableDesigner && connectionId && (
+        <TableDesignerWizard
+          connectionId={connectionId}
+          onClose={() => setShowTableDesigner(false)}
+          onSuccess={() => {
+            setShowTableDesigner(false);
+            onRefresh?.();
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+export default SchemaExplorer;

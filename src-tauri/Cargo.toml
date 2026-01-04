@@ -1,0 +1,102 @@
+[package]
+name = "monkdb-workbench"
+version = "1.0.0"
+description = "Enterprise-grade desktop application for MonkDB database management"
+authors = ["MonkDB Team"]
+license = "MIT"
+repository = "https://github.com/monkdb/workbench"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.3", features = [] }
+
+[dependencies]
+# Core Tauri
+tauri = { version = "2.9.5", features = [] }
+tauri-plugin-log = "2"
+tauri-plugin-updater = "2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Async runtime
+tokio = { version = "1.40", features = ["full"] }
+async-trait = "0.1"
+
+# HTTP client (for MonkDB direct queries)
+reqwest = { version = "0.12", features = ["json"] }
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Security & Credentials
+keyring = "3.5"
+
+# Utilities
+dashmap = "6.1"
+parking_lot = "0.12"
+uuid = { version = "1.10", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5.0"
+lru = "0.12"
+
+# SQL parsing for validation
+sqlparser = "0.52"
+
+# Logging & Monitoring
+log = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+fern = { version = "0.7", features = ["colored"] }
+
+# Database drivers - SQL
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "json"], optional = true }
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1", "with-serde_json-1"] }
+bb8 = "0.8"
+bb8-postgres = "0.8"
+
+# Database drivers - NoSQL
+mongodb = { version = "3.1", optional = true }
+bson = { version = "2.13", features = ["chrono-0_4", "uuid-1"] }
+
+# Docker integration
+bollard = "0.18"
+futures-util = "0.3"
+serde_yaml = "0.9"
+
+# BLOB storage and file handling
+sha1 = "0.10"
+mime = "0.3"
+mime_guess = "2.0"
+base64 = "0.22"
+tempfile = "3.13"
+zip = "2.2"
+
+# Password hashing for security module
+argon2 = "0.5"
+
+# JWT tokens for session management
+jsonwebtoken = "9.3"
+
+# MFA/TOTP
+totp-rs = "5.5"
+qrcode = "0.14"
+base32 = "0.4"
+image = "0.25"
+
+# Scheduling
+cron = "0.12"
+
+# SQLite for schedules
+rusqlite = "0.31"
+
+[features]
+default = []
+postgres = ["sqlx"]
+mongo = ["mongodb"]

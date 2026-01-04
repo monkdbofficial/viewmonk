@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  monkdb:
+    image: monk:latest
+    container_name: monkdb
+    ports:
+      - "4200:4200"  # HTTP endpoint
+      - "5432:5432"  # PostgreSQL wire protocol
+    environment:
+      - MONK_HEAP_SIZE=2g
+    volumes:
+      - monkdb-data:/data
+    command:
+      - monk
+      - -Ccluster.name=monkdb-cluster
+      - -Cnode.name=monkdb-node1
+      - -Cnetwork.host=0.0.0.0
+      - -Cdiscovery.type=single-node
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4200"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  monkdb-data:
+    driver: local

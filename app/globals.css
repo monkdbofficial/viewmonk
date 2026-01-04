@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar for webkit browsers */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #1f2937;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #4b5563;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Focus styles */
+*:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+.dark *:focus-visible {
+  outline-color: #60a5fa;
+}
+
+/* Leaflet Map Styles */
+.leaflet-container {
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.dark .leaflet-container {
+  background: #1f2937;
+}
+
+/* Leaflet popup styles for dark mode */
+.dark .leaflet-popup-content-wrapper {
+  background: #374151;
+  color: #f9fafb;
+}
+
+.dark .leaflet-popup-tip {
+  background: #374151;
+}
+
+/* Leaflet control styles for dark mode */
+.dark .leaflet-bar {
+  border: 1px solid #4b5563;
+}
+
+.dark .leaflet-bar a {
+  background: #374151;
+  border-bottom: 1px solid #4b5563;
+  color: #f9fafb;
+}
+
+.dark .leaflet-bar a:hover {
+  background: #4b5563;
+}
+
+.dark .leaflet-bar a.leaflet-disabled {
+  background: #1f2937;
+  color: #6b7280;
+}

@@ -1,0 +1,10 @@
+monkdb==1.0.4
+faker
+sentence_transformers
+langchain_core
+langchain_community
+shapely
+fastapi 
+uvicorn
+requests 
+python-multipart
