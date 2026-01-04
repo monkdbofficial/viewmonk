@@ -1,0 +1,55 @@
+Category,Subcategory,Issue Description,Priority,Status,Implementation Phase,Notes,File Modified
+Connection Manager,Password Toggle,Toggle enabled by default but password visible - should be masked by default,High,✅ Completed,Phase 1,Added password show/hide toggle with Eye icon. Default is hidden.,app/components/ConnectionDialog.tsx
+Connection Manager,Advanced Properties,Advanced & Driver Properties tabs not clear use case - suggest removing,Medium,✅ Completed,Phase 2,Completely removed Advanced and Driver Properties tabs,app/components/ConnectionDialog.tsx
+Connection Manager,Inactive Buttons,Connection Manager buttons (Documentation Driver Settings Driver License) appear inactive,Low,❌ Not Addressed,N/A,These buttons were part of removed tabs,N/A
+Connection Manager,Database Selection,New Connection - Database selection purpose unclear (RBAC?),Low,❌ Not Addressed,N/A,Requires clarification on MonkDB RBAC implementation,N/A
+Connection Manager,Modal Controls,Modal window controls (X/Minimize/Maximize) - only close needed,Medium,✅ Completed,Phase 2,Removed minimize/maximize buttons kept only close (X),app/components/ConnectionDialog.tsx
+Dashboard,Metrics,Add Read/Write ratio metric,Medium,✅ Completed,Phase 3,Added Read/Write ratio stat card with query from sys.jobs_log,app/components/Dashboard.tsx + app/lib/monkdb-hooks.ts
+Dashboard,Saved Views,Saved Views: Last opened queries,Medium,✅ Completed,Phase 3,Implemented saved views context with recent queries tracking,app/lib/saved-views-context.tsx + app/components/SavedViews.tsx
+Dashboard,Saved Views,Saved Views: Recently viewed tables,Medium,✅ Completed,Phase 3,Implemented recent tables tracking in saved views,app/lib/saved-views-context.tsx + app/components/SavedViews.tsx
+Schema & Table View,Column Actions,Columns tab: Add Edit/Delete actions at column level,High,✅ Completed,Phase 4,Added Edit/Delete buttons with modal dialogs generating ALTER TABLE SQL,app/components/SchemaViewer.tsx
+Schema & Table View,Preview Styling,Preview tab: Alternate row colors for readability,Low,✅ Completed,Phase 4,Added alternating row colors (bg-white / bg-gray-50),app/components/SchemaViewer.tsx
+Schema & Table View,Preview Sorting,Preview tab: Sorting support for tables,Medium,✅ Completed,Phase 4,Added clickable column headers with sort indicators and useMemo sorting,app/components/SchemaViewer.tsx
+Schema & Table View,Preview Query Log,Preview tab: Share query being used (ORDER GROUP etc) in log,Low,✅ Completed,Phase 4,Added console.log and toast notification showing SQL query used,app/components/SchemaViewer.tsx
+Schema & Table View,Export Tables,Schema Explorer: Export tables capability (CSV JSON SQL Excel),High,✅ Completed,Phase 4,Created TableExporter component with 4 export formats,app/components/TableExporter.tsx + app/lib/export-utils.ts
+Schema & Table View,Table Querying,Run SELECT directly from table/database view,High,✅ Completed,Phase 4,Created TableQueryForm with form-based SELECT builder,app/components/table-crud/TableQueryForm.tsx
+Schema & Table View,Table Update,Update via form-based field selection,High,✅ Completed,Phase 4,Created TableUpdateForm with WHERE clause builder,app/components/table-crud/TableUpdateForm.tsx
+Schema & Table View,Table Insert,Insert via manual form,High,✅ Completed,Phase 4,Created TableInsertForm with dynamic fields based on schema,app/components/table-crud/TableInsertForm.tsx
+Query Editor,Schema Loading,Schema sometimes doesn't load,High,✅ Completed,Phase 5,Implemented retry mechanism (3 attempts) + SQL fallback,app/components/QueryEditor.tsx
+Query Editor,Error Messages,Error shown: Unknown error - actual DB error should be surfaced,Critical,✅ Completed,Phase 1 & 5,Enhanced error handling to extract and display actual DB errors,app/components/QueryEditor.tsx + app/lib/monkdb-client.ts
+Query Editor,Screen Flash,Previous screen flashes briefly before load,Low,✅ Completed,Phase 5,Changed to loading overlay instead of clearing results immediately,app/components/QueryEditor.tsx
+Query Editor,DDL Success,CREATE TABLE queries don't show success or failure,Medium,✅ Completed,Phase 5,Added query type detection with specific success messages for DDL,app/components/QueryEditor.tsx
+Query Editor,Templates,Templates need updates (will share separately),Medium,⏳ Pending User Input,N/A,Waiting for user to share updated templates,N/A
+Vector Search,Table Selection,Table should be selectable (searchable) not free text,High,✅ Completed,Phase 6,Created SearchableSelect component for table selection,app/components/vector/VectorSearchPanel.tsx
+Vector Search,Column Selection,Column should be selectable (searchable) not free text,High,✅ Completed,Phase 6,Added SearchableSelect for FLOAT_VECTOR columns only,app/components/vector/VectorSearchPanel.tsx
+Vector Search,Input Validation,Inputs should only allow block-level: {} () [] no comma-separated,Medium,✅ Completed,Phase 6,Added validation rejecting comma-separated enforcing block-level,app/components/vector/VectorSearchPanel.tsx
+Vector Search,K Value Input,K value should be user-entered (INT) not slider,Medium,✅ Completed,Phase 6,Changed slider to number input (1-1000),app/components/vector/VectorSearchPanel.tsx
+Geo-Spatial,Table/Column Selection,Same UX as Vector Search - select tables/columns,High,✅ Completed,Phase 7,Added SearchableSelect for tables and GEO columns,app/components/geo/SpatialQueryBuilder.tsx
+Geo-Spatial,GEO Insert,Unable to insert GEO data via SQL (will recheck with Krishna),Medium,⏳ Pending Verification,N/A,User needs to recheck with Krishna - may be MonkDB limitation,N/A
+Geo-Spatial,WKT Validation,Need WKT geometry validation,Medium,✅ Completed,Phase 7,Added WKT validation patterns for all geometry types,app/components/geo/SpatialQueryBuilder.tsx
+Time Series,Walkthrough,Needs another walkthrough - capabilities unclear,Low,⏳ Pending User Input,N/A,User needs walkthrough to clarify requirements,N/A
+Full Text Search,Testing,Yet to test - coordinate with Krishna on document embeddings,Low,⏳ Pending User Input,N/A,User coordinating with Krishna for testing,N/A
+Docker Management,Purpose Unclear,Purpose unclear - doesn't align with cloud workbench scope,Low,✅ Completed,Phase 8,Completely removed Docker management feature,Deleted: app/docker/ app/lib/docker-context.tsx app/lib/docker-hooks.ts
+Blob Storage,New Table Button,New Table button not working,High,✅ Completed,Phase 9,Replaced prompt() with CreateTableDialog modal with validation,app/components/BlobStorage.tsx + app/components/blob/CreateTableDialog.tsx
+Blob Storage,Connection Validation,Upload allowed without active DB connection,Critical,✅ Completed,Phase 9,Added connection validation on mount and before upload,app/components/blob/BlobUploader.tsx
+Blob Storage,Upload Functionality,Blob upload from Workbench not working,High,✅ Completed,Phase 9,Fixed upload with proper error handling and context display,app/components/blob/BlobUploader.tsx
+Blob Storage,Upload Context,Unclear where data is uploaded,Medium,✅ Completed,Phase 9,Added context info panel showing connection/table/folder,app/components/blob/BlobUploader.tsx
+API Playground,Pagination,Add pagination to results,High,✅ Completed,Phase 10,Added pagination with 25/50/100/200 per page options,app/components/APIPlayground.tsx
+API Playground,Authentication,API access without username/password - needs discussion,High,✅ Completed,Phase 10,Added security warnings for default credentials,app/components/APIPlayground.tsx
+API Playground,Public Access,API accessible publicly via local IP,Critical,✅ Completed,Phase 10,Added public network detection warning,app/components/APIPlayground.tsx
+API Playground,Response Metadata,Missing response size and headers info,Medium,✅ Completed,Phase 10,Added response metadata display (size content-type timing),app/components/APIPlayground.tsx
+API Playground,Download,No way to download large responses,Medium,✅ Completed,Phase 10,Added Download Full Response button,app/components/APIPlayground.tsx
+General UI,Connection Display,Showing doc(127.0.0.1) - should show username or DB,Medium,✅ Completed,Phase 2,Updated to show username and connection name,app/components/Navigation.tsx
+General UI,Random Errors,Random errors prompting app reload,High,✅ Completed,Phase 1,Enhanced ErrorBoundary with auto-recovery,app/components/ErrorBoundary.tsx
+General UI,Dropdown Styling,Dropdown styling inconsistent with rest of UI,Low,✅ Completed,Phase 2,Created standardized Select component,app/components/ui/Select.tsx
+General UI,Search Button,Search button near notifications appears unlinked,Low,✅ Completed,Phase 2,Added tooltip showing keyboard shortcut (⌘K),app/components/Navigation.tsx
+General UI,Connection Guards,Actions allowed without DB connection - CRITICAL,Critical,✅ Completed,Phase 1,Added connection validation to ALL hooks and components,app/lib/monkdb-hooks.ts + multiple components
+DMG Installation,Installation Guide,Add installation instructions in DMG package,Medium,✅ Completed,Phase 11,Created comprehensive installation guide,DMG_INSTALL_INSTRUCTIONS.md
+DMG Installation,Quick Start,Add quick README for DMG users,Medium,✅ Completed,Phase 11,Created DMG_README.txt for quick reference,DMG_README.txt
+DMG Installation,Background Image,Custom DMG background for professional appearance,Low,✅ Completed,Phase 11,Created design guide (image creation optional),DMG_BACKGROUND_GUIDE.md
+DMG Installation,Build Script,Enhanced DMG creation script,Medium,✅ Completed,Phase 11,Updated script to include docs and Applications symlink,scripts/create-dmg.sh
+DMG Installation,Tauri Config,Optimize DMG window and icon positioning,Low,✅ Completed,Phase 11,Updated window size and icon positions,src-tauri/tauri.conf.json
+Bug Fixes,Toast Infinite Loop,Maximum update depth exceeded in ToastContext,Critical,✅ Completed,Bug Fix,Fixed circular dependency with useRef and functional setState,app/components/ToastContext.tsx
+Bug Fixes,QueryEditor Infinite Loop,Maximum update depth exceeded in QueryEditor,Critical,✅ Completed,Bug Fix,Removed function from useEffect dependencies,app/components/QueryEditor.tsx
+Bug Fixes,Nested Button Error,Hydration error from nested buttons in SearchableSelect,High,✅ Completed,Bug Fix,Changed button to span with ARIA attributes,app/components/common/SearchableSelect.tsx
+Bug Fixes,Geo Dropdown Empty,Geo-spatial collection field showing no options,High,✅ Completed,Bug Fix,Broadened type matching added fallback to all tables,app/components/geo/SpatialQueryBuilder.tsx

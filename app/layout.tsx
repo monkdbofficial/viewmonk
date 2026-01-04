@@ -7,8 +7,8 @@ import ToastContainer from "./components/ToastContainer";
 import AppLayout from "./components/AppLayout";
 import { MonkDBProvider } from "./lib/monkdb-context";
 import { QueryTabsProvider } from "./lib/query-tabs-context";
-import { DockerProvider } from "./lib/docker-context";
 import { NotificationProvider } from "./lib/notification-context";
+import { SavedViewsProvider } from "./lib/saved-views-context";
 import ErrorBoundary from "./components/ErrorBoundary";
 
 const geistSans = Geist({
@@ -40,14 +40,14 @@ export default function RootLayout({
           <ThemeProvider>
             <NotificationProvider>
               <MonkDBProvider>
-                <DockerProvider>
+                <SavedViewsProvider>
                   <QueryTabsProvider>
                     <ToastProvider>
                       <AppLayout>{children}</AppLayout>
                       <ToastContainer />
                     </ToastProvider>
                   </QueryTabsProvider>
-                </DockerProvider>
+                </SavedViewsProvider>
               </MonkDBProvider>
             </NotificationProvider>
           </ThemeProvider>

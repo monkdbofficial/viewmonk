@@ -12,6 +12,11 @@ export default function Sidebar({}: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const pathname = usePathname();
 
+  // Debug pathname in desktop app
+  useEffect(() => {
+    console.log('[Sidebar] Current pathname:', pathname);
+  }, [pathname]);
+
   const menuItems = [
     {
       href: '/dashboard',
@@ -73,15 +78,6 @@ export default function Sidebar({}: SidebarProps) {
       icon: (
         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-      )
-    },
-    {
-      href: '/docker',
-      label: 'Docker',
-      icon: (
-        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
         </svg>
       )
     },
@@ -186,14 +182,17 @@ export default function Sidebar({}: SidebarProps) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
+                  className={`group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
                     isActive
-                      ? 'bg-blue-50 text-blue-700 shadow-sm dark:bg-blue-900/30 dark:text-blue-400'
+                      ? 'bg-blue-50 text-blue-700 shadow-sm dark:bg-blue-500/20 dark:text-blue-300 dark:shadow-blue-500/10'
                       : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
                   } ${isCollapsed ? 'justify-center' : ''}`}
                   title={isCollapsed ? item.label : undefined}
                 >
-                  <span className={isActive ? 'text-blue-700 dark:text-blue-400' : 'text-gray-500 group-hover:text-gray-700 dark:text-gray-400 dark:group-hover:text-gray-300'}>
+                  {isActive && (
+                    <span className="absolute left-0 top-0 h-full w-1 rounded-r bg-blue-600 dark:bg-blue-400" />
+                  )}
+                  <span className={isActive ? 'text-blue-700 dark:text-blue-300' : 'text-gray-500 group-hover:text-gray-700 dark:text-gray-400 dark:group-hover:text-gray-300'}>
                     {item.icon}
                   </span>
                   {!isCollapsed && <span className="truncate">{item.label}</span>}
@@ -215,13 +214,16 @@ export default function Sidebar({}: SidebarProps) {
                     <Link
                       key={item.href}
                       href={item.href}
-                      className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
+                      className={`group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
                         isActive
-                          ? 'bg-purple-50 text-purple-700 shadow-sm dark:bg-purple-900/30 dark:text-purple-400'
+                          ? 'bg-purple-50 text-purple-700 shadow-sm dark:bg-purple-500/20 dark:text-purple-300 dark:shadow-purple-500/10'
                           : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
                       }`}
                     >
-                      <span className={isActive ? 'text-purple-700 dark:text-purple-400' : 'text-gray-500 group-hover:text-gray-700 dark:text-gray-400 dark:group-hover:text-gray-300'}>
+                      {isActive && (
+                        <span className="absolute left-0 top-0 h-full w-1 rounded-r bg-purple-600 dark:bg-purple-400" />
+                      )}
+                      <span className={isActive ? 'text-purple-700 dark:text-purple-300' : 'text-gray-500 group-hover:text-gray-700 dark:text-gray-400 dark:group-hover:text-gray-300'}>
                         {item.icon}
                       </span>
                       <span className="truncate">{item.label}</span>
@@ -245,12 +247,15 @@ export default function Sidebar({}: SidebarProps) {
                     <Link
                       key={item.href}
                       href={item.href}
-                      className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
+                      className={`group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
                         isActive
-                          ? 'bg-gray-100 text-gray-900 shadow-sm dark:bg-gray-800 dark:text-white'
+                          ? 'bg-gray-100 text-gray-900 shadow-sm dark:bg-gray-700/50 dark:text-white dark:shadow-gray-500/10'
                           : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
                       }`}
                     >
+                      {isActive && (
+                        <span className="absolute left-0 top-0 h-full w-1 rounded-r bg-gray-600 dark:bg-gray-400" />
+                      )}
                       <span className={isActive ? 'text-gray-900 dark:text-white' : 'text-gray-500 group-hover:text-gray-700 dark:text-gray-400 dark:group-hover:text-gray-300'}>
                         {item.icon}
                       </span>
@@ -273,13 +278,16 @@ export default function Sidebar({}: SidebarProps) {
                     <Link
                       key={item.href}
                       href={item.href}
-                      className={`group flex w-full items-center justify-center rounded-lg px-3 py-2.5 transition-all ${
+                      className={`group relative flex w-full items-center justify-center rounded-lg px-3 py-2.5 transition-all ${
                         isActive
-                          ? 'bg-purple-50 text-purple-700 shadow-sm dark:bg-purple-900/30 dark:text-purple-400'
+                          ? 'bg-purple-50 text-purple-700 shadow-sm dark:bg-purple-500/20 dark:text-purple-300 dark:shadow-purple-500/10'
                           : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300'
                       }`}
                       title={item.label}
                     >
+                      {isActive && (
+                        <span className="absolute left-0 top-0 h-full w-1 rounded-r bg-purple-600 dark:bg-purple-400" />
+                      )}
                       {item.icon}
                     </Link>
                   );
@@ -293,13 +301,16 @@ export default function Sidebar({}: SidebarProps) {
                     <Link
                       key={item.href}
                       href={item.href}
-                      className={`group flex w-full items-center justify-center rounded-lg px-3 py-2.5 transition-all ${
+                      className={`group relative flex w-full items-center justify-center rounded-lg px-3 py-2.5 transition-all ${
                         isActive
-                          ? 'bg-gray-100 text-gray-900 shadow-sm dark:bg-gray-800 dark:text-white'
+                          ? 'bg-gray-100 text-gray-900 shadow-sm dark:bg-gray-700/50 dark:text-white dark:shadow-gray-500/10'
                           : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300'
                       }`}
                       title={item.label}
                     >
+                      {isActive && (
+                        <span className="absolute left-0 top-0 h-full w-1 rounded-r bg-gray-600 dark:bg-gray-400" />
+                      )}
                       {item.icon}
                     </Link>
                   );

@@ -1,15 +1,18 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { useToast } from './ToastContext';
 import { useActiveConnection } from '../lib/monkdb-context';
 import { useQueryTabs } from '../lib/query-tabs-context';
+import { useSavedViews } from '../lib/saved-views-context';
 import MonacoSQLEditor, { SchemaMetadata } from './MonacoSQLEditor';
 import DroppableMonacoEditor from './DroppableMonacoEditor';
 import SchemaExplorer from './SchemaExplorer';
 import SavedQueries from './SavedQueries';
 import ExplainVisualizer from './ExplainVisualizer';
 import SQLDocumentation from './SQLDocumentation';
+import ConnectionPrompt from './common/ConnectionPrompt';
 import { invoke } from '@tauri-apps/api/core';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -70,8 +73,10 @@ interface SchemaTable {
 }
 
 export default function QueryEditor() {
+  const router = useRouter();
   const queryTabs = useQueryTabs();
-  const { activeTab, updateTab, createTab, closeTab, switchTab, tabs } = queryTabs;
+  const { activeTab, updateTab, createTab, closeTab, switchTab, tabs, renameTab } = queryTabs;
+  const { addRecentQuery } = useSavedViews();
 
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [isExecuting, setIsExecuting] = useState(false);
@@ -93,9 +98,23 @@ export default function QueryEditor() {
   const [currentPage, setCurrentPage] = useState(1);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showDocsModal, setShowDocsModal] = useState(false);
+  const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const toast = useToast();
   const activeConnection = useActiveConnection();
+
+  // CRITICAL: Guard against no connection - prevent query execution without database connection
+  if (!activeConnection) {
+    return (
+      <ConnectionPrompt
+        onConnect={() => router.push('/connections')}
+        title="No Database Connection"
+        message="Please connect to a MonkDB database to use the Query Editor."
+        buttonText="Go to Connections"
+      />
+    );
+  }
 
   // Derived state from active tab
   const query = activeTab?.query || '';
@@ -160,53 +179,104 @@ export default function QueryEditor() {
     setQueryHistory(history);
   };
 
-  // Load schema metadata for autocomplete
+  // Load schema metadata for autocomplete with retry and fallback
   const loadSchemaMetadata = useCallback(async () => {
     if (!activeConnection) return;
 
-    // Check if running in Tauri environment
-    if (typeof window === 'undefined' || !window.__TAURI__) {
-      console.log('Schema metadata loading requires Tauri desktop app');
-      setLoadingSchema(false);
-      return;
+    setLoadingSchema(true);
+
+    // Retry configuration
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY = 1000; // 1 second
+
+    // Helper function to wait
+    const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    // Try Tauri-based loading with retry
+    if (typeof window !== 'undefined' && window.__TAURI__) {
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          console.log(`[Schema Load] Attempt ${attempt}/${MAX_RETRIES} using Tauri...`);
+
+          const metadata = await invoke<SchemaMetadata>('get_schema_metadata', {
+            connectionId: activeConnection.id,
+          });
+          setSchemaMetadata(metadata);
+
+          // Transform metadata for SchemaExplorer
+          const transformedMetadata = {
+            schemas: metadata.schemas.map((schema) => ({
+              name: schema.name,
+              tables: schema.tables.map((table) => ({
+                name: table.name,
+                schema: schema.name,
+                columns: table.columns.map((column) => ({
+                  name: column.name,
+                  type: column.type,
+                  nullable: column.nullable,
+                  isPrimaryKey: false,
+                  isForeignKey: false,
+                  hasIndex: false,
+                })),
+                primaryKeys: [],
+                foreignKeys: [],
+                indexes: [],
+              })),
+            })),
+          };
+          setSchemaExplorerMetadata(transformedMetadata);
+
+          console.log('[Schema Load] Success via Tauri');
+          toast.success('Schema Loaded', `Loaded ${metadata.schemas.length} schemas`);
+          setLoadingSchema(false);
+          return; // Success!
+        } catch (err) {
+          console.error(`[Schema Load] Tauri attempt ${attempt} failed:`, err);
+
+          if (attempt < MAX_RETRIES) {
+            console.log(`[Schema Load] Retrying in ${RETRY_DELAY}ms...`);
+            await wait(RETRY_DELAY);
+          } else {
+            console.log('[Schema Load] All Tauri attempts failed, falling back to SQL...');
+            toast.warning('Schema Load', 'Tauri loading failed, using SQL fallback...');
+          }
+        }
+      }
     }
 
-    setLoadingSchema(true);
+    // Fallback to SQL-based loading
     try {
-      const metadata = await invoke<SchemaMetadata>('get_schema_metadata', {
-        connectionId: activeConnection.id,
-      });
-      setSchemaMetadata(metadata);
+      console.log('[Schema Load] Using SQL fallback...');
 
-      // Transform metadata for SchemaExplorer
-      // Add column metadata including keys and indexes
-      const transformedMetadata = {
-        schemas: metadata.schemas.map((schema) => ({
-          name: schema.name,
-          tables: schema.tables.map((table) => ({
-            name: table.name,
-            schema: schema.name,
-            columns: table.columns.map((column) => ({
-              name: column.name,
-              type: column.type,
-              nullable: column.nullable,
-              isPrimaryKey: false, // TODO: Get from metadata
-              isForeignKey: false, // TODO: Get from metadata
-              hasIndex: false, // TODO: Get from metadata
-            })),
-            primaryKeys: [], // TODO: Get from metadata
-            foreignKeys: [], // TODO: Get from metadata
-            indexes: [], // TODO: Get from metadata
-          })),
+      const result = await activeConnection.client.query(`
+        SELECT DISTINCT table_schema
+        FROM information_schema.tables
+        WHERE table_schema NOT IN ('pg_catalog', 'information_schema', 'sys')
+        ORDER BY table_schema
+      `);
+
+      const schemas = result.rows.map((row: any[]) => row[0]);
+
+      // Create minimal metadata structure
+      const fallbackMetadata: SchemaMetadata = {
+        schemas: schemas.map((schemaName: string) => ({
+          name: schemaName,
+          tables: [], // Tables will be loaded on demand
         })),
       };
-      setSchemaExplorerMetadata(transformedMetadata);
+
+      setSchemaMetadata(fallbackMetadata);
+
+      console.log('[Schema Load] Success via SQL fallback');
+      toast.success('Schema Loaded', `Loaded ${schemas.length} schemas (SQL fallback)`);
     } catch (err) {
-      console.error('Failed to load schema metadata for autocomplete:', err);
+      console.error('[Schema Load] SQL fallback failed:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Could not load schema';
+      toast.error('Schema Load Failed', errorMessage);
     } finally {
       setLoadingSchema(false);
     }
-  }, [activeConnection]);
+  }, [activeConnection, toast]);
 
   // Load schema tables
   const loadSchema = useCallback(async () => {
@@ -240,7 +310,8 @@ export default function QueryEditor() {
     if (activeConnection) {
       loadSchemaMetadata();
     }
-  }, [activeConnection, loadSchemaMetadata]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeConnection]); // Only run when connection changes, not when function changes
 
   // Keyboard shortcuts for tab management
   useEffect(() => {
@@ -331,7 +402,7 @@ export default function QueryEditor() {
     }
 
     setIsExecuting(true);
-    setError(null);
+    // Don't clear error immediately - only clear on success to prevent flash
 
     const startTime = Date.now();
     let queryToExecute = query.trim();
@@ -344,6 +415,9 @@ export default function QueryEditor() {
     try {
       const result = await activeConnection.client.query(queryToExecute);
       const duration = Date.now() - startTime;
+
+      // Clear error only on successful execution
+      setError(null);
 
       setResults({
         cols: result.cols,
@@ -367,20 +441,74 @@ export default function QueryEditor() {
       };
       saveQueryHistory([historyItem, ...queryHistory]);
 
-      // Check if this is a data modification query
-      const upperQuery = queryToExecute.toUpperCase();
-      const isModificationQuery =
-        upperQuery.startsWith('INSERT') ||
-        upperQuery.startsWith('UPDATE') ||
-        upperQuery.startsWith('DELETE');
+      // Add to recent queries (Saved Views)
+      addRecentQuery(queryToExecute, result.rowcount, result.duration || duration);
 
-      if (isModificationQuery && result.rowcount > 0) {
+      // Detect query type and show appropriate success message
+      const upperQuery = queryToExecute.toUpperCase().trim();
+      const queryType = upperQuery.split(/\s+/)[0];
+
+      // DDL Operations (Data Definition Language)
+      if (queryType === 'CREATE') {
+        const isTable = upperQuery.includes('CREATE TABLE');
+        const isIndex = upperQuery.includes('CREATE INDEX');
+
+        if (isTable) {
+          toast.success(
+            'Table Created Successfully',
+            `Table created in ${(result.duration || duration).toFixed(2)}ms. Refresh Schema Explorer to see the new table.`,
+            8000
+          );
+        } else if (isIndex) {
+          toast.success(
+            'Index Created Successfully',
+            `Index created in ${(result.duration || duration).toFixed(2)}ms`,
+            6000
+          );
+        } else {
+          toast.success(
+            'CREATE Successful',
+            `Object created in ${(result.duration || duration).toFixed(2)}ms. Refresh Schema Explorer to see changes.`,
+            6000
+          );
+        }
+      } else if (queryType === 'ALTER') {
         toast.success(
-          'Query Executed Successfully',
-          `Affected ${result.rowcount} row(s). Run REFRESH TABLE to see changes immediately.`,
-          8000 // Show for 8 seconds
+          'Table Altered Successfully',
+          `Schema modified in ${(result.duration || duration).toFixed(2)}ms. Refresh Schema Explorer to see changes.`,
+          8000
         );
-      } else {
+      } else if (queryType === 'DROP') {
+        toast.success(
+          'DROP Successful',
+          `Object dropped in ${(result.duration || duration).toFixed(2)}ms. Refresh Schema Explorer to update.`,
+          8000
+        );
+      } else if (queryType === 'TRUNCATE') {
+        toast.success(
+          'Table Truncated',
+          `All rows removed in ${(result.duration || duration).toFixed(2)}ms`,
+          6000
+        );
+      }
+      // DML Operations (Data Manipulation Language)
+      else if (queryType === 'INSERT' || queryType === 'UPDATE' || queryType === 'DELETE') {
+        if (result.rowcount > 0) {
+          toast.success(
+            `${queryType} Successful`,
+            `Affected ${result.rowcount} row(s). Run REFRESH TABLE to see changes immediately.`,
+            8000
+          );
+        } else {
+          toast.success(
+            `${queryType} Executed`,
+            `No rows affected in ${(result.duration || duration).toFixed(2)}ms`,
+            6000
+          );
+        }
+      }
+      // DQL Operations (Data Query Language)
+      else {
         toast.success(
           'Query Executed Successfully',
           `Found ${result.rowcount} rows in ${(result.duration || duration).toFixed(2)}ms`
@@ -579,6 +707,33 @@ export default function QueryEditor() {
     setCurrentPage(1);
     setSortConfig(null);
   }, [results]);
+
+  // Tab rename handlers
+  const startRename = (tabId: string, currentName: string) => {
+    setRenamingTabId(tabId);
+    setRenameValue(currentName);
+  };
+
+  const saveRename = () => {
+    if (renamingTabId && renameValue.trim()) {
+      renameTab(renamingTabId, renameValue.trim());
+      setRenamingTabId(null);
+      setRenameValue('');
+    }
+  };
+
+  const cancelRename = () => {
+    setRenamingTabId(null);
+    setRenameValue('');
+  };
+
+  const handleRenameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      saveRename();
+    } else if (e.key === 'Escape') {
+      cancelRename();
+    }
+  };
 
   const handleSaveQuery = async () => {
     if (!saveQueryData.name.trim()) {
@@ -1441,17 +1596,39 @@ WITH (max_num_segments = 1);`,
           {tabs.map((tab) => (
             <div
               key={tab.id}
-              className={`group flex items-center gap-2 px-3 py-1.5 rounded-t-lg border-b-2 transition-all cursor-pointer ${
+              className={`group flex items-center gap-2 px-3 py-1.5 rounded-t-lg border-b-2 transition-all ${
+                renamingTabId !== tab.id ? 'cursor-pointer' : ''
+              } ${
                 tab.id === activeTab?.id
                   ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-600 dark:border-blue-400 text-blue-900 dark:text-blue-100'
                   : 'bg-gray-100 dark:bg-gray-800 border-transparent text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
               }`}
-              onClick={() => switchTab(tab.id)}
+              onClick={() => renamingTabId !== tab.id && switchTab(tab.id)}
             >
-              <span className="text-sm font-medium whitespace-nowrap">
-                {tab.name}
-                {tab.isDirty && <span className="ml-1 text-orange-500">•</span>}
-              </span>
+              {renamingTabId === tab.id ? (
+                <input
+                  type="text"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={handleRenameKeyDown}
+                  onBlur={saveRename}
+                  autoFocus
+                  className="text-sm font-medium bg-white dark:bg-gray-700 border border-blue-500 dark:border-blue-400 rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-blue-400 min-w-[80px] max-w-[200px]"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <span
+                  className="text-sm font-medium whitespace-nowrap"
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    startRename(tab.id, tab.name);
+                  }}
+                  title="Double-click to rename"
+                >
+                  {tab.name}
+                  {tab.isDirty && <span className="ml-1 text-orange-500">•</span>}
+                </span>
+              )}
               <button
                 onClick={(e) => {
                   e.stopPropagation();

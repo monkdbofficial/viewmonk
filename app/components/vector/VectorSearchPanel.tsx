@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { Search, Loader2, AlertCircle, X } from 'lucide-react';
 import { useMonkDBClient } from '@/app/lib/monkdb-context';
+import SearchableSelect from '../common/SearchableSelect';
+import { useSchemaMetadata } from '@/app/lib/hooks/useSchemaMetadata';
 
 interface VectorSearchResult {
   id: string;
@@ -13,14 +15,33 @@ interface VectorSearchResult {
 
 export default function VectorSearchPanel() {
   const client = useMonkDBClient();
+  const { tables, columns, loading: schemaLoading } = useSchemaMetadata();
+
   const [tableName, setTableName] = useState('');
-  const [embeddingColumn, setEmbeddingColumn] = useState('embedding');
+  const [embeddingColumn, setEmbeddingColumn] = useState('');
   const [queryVector, setQueryVector] = useState('');
   const [kValue, setKValue] = useState(10);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<VectorSearchResult[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [queryTime, setQueryTime] = useState<number | null>(null);
+
+  // Get table names with vector columns
+  const tableNames = [...new Set(
+    columns
+      .filter(col => col.type.toUpperCase().includes('FLOAT_VECTOR'))
+      .map(col => `${col.schema}.${col.table}`)
+  )];
+
+  // Get vector columns for selected table
+  const vectorColumns = tableName
+    ? columns
+        .filter(col => {
+          const fullTableName = `${col.schema}.${col.table}`;
+          return fullTableName === tableName && col.type.toUpperCase().includes('FLOAT_VECTOR');
+        })
+        .map(col => col.name)
+    : [];
 
   const handleSearch = async () => {
     if (!client) {
@@ -44,16 +65,33 @@ export default function VectorSearchPanel() {
     setQueryTime(null);
 
     try {
-      // Parse query vector - support both JSON array and comma-separated values
+      // Validate block-level format only (starts with [, {, or ()
+      const trimmedVector = queryVector.trim();
+      if (!trimmedVector.match(/^[\[\{\(].*[\]\}\)]$/)) {
+        throw new Error(
+          'Vector must be in block-level format. Examples:\n' +
+          '• JSON array: [0.1, 0.2, 0.3]\n' +
+          '• Object notation: {vec: [0.1, 0.2]}\n' +
+          '• Parentheses: ([0.1, 0.2, 0.3])'
+        );
+      }
+
+      // Parse query vector
       let vectorArray: number[];
       try {
-        if (queryVector.trim().startsWith('[')) {
-          vectorArray = JSON.parse(queryVector);
+        if (trimmedVector.startsWith('[')) {
+          vectorArray = JSON.parse(trimmedVector);
+        } else if (trimmedVector.startsWith('{')) {
+          const obj = JSON.parse(trimmedVector);
+          // Try to extract vector from object
+          vectorArray = obj.vec || obj.vector || obj.embedding || Object.values(obj)[0];
         } else {
-          vectorArray = queryVector.split(',').map(v => parseFloat(v.trim()));
+          // Handle parentheses - strip and parse inner content
+          const inner = trimmedVector.slice(1, -1);
+          vectorArray = JSON.parse(inner);
         }
       } catch (e) {
-        throw new Error('Invalid vector format. Use JSON array [1,2,3] or comma-separated values 1,2,3');
+        throw new Error('Invalid vector format. Could not parse as valid JSON structure.');
       }
 
       if (!Array.isArray(vectorArray) || vectorArray.some(isNaN)) {
@@ -115,34 +153,33 @@ export default function VectorSearchPanel() {
 
         <div className="space-y-4">
           {/* Table Name */}
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Table Name
-            </label>
-            <input
-              type="text"
-              value={tableName}
-              onChange={(e) => setTableName(e.target.value)}
-              placeholder="e.g., documents, embeddings"
-              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-500"
-              onKeyDown={handleKeyPress}
-            />
-          </div>
+          <SearchableSelect
+            label="Table Name"
+            value={tableName}
+            onChange={(value) => {
+              setTableName(value);
+              setEmbeddingColumn(''); // Reset column when table changes
+            }}
+            options={tableNames}
+            placeholder="Select table with vector columns..."
+            loading={schemaLoading}
+            onClear={() => {
+              setTableName('');
+              setEmbeddingColumn('');
+            }}
+          />
 
           {/* Embedding Column */}
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Embedding Column Name
-            </label>
-            <input
-              type="text"
-              value={embeddingColumn}
-              onChange={(e) => setEmbeddingColumn(e.target.value)}
-              placeholder="e.g., embedding, vector"
-              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-500"
-              onKeyDown={handleKeyPress}
-            />
-          </div>
+          <SearchableSelect
+            label="Embedding Column Name"
+            value={embeddingColumn}
+            onChange={setEmbeddingColumn}
+            options={vectorColumns}
+            placeholder={tableName ? 'Select vector column...' : 'Select a table first'}
+            disabled={!tableName || vectorColumns.length === 0}
+            loading={schemaLoading}
+            onClear={() => setEmbeddingColumn('')}
+          />
 
           {/* Query Vector */}
           <div>
@@ -152,36 +189,33 @@ export default function VectorSearchPanel() {
             <textarea
               value={queryVector}
               onChange={(e) => setQueryVector(e.target.value)}
-              placeholder="Enter vector as JSON array: [0.1, 0.2, 0.3, ...] or comma-separated: 0.1, 0.2, 0.3, ..."
+              placeholder="Enter vector in block-level format: [0.1, 0.2, 0.3, ...] or {vec: [0.1, 0.2]}"
               rows={3}
               className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 font-mono text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-500"
               onKeyDown={handleKeyPress}
             />
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Ctrl+Enter to search
+              Block-level format only (must start with [, {"{" }, or ()  •  Ctrl+Enter to search
             </p>
           </div>
 
-          {/* K Value Slider */}
+          {/* K Value Input */}
           <div>
-            <label className="mb-2 flex items-center justify-between text-sm font-medium text-gray-700 dark:text-gray-300">
-              <span>Top K Results</span>
-              <span className="rounded-md bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                {kValue}
-              </span>
+            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Top K Results
             </label>
             <input
-              type="range"
+              type="number"
               min="1"
-              max="100"
+              max="1000"
               value={kValue}
-              onChange={(e) => setKValue(parseInt(e.target.value))}
-              className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 accent-blue-600 dark:bg-gray-700"
+              onChange={(e) => setKValue(parseInt(e.target.value) || 1)}
+              placeholder="10"
+              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-500"
             />
-            <div className="mt-1 flex justify-between text-xs text-gray-500 dark:text-gray-400">
-              <span>1</span>
-              <span>100</span>
-            </div>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Number of nearest neighbors to return (1-1000)
+            </p>
           </div>
 
           {/* Search Button */}

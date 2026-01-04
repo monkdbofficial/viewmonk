@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   ChevronRight,
   ChevronDown,
@@ -29,11 +29,18 @@ import {
   Plus,
   Edit,
   Trash2,
+  Download,
 } from 'lucide-react';
 import { useSchemas, useTables, useTableColumns } from '../lib/monkdb-hooks';
 import { useActiveConnection } from '../lib/monkdb-context';
 import { useToast } from './ToastContext';
 import type { ColumnMetadata } from '../lib/monkdb-client';
+import dynamic from 'next/dynamic';
+
+const TableExporter = dynamic(() => import('./TableExporter'), { ssr: false });
+const TableInsertForm = dynamic(() => import('./table-crud/TableInsertForm'), { ssr: false });
+const TableUpdateForm = dynamic(() => import('./table-crud/TableUpdateForm'), { ssr: false });
+const TableQueryForm = dynamic(() => import('./table-crud/TableQueryForm'), { ssr: false });
 
 interface SelectedTable {
   schema: string;
@@ -47,7 +54,7 @@ interface TableStats {
   replicas: number;
 }
 
-type ViewType = 'columns' | 'preview' | 'indexes' | 'details' | 'ddl';
+type ViewType = 'columns' | 'preview' | 'indexes' | 'details' | 'ddl' | 'insert-form' | 'update-form' | 'query-form';
 type FilterType = 'all' | 'user' | 'system';
 
 export default function SchemaViewer() {
@@ -63,10 +70,14 @@ export default function SchemaViewer() {
   const [previewData, setPreviewData] = useState<any>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [loadingStats, setLoadingStats] = useState(false);
+  const [previewSortConfig, setPreviewSortConfig] = useState<{col: string; dir: 'asc' | 'desc'} | null>(null);
 
   // Fetch tables for each schema
   const [schemaTableMap, setSchemaTableMap] = useState<Record<string, any[]>>({});
   const [loadingTables, setLoadingTables] = useState<Set<string>>(new Set());
+  const [editColumnModal, setEditColumnModal] = useState<{open: boolean; column: ColumnMetadata | null}>({open: false, column: null});
+  const [deleteColumnModal, setDeleteColumnModal] = useState<{open: boolean; column: ColumnMetadata | null}>({open: false, column: null});
+  const [showExportModal, setShowExportModal] = useState(false);
 
   // Fetch table columns when a table is selected
   const { data: columns, loading: columnsLoading, error: columnsError } = useTableColumns(
@@ -198,9 +209,18 @@ export default function SchemaViewer() {
     try {
       const client = activeConnection.client;
       const query = `SELECT * FROM "${selectedTable.schema}"."${selectedTable.name}" LIMIT 50`;
+
+      // Log SQL query to console
+      console.log('[Preview Query]', query);
+
       const result = await client.query(query);
       setPreviewData(result);
-      toast.success('Data Loaded', `Loaded ${result.rowcount} sample rows`);
+
+      // Reset sort config when loading new data
+      setPreviewSortConfig(null);
+
+      // Show success toast with SQL query
+      toast.success('Data Loaded', `Loaded ${result.rowcount} rows\nSQL: ${query}`);
     } catch (error) {
       console.error('Failed to load preview data:', error);
       toast.error('Preview Failed', 'Could not load sample data');
@@ -209,6 +229,51 @@ export default function SchemaViewer() {
       setLoadingPreview(false);
     }
   };
+
+  const handlePreviewSort = (colName: string) => {
+    setPreviewSortConfig((prev) => {
+      if (!prev || prev.col !== colName) {
+        return { col: colName, dir: 'asc' };
+      }
+      if (prev.dir === 'asc') {
+        return { col: colName, dir: 'desc' };
+      }
+      return null; // Clear sort
+    });
+  };
+
+  // Sort preview data based on sort config
+  const sortedPreviewData = useMemo(() => {
+    if (!previewData || !previewData.rows || !previewSortConfig) {
+      return previewData;
+    }
+
+    const colIndex = previewData.cols.indexOf(previewSortConfig.col);
+    if (colIndex === -1) return previewData;
+
+    const sortedRows = [...previewData.rows].sort((a, b) => {
+      const aVal = a[colIndex];
+      const bVal = b[colIndex];
+
+      // Handle nulls - always put them at the end
+      if (aVal === null && bVal === null) return 0;
+      if (aVal === null) return 1;
+      if (bVal === null) return -1;
+
+      // Compare values
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return previewSortConfig.dir === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+
+      const aStr = String(aVal);
+      const bStr = String(bVal);
+      return previewSortConfig.dir === 'asc'
+        ? aStr.localeCompare(bStr)
+        : bStr.localeCompare(aStr);
+    });
+
+    return { ...previewData, rows: sortedRows };
+  }, [previewData, previewSortConfig]);
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -599,6 +664,17 @@ WHERE ${primaryKeyCol.column_name} = ?;
                     <Copy className="h-4 w-4" />
                   </button>
 
+                  {/* Export Button */}
+                  <button
+                    onClick={() => setShowExportModal(true)}
+                    disabled={!previewData || !previewData.rows || previewData.rows.length === 0}
+                    className="flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50 dark:bg-purple-500 dark:hover:bg-purple-600"
+                    title="Export table data"
+                  >
+                    <Download className="h-4 w-4" />
+                    <span>EXPORT</span>
+                  </button>
+
                   {/* CRUD Operations */}
                   <button
                     onClick={generateSelectQuery}
@@ -686,6 +762,39 @@ WHERE ${primaryKeyCol.column_name} = ?;
                   <FileText className="h-4 w-4" />
                   DDL
                 </button>
+                <button
+                  onClick={() => setViewType('query-form')}
+                  className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors ${
+                    viewType === 'query-form'
+                      ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                      : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+                  }`}
+                >
+                  <Search className="h-4 w-4" />
+                  Query
+                </button>
+                <button
+                  onClick={() => setViewType('insert-form')}
+                  className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors ${
+                    viewType === 'insert-form'
+                      ? 'border-b-2 border-green-600 text-green-600 dark:text-green-400'
+                      : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+                  }`}
+                >
+                  <Plus className="h-4 w-4" />
+                  Insert
+                </button>
+                <button
+                  onClick={() => setViewType('update-form')}
+                  className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors ${
+                    viewType === 'update-form'
+                      ? 'border-b-2 border-amber-600 text-amber-600 dark:text-amber-400'
+                      : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+                  }`}
+                >
+                  <Edit className="h-4 w-4" />
+                  Update
+                </button>
               </div>
             </div>
 
@@ -766,14 +875,30 @@ WHERE ${primaryKeyCol.column_name} = ?;
                                   <span className="text-gray-400">-</span>
                                 )}
                               </td>
-                              <td className="px-4 py-3 text-right">
-                                <button
-                                  onClick={() => copyToClipboard(col.column_name, 'Column name')}
-                                  className="rounded p-1 hover:bg-gray-200 dark:hover:bg-gray-600"
-                                  title="Copy column name"
-                                >
-                                  <Copy className="h-3.5 w-3.5 text-gray-500" />
-                                </button>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center justify-end gap-1">
+                                  <button
+                                    onClick={() => setEditColumnModal({open: true, column: col})}
+                                    className="rounded p-1.5 text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20"
+                                    title="Edit column"
+                                  >
+                                    <Edit className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => setDeleteColumnModal({open: true, column: col})}
+                                    className="rounded p-1.5 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                                    title="Delete column"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => copyToClipboard(col.column_name, 'Column name')}
+                                    className="rounded p-1.5 text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+                                    title="Copy column name"
+                                  >
+                                    <Copy className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -793,6 +918,11 @@ WHERE ${primaryKeyCol.column_name} = ?;
                   <div className="mb-4 flex items-center justify-between">
                     <p className="text-sm text-gray-600 dark:text-gray-400">
                       Showing up to 50 sample rows
+                      {previewSortConfig && (
+                        <span className="ml-2 text-xs text-blue-600 dark:text-blue-400">
+                          (Sorted by {previewSortConfig.col} {previewSortConfig.dir === 'asc' ? '↑' : '↓'})
+                        </span>
+                      )}
                     </p>
                     <button
                       onClick={loadDataPreview}
@@ -808,21 +938,39 @@ WHERE ${primaryKeyCol.column_name} = ?;
                     <div className="flex items-center justify-center py-12">
                       <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
                     </div>
-                  ) : previewData && previewData.rows && previewData.rows.length > 0 ? (
+                  ) : sortedPreviewData && sortedPreviewData.rows && sortedPreviewData.rows.length > 0 ? (
                     <div className="overflow-auto rounded-lg border border-gray-200 dark:border-gray-700">
                       <table className="w-full">
                         <thead className="bg-gray-50 dark:bg-gray-900">
                           <tr>
-                            {previewData.cols.map((col: string, idx: number) => (
-                              <th key={idx} className="px-4 py-3 text-left text-xs font-bold uppercase text-gray-700 dark:text-gray-300">
-                                {col}
+                            {sortedPreviewData.cols.map((col: string, idx: number) => (
+                              <th
+                                key={idx}
+                                onClick={() => handlePreviewSort(col)}
+                                className="cursor-pointer select-none px-4 py-3 text-left text-xs font-bold uppercase text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                              >
+                                <div className="flex items-center gap-1">
+                                  {col}
+                                  {previewSortConfig?.col === col && (
+                                    <span className="text-blue-600 dark:text-blue-400">
+                                      {previewSortConfig.dir === 'asc' ? '↑' : '↓'}
+                                    </span>
+                                  )}
+                                </div>
                               </th>
                             ))}
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
-                          {previewData.rows.map((row: any[], rowIdx: number) => (
-                            <tr key={rowIdx} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                          {sortedPreviewData.rows.map((row: any[], rowIdx: number) => (
+                            <tr
+                              key={rowIdx}
+                              className={`hover:bg-gray-100 dark:hover:bg-gray-700/50 ${
+                                rowIdx % 2 === 0
+                                  ? 'bg-white dark:bg-gray-800'
+                                  : 'bg-gray-50/50 dark:bg-gray-800/50'
+                              }`}
+                            >
                               {row.map((cell: any, cellIdx: number) => (
                                 <td key={cellIdx} className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
                                   {cell === null ? (
@@ -845,7 +993,7 @@ WHERE ${primaryKeyCol.column_name} = ?;
                       <p className="mt-3 text-sm font-medium text-gray-900 dark:text-white">
                         No preview data loaded
                       </p>
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
                         Click Refresh to load sample data
                       </p>
                     </div>
@@ -952,6 +1100,41 @@ WHERE ${primaryKeyCol.column_name} = ?;
                   </div>
                 </div>
               )}
+
+              {viewType === 'insert-form' && selectedTable && columns && columns.length > 0 && (
+                <TableInsertForm
+                  schema={selectedTable.schema}
+                  tableName={selectedTable.name}
+                  columns={columns}
+                  onClose={() => setViewType('columns')}
+                  onSuccess={() => {
+                    setViewType('preview');
+                    if (previewData) loadDataPreview();
+                  }}
+                />
+              )}
+
+              {viewType === 'update-form' && selectedTable && columns && columns.length > 0 && (
+                <TableUpdateForm
+                  schema={selectedTable.schema}
+                  tableName={selectedTable.name}
+                  columns={columns}
+                  onClose={() => setViewType('columns')}
+                  onSuccess={() => {
+                    setViewType('preview');
+                    if (previewData) loadDataPreview();
+                  }}
+                />
+              )}
+
+              {viewType === 'query-form' && selectedTable && columns && columns.length > 0 && (
+                <TableQueryForm
+                  schema={selectedTable.schema}
+                  tableName={selectedTable.name}
+                  columns={columns}
+                  onClose={() => setViewType('columns')}
+                />
+              )}
             </div>
           </div>
         ) : (
@@ -968,6 +1151,156 @@ WHERE ${primaryKeyCol.column_name} = ?;
               </p>
             </div>
           </div>
+        )}
+
+        {/* Edit Column Modal */}
+        {editColumnModal.open && editColumnModal.column && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="w-full max-w-md rounded-xl bg-white shadow-2xl dark:bg-gray-800">
+              <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">Edit Column</h3>
+                <button
+                  onClick={() => setEditColumnModal({open: false, column: null})}
+                  className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  <XCircle className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="p-6">
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Current Column Name
+                    </label>
+                    <input
+                      type="text"
+                      value={editColumnModal.column.column_name}
+                      disabled
+                      className="w-full rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      New Column Name
+                    </label>
+                    <input
+                      type="text"
+                      id="new-column-name"
+                      placeholder="Enter new column name"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    />
+                  </div>
+                  <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-3 dark:border-yellow-800 dark:bg-yellow-900/20">
+                    <p className="text-xs text-yellow-700 dark:text-yellow-400">
+                      <strong>Note:</strong> Column renaming in CrateDB requires recreating the table. Consider the impact on your application.
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-6 flex gap-2">
+                  <button
+                    onClick={() => setEditColumnModal({open: false, column: null})}
+                    className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      const newName = (document.getElementById('new-column-name') as HTMLInputElement)?.value;
+                      if (newName && editColumnModal.column && newName !== editColumnModal.column.column_name) {
+                        const sql = `ALTER TABLE "${selectedTable?.schema}"."${selectedTable?.name}" RENAME COLUMN "${editColumnModal.column.column_name}" TO "${newName}"`;
+                        copyToClipboard(sql, 'ALTER TABLE SQL');
+                        toast.success('SQL Copied', 'Execute this SQL in the Query Editor to rename the column');
+                      }
+                      setEditColumnModal({open: false, column: null});
+                    }}
+                    className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+                  >
+                    Copy SQL
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Column Modal */}
+        {deleteColumnModal.open && deleteColumnModal.column && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="w-full max-w-md rounded-xl bg-white shadow-2xl dark:bg-gray-800">
+              <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+                <h3 className="text-lg font-bold text-red-600 dark:text-red-400">Delete Column</h3>
+                <button
+                  onClick={() => setDeleteColumnModal({open: false, column: null})}
+                  className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  <XCircle className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="p-6">
+                <div className="space-y-4">
+                  <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+                    <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-semibold text-red-900 dark:text-red-100">
+                        Destructive Operation
+                      </p>
+                      <p className="mt-1 text-xs text-red-700 dark:text-red-300">
+                        Deleting a column will permanently remove all data in that column. This action cannot be undone.
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Column to Delete
+                    </label>
+                    <div className="rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 dark:border-gray-600 dark:bg-gray-700">
+                      <code className="text-sm font-mono text-gray-900 dark:text-white">
+                        {deleteColumnModal.column.column_name}
+                      </code>
+                      <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
+                        ({deleteColumnModal.column.data_type})
+                      </span>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-3 dark:border-yellow-800 dark:bg-yellow-900/20">
+                    <p className="text-xs text-yellow-700 dark:text-yellow-400">
+                      <strong>Note:</strong> In CrateDB, ALTER TABLE DROP COLUMN may have limitations. Verify compatibility before executing.
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-6 flex gap-2">
+                  <button
+                    onClick={() => setDeleteColumnModal({open: false, column: null})}
+                    className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      const sql = `ALTER TABLE "${selectedTable?.schema}"."${selectedTable?.name}" DROP COLUMN "${deleteColumnModal.column?.column_name}"`;
+                      copyToClipboard(sql, 'DROP COLUMN SQL');
+                      toast.success('SQL Copied', 'Execute this SQL in the Query Editor to delete the column');
+                      setDeleteColumnModal({open: false, column: null});
+                    }}
+                    className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600"
+                  >
+                    Copy SQL
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Export Modal */}
+        {showExportModal && previewData && previewData.rows && selectedTable && (
+          <TableExporter
+            schema={selectedTable.schema}
+            tableName={selectedTable.name}
+            columns={previewData.cols}
+            rows={previewData.rows}
+            onClose={() => setShowExportModal(false)}
+          />
         )}
       </div>
     </div>

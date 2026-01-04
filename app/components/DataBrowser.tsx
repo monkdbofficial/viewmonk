@@ -1,8 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useActiveConnection } from '../lib/monkdb-context';
 import { useSchemas, useTables } from '../lib/monkdb-hooks';
+import ConnectionPrompt from './common/ConnectionPrompt';
+import Select from './ui/Select';
 import { Loader2, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface TableData {
@@ -12,6 +15,7 @@ interface TableData {
 }
 
 export default function DataBrowser() {
+  const router = useRouter();
   const activeConnection = useActiveConnection();
   const { data: schemas, loading: schemasLoading } = useSchemas();
   const [selectedSchema, setSelectedSchema] = useState<string>('');
@@ -24,6 +28,18 @@ export default function DataBrowser() {
   const [error, setError] = useState<string>('');
 
   const { data: tables, loading: tablesLoading } = useTables(selectedSchema);
+
+  // CRITICAL: Guard against no connection - enterprise-grade connection protection
+  if (!activeConnection) {
+    return (
+      <ConnectionPrompt
+        onConnect={() => router.push('/connections')}
+        title="No Database Connection"
+        message="Please connect to a MonkDB database to browse data."
+        buttonText="Go to Connections"
+      />
+    );
+  }
 
   // Set default schema when schemas load
   useEffect(() => {
@@ -74,20 +90,6 @@ export default function DataBrowser() {
     fetchTableData();
   }, [activeConnection, selectedSchema, selectedTable, currentPage, pageSize]);
 
-  if (!activeConnection) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white">No Active Connection</h3>
-          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-            Please connect to a MonkDB instance to browse data.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   if (schemasLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -107,21 +109,22 @@ export default function DataBrowser() {
       {/* Schemas & Tables List */}
       <div className="w-64 space-y-2">
         <div className="mb-4">
-          <select
+          <Select
             value={selectedSchema}
             onChange={(e) => {
               setSelectedSchema(e.target.value);
               setSelectedTable('');
               setCurrentPage(1);
             }}
-            className="mb-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+            className="mb-2 font-semibold"
+            fullWidth
           >
             {schemas?.map((schema) => (
               <option key={schema} value={schema}>
                 {schema}
               </option>
             ))}
-          </select>
+          </Select>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
             Tables
           </h2>

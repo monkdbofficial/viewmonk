@@ -2,19 +2,21 @@
 
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { Database, HardDrive, Table, Activity, AlertCircle, Loader2, LayoutDashboard, CheckCircle, AlertTriangle, RefreshCw } from 'lucide-react';
-import { useDatabaseStats, useClusterHealth, useNodes } from '../lib/monkdb-hooks';
+import { Database, HardDrive, Table, Activity, AlertCircle, Loader2, LayoutDashboard, CheckCircle, AlertTriangle, RefreshCw, TrendingUp } from 'lucide-react';
+import { useDatabaseStats, useClusterHealth, useNodes, useReadWriteRatio } from '../lib/monkdb-hooks';
 import { useActiveConnection } from '../lib/monkdb-context';
 
 const PerformanceChart = dynamic(() => import('./charts/PerformanceChart'), { ssr: false });
 const CollectionDistribution = dynamic(() => import('./charts/CollectionDistribution'), { ssr: false });
 const QueryPerformanceChart = dynamic(() => import('./charts/QueryPerformanceChart'), { ssr: false });
+const SavedViews = dynamic(() => import('./SavedViews'), { ssr: false });
 
 export default function Dashboard() {
   const activeConnection = useActiveConnection();
   const { data: dbStats, loading: statsLoading, error: statsError, refetch: refetchStats } = useDatabaseStats();
   const { data: clusterHealth, loading: healthLoading, error: healthError, refetch: refetchHealth } = useClusterHealth();
   const { data: nodes, loading: nodesLoading, error: nodesError, refetch: refetchNodes } = useNodes();
+  const { data: readWriteRatio, loading: ratioLoading, error: ratioError, refetch: refetchRatio } = useReadWriteRatio();
 
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
@@ -25,7 +27,8 @@ export default function Dashboard() {
     await Promise.all([
       refetchStats(),
       refetchHealth(),
-      refetchNodes()
+      refetchNodes(),
+      refetchRatio()
     ]);
     setLastRefresh(new Date());
     setIsRefreshing(false);
@@ -39,13 +42,14 @@ export default function Dashboard() {
       await Promise.all([
         refetchStats(),
         refetchHealth(),
-        refetchNodes()
+        refetchNodes(),
+        refetchRatio()
       ]);
       setLastRefresh(new Date());
     }, 10000);
 
     return () => clearInterval(interval);
-  }, [activeConnection, autoRefresh, refetchStats, refetchHealth, refetchNodes]);
+  }, [activeConnection, autoRefresh, refetchStats, refetchHealth, refetchNodes, refetchRatio]);
 
   // Format bytes to readable size
   const formatBytes = (bytes: number): string => {
@@ -106,6 +110,18 @@ export default function Dashboard() {
       color: 'orange' as const,
       loading: healthLoading,
       error: healthError,
+    },
+    {
+      label: 'Read/Write Ratio',
+      value: readWriteRatio ? readWriteRatio.ratio : '-',
+      change: readWriteRatio
+        ? `${readWriteRatio.readOps} reads, ${readWriteRatio.writeOps} writes`
+        : 'Last hour',
+      trend: 'up',
+      icon: TrendingUp,
+      color: 'indigo' as const,
+      loading: ratioLoading,
+      error: ratioError,
     },
   ];
 
@@ -218,6 +234,7 @@ export default function Dashboard() {
             green: 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400',
             purple: 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400',
             orange: 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400',
+            indigo: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400',
           };
 
           return (
@@ -387,6 +404,9 @@ export default function Dashboard() {
         </h3>
         <QueryPerformanceChart />
       </div>
+
+      {/* Recent Activity - Saved Views */}
+      <SavedViews />
         </div>
       </div>
     </div>

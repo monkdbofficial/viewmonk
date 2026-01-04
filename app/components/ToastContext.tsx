@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, ReactNode, useRef } from 'react';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
@@ -38,9 +38,16 @@ export function useToast() {
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const timeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
+    // Clear timeout if it exists
+    const timeout = timeoutsRef.current.get(id);
+    if (timeout) {
+      clearTimeout(timeout);
+      timeoutsRef.current.delete(id);
+    }
   }, []);
 
   const addToast = useCallback((toast: Omit<Toast, 'id'>) => {
@@ -52,11 +59,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     // Auto-dismiss after duration
     const duration = toast.duration || 5000;
     if (duration > 0) {
-      setTimeout(() => {
-        removeToast(id);
+      const timeout = setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+        timeoutsRef.current.delete(id);
       }, duration);
+      timeoutsRef.current.set(id, timeout);
     }
-  }, [removeToast]);
+  }, []); // No dependencies - uses functional setState
 
   const success = useCallback((title: string, message?: string, duration?: number) => {
     addToast({ type: 'success', title, message, duration });

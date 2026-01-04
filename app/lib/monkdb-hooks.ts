@@ -13,6 +13,16 @@ export interface UseQueryResult<T> {
 
 /**
  * Hook for executing custom SQL queries
+ *
+ * @param query - SQL query string to execute
+ * @param args - Optional query parameters
+ * @param options - Optional configuration (enabled flag)
+ * @returns Query result with data, loading state, error, and refetch function
+ *
+ * @example
+ * ```tsx
+ * const { data, loading, error, refetch } = useMonkDBQuery('SELECT * FROM users');
+ * ```
  */
 export function useMonkDBQuery<T = any>(
   query: string,
@@ -25,7 +35,16 @@ export function useMonkDBQuery<T = any>(
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    if (!client || (options?.enabled === false)) {
+    // CRITICAL: Guard against no connection
+    if (!client) {
+      setError('No active database connection. Please connect to a database.');
+      setLoading(false);
+      setData(null);
+      return;
+    }
+
+    // Respect enabled flag
+    if (options?.enabled === false) {
       return;
     }
 
@@ -52,6 +71,8 @@ export function useMonkDBQuery<T = any>(
 
 /**
  * Hook for fetching cluster nodes
+ *
+ * @returns Cluster node information with loading state and error handling
  */
 export function useNodes(): UseQueryResult<NodeInfo[]> {
   const client = useMonkDBClient();
@@ -60,7 +81,13 @@ export function useNodes(): UseQueryResult<NodeInfo[]> {
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    if (!client) return;
+    // CRITICAL: Guard against no connection
+    if (!client) {
+      setError('No active database connection. Please connect to a database.');
+      setLoading(false);
+      setData(null);
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -85,6 +112,8 @@ export function useNodes(): UseQueryResult<NodeInfo[]> {
 
 /**
  * Hook for fetching cluster uptime
+ *
+ * @returns Cluster uptime in milliseconds with loading state and error handling
  */
 export function useClusterUptime(): UseQueryResult<number> {
   const client = useMonkDBClient();
@@ -93,7 +122,13 @@ export function useClusterUptime(): UseQueryResult<number> {
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    if (!client) return;
+    // CRITICAL: Guard against no connection
+    if (!client) {
+      setError('No active database connection. Please connect to a database.');
+      setLoading(false);
+      setData(null);
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -118,6 +153,9 @@ export function useClusterUptime(): UseQueryResult<number> {
 
 /**
  * Hook for fetching tables in a schema
+ *
+ * @param schemaName - Schema name to fetch tables from (defaults to 'doc')
+ * @returns Table metadata with loading state and error handling
  */
 export function useTables(schemaName: string = 'doc'): UseQueryResult<TableMetadata[]> {
   const client = useMonkDBClient();
@@ -126,7 +164,13 @@ export function useTables(schemaName: string = 'doc'): UseQueryResult<TableMetad
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    if (!client) return;
+    // CRITICAL: Guard against no connection
+    if (!client) {
+      setError('No active database connection. Please connect to a database.');
+      setLoading(false);
+      setData(null);
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -151,6 +195,8 @@ export function useTables(schemaName: string = 'doc'): UseQueryResult<TableMetad
 
 /**
  * Hook for fetching all schemas
+ *
+ * @returns List of schema names with loading state and error handling
  */
 export function useSchemas(): UseQueryResult<string[]> {
   const client = useMonkDBClient();
@@ -159,7 +205,13 @@ export function useSchemas(): UseQueryResult<string[]> {
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    if (!client) return;
+    // CRITICAL: Guard against no connection
+    if (!client) {
+      setError('No active database connection. Please connect to a database.');
+      setLoading(false);
+      setData(null);
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -184,6 +236,10 @@ export function useSchemas(): UseQueryResult<string[]> {
 
 /**
  * Hook for fetching table columns
+ *
+ * @param schemaName - Schema name containing the table
+ * @param tableName - Table name to fetch columns from
+ * @returns Column metadata with loading state and error handling
  */
 export function useTableColumns(
   schemaName: string,
@@ -195,7 +251,21 @@ export function useTableColumns(
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    if (!client || !schemaName || !tableName) return;
+    // CRITICAL: Guard against no connection
+    if (!client) {
+      setError('No active database connection. Please connect to a database.');
+      setLoading(false);
+      setData(null);
+      return;
+    }
+
+    // Validate required parameters
+    if (!schemaName || !tableName) {
+      setError('Schema name and table name are required.');
+      setLoading(false);
+      setData(null);
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -220,6 +290,10 @@ export function useTableColumns(
 
 /**
  * Hook for fetching complete table tree
+ *
+ * @param schemaName - Schema name containing the table
+ * @param tableName - Table name to fetch tree structure from
+ * @returns Table tree nodes with loading state and error handling
  */
 export function useTableTree(
   schemaName: string,
@@ -231,7 +305,21 @@ export function useTableTree(
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    if (!client || !schemaName || !tableName) return;
+    // CRITICAL: Guard against no connection
+    if (!client) {
+      setError('No active database connection. Please connect to a database.');
+      setLoading(false);
+      setData(null);
+      return;
+    }
+
+    // Validate required parameters
+    if (!schemaName || !tableName) {
+      setError('Schema name and table name are required.');
+      setLoading(false);
+      setData(null);
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -256,6 +344,8 @@ export function useTableTree(
 
 /**
  * Hook for fetching database statistics
+ *
+ * @returns Database statistics including total tables, schemas, and size
  */
 export function useDatabaseStats(): UseQueryResult<{
   totalTables: number;
@@ -272,7 +362,13 @@ export function useDatabaseStats(): UseQueryResult<{
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    if (!client) return;
+    // CRITICAL: Guard against no connection
+    if (!client) {
+      setError('No active database connection. Please connect to a database.');
+      setLoading(false);
+      setData(null);
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -296,7 +392,9 @@ export function useDatabaseStats(): UseQueryResult<{
 }
 
 /**
- * Hook for fetching cluster health
+ * Hook for fetching cluster health information
+ *
+ * @returns Cluster health metrics including node count, healthy nodes, and uptime
  */
 export function useClusterHealth(): UseQueryResult<{
   nodeCount: number;
@@ -313,7 +411,13 @@ export function useClusterHealth(): UseQueryResult<{
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    if (!client) return;
+    // CRITICAL: Guard against no connection
+    if (!client) {
+      setError('No active database connection. Please connect to a database.');
+      setLoading(false);
+      setData(null);
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -323,6 +427,87 @@ export function useClusterHealth(): UseQueryResult<{
       setData(health);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch health');
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [client]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  return { data, loading, error, refetch: fetchData };
+}
+
+/**
+ * Enterprise-grade hook for Read/Write ratio metrics
+ *
+ * Analyzes query patterns from the last hour to calculate the ratio of
+ * read operations (SELECT) to write operations (INSERT, UPDATE, DELETE).
+ * Provides insights into database workload characteristics.
+ *
+ * @returns Read/Write statistics with ratio calculation
+ *
+ * @example
+ * ```tsx
+ * const { data, loading, error, refetch } = useReadWriteRatio();
+ * // data = { readOps: 150, writeOps: 50, ratio: "3.0:1" }
+ * ```
+ */
+export function useReadWriteRatio(): UseQueryResult<{
+  readOps: number;
+  writeOps: number;
+  ratio: string;
+}> {
+  const client = useMonkDBClient();
+  const [data, setData] = useState<{ readOps: number; writeOps: number; ratio: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    // CRITICAL: Guard against no connection - enterprise-grade connection protection
+    if (!client) {
+      setError('No active database connection. Please connect to a database.');
+      setLoading(false);
+      setData(null);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await client.query(`
+        SELECT
+          SUM(CASE WHEN stmt LIKE 'SELECT%' THEN 1 ELSE 0 END) as read_ops,
+          SUM(CASE WHEN stmt LIKE 'INSERT%' OR stmt LIKE 'UPDATE%' OR stmt LIKE 'DELETE%' THEN 1 ELSE 0 END) as write_ops
+        FROM sys.jobs_log
+        WHERE ended > now() - interval '1 hour'
+      `);
+
+      if (result.rows && result.rows.length > 0) {
+        const readOps = Number(result.rows[0][0]) || 0;
+        const writeOps = Number(result.rows[0][1]) || 0;
+
+        // Calculate ratio (handle division by zero)
+        let ratio = '0:0';
+        if (writeOps === 0 && readOps === 0) {
+          ratio = '0:0';
+        } else if (writeOps === 0) {
+          ratio = `${readOps}:0`;
+        } else {
+          const ratioValue = (readOps / writeOps).toFixed(1);
+          ratio = `${ratioValue}:1`;
+        }
+
+        setData({ readOps, writeOps, ratio });
+      } else {
+        setData({ readOps: 0, writeOps: 0, ratio: '0:0' });
+      }
+    } catch (err) {
+      console.error('[useReadWriteRatio] Error fetching read/write ratio:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch read/write ratio');
       setData(null);
     } finally {
       setLoading(false);

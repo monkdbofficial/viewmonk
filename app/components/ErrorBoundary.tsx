@@ -11,19 +11,40 @@ interface State {
   hasError: boolean;
   error: Error | null;
   errorInfo: ErrorInfo | null;
+  errorCategory: 'connection' | 'query' | 'network' | 'component' | 'unknown';
+  isCritical: boolean;
+  autoRecoveryAttempted: boolean;
 }
 
 /**
- * Error Boundary component for graceful error handling
- * Catches React component errors and displays a fallback UI
+ * Enterprise-grade Error Boundary component with auto-recovery
+ *
+ * Features:
+ * - Automatic error categorization (connection, query, network, component)
+ * - Auto-recovery for non-critical errors (3-second timeout)
+ * - Detailed error logging with custom events
+ * - User-friendly error messages based on error type
+ * - Component stack trace for debugging
+ *
+ * @example
+ * ```tsx
+ * <ErrorBoundary>
+ *   <App />
+ * </ErrorBoundary>
+ * ```
  */
 export default class ErrorBoundary extends Component<Props, State> {
+  private autoRecoveryTimeout: NodeJS.Timeout | null = null;
+
   constructor(props: Props) {
     super(props);
     this.state = {
       hasError: false,
       error: null,
       errorInfo: null,
+      errorCategory: 'unknown',
+      isCritical: false,
+      autoRecoveryAttempted: false,
     };
   }
 
@@ -32,37 +53,163 @@ export default class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
+  /**
+   * Categorize errors for better handling and user messaging
+   */
+  private categorizeError(error: Error): { category: State['errorCategory']; isCritical: boolean } {
+    const errorString = error.toString().toLowerCase();
+    const errorMessage = error.message?.toLowerCase() || '';
+
+    // Connection errors - usually recoverable
+    if (errorString.includes('connection') ||
+        errorString.includes('econnrefused') ||
+        errorString.includes('network') ||
+        errorMessage.includes('no active database connection')) {
+      return { category: 'connection', isCritical: false };
+    }
+
+    // Query errors - usually user input issues, not critical
+    if (errorString.includes('query') ||
+        errorString.includes('sql') ||
+        errorString.includes('syntax')) {
+      return { category: 'query', isCritical: false };
+    }
+
+    // Network errors - usually temporary
+    if (errorString.includes('fetch') ||
+        errorString.includes('timeout') ||
+        errorString.includes('network')) {
+      return { category: 'network', isCritical: false };
+    }
+
+    // Component errors - check if critical
+    const isCritical = errorString.includes('fatal') ||
+                       errorString.includes('security') ||
+                       errorString.includes('auth') ||
+                       errorString.includes('permission');
+
+    return { category: 'component', isCritical };
+  }
+
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     // Log error details for debugging
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    console.error('[ErrorBoundary] Caught an error:', error, errorInfo);
+
+    // Categorize the error
+    const { category, isCritical } = this.categorizeError(error);
 
     // Store error info in state
     this.setState({
       error,
       errorInfo,
+      errorCategory: category,
+      isCritical,
     });
 
-    // Log to monitoring/telemetry if available
+    // Auto-recovery logic for non-critical errors
+    if (!isCritical && !this.state.autoRecoveryAttempted) {
+      console.log(`[ErrorBoundary] Non-critical ${category} error detected. Auto-recovering in 3 seconds...`);
+      this.autoRecoveryTimeout = setTimeout(() => {
+        console.log('[ErrorBoundary] Auto-recovery triggered');
+        this.setState({
+          autoRecoveryAttempted: true,
+        });
+        this.handleReset();
+      }, 3000);
+    }
+
+    // Dispatch custom error event with enhanced details
     if (typeof window !== 'undefined') {
-      // Could integrate with error tracking service here
       const errorEvent = new CustomEvent('app-error', {
         detail: {
           error: error.toString(),
+          message: error.message,
+          category,
+          isCritical,
           componentStack: errorInfo.componentStack,
           timestamp: new Date().toISOString(),
+          autoRecoveryScheduled: !isCritical,
         },
       });
       window.dispatchEvent(errorEvent);
     }
   }
 
+  componentWillUnmount() {
+    // Clean up auto-recovery timeout
+    if (this.autoRecoveryTimeout) {
+      clearTimeout(this.autoRecoveryTimeout);
+    }
+  }
+
   handleReset = () => {
+    // Clear auto-recovery timeout if exists
+    if (this.autoRecoveryTimeout) {
+      clearTimeout(this.autoRecoveryTimeout);
+      this.autoRecoveryTimeout = null;
+    }
+
     this.setState({
       hasError: false,
       error: null,
       errorInfo: null,
+      errorCategory: 'unknown',
+      isCritical: false,
+      autoRecoveryAttempted: false,
     });
   };
+
+  /**
+   * Get user-friendly error message based on category
+   */
+  private getErrorMessage(): { title: string; description: string; suggestion: string } {
+    const { errorCategory, isCritical } = this.state;
+
+    switch (errorCategory) {
+      case 'connection':
+        return {
+          title: 'Database Connection Issue',
+          description: 'Unable to connect to the database. This usually happens when the database is offline or unreachable.',
+          suggestion: isCritical
+            ? 'Please check your database connection settings and try again.'
+            : 'Automatically recovering in 3 seconds...',
+        };
+      case 'query':
+        return {
+          title: 'Query Error',
+          description: 'There was an issue executing your database query. This is usually caused by invalid SQL syntax.',
+          suggestion: isCritical
+            ? 'Please check your query and try again.'
+            : 'Automatically recovering in 3 seconds...',
+        };
+      case 'network':
+        return {
+          title: 'Network Error',
+          description: 'A network error occurred while communicating with the database.',
+          suggestion: isCritical
+            ? 'Please check your internet connection and try again.'
+            : 'Automatically recovering in 3 seconds...',
+        };
+      case 'component':
+        return {
+          title: isCritical ? 'Critical Application Error' : 'Component Error',
+          description: isCritical
+            ? 'A critical error occurred that requires your attention.'
+            : 'A component error occurred but the application should recover automatically.',
+          suggestion: isCritical
+            ? 'Please reload the page or contact support if this persists.'
+            : 'Automatically recovering in 3 seconds...',
+        };
+      default:
+        return {
+          title: 'Unexpected Error',
+          description: 'An unexpected error occurred in the application.',
+          suggestion: isCritical
+            ? 'Please try again or contact support if the problem persists.'
+            : 'Attempting automatic recovery...',
+        };
+    }
+  }
 
   render() {
     if (this.state.hasError) {
@@ -71,14 +218,33 @@ export default class ErrorBoundary extends Component<Props, State> {
         return this.props.fallback;
       }
 
-      // Default error UI
+      const { title, description, suggestion } = this.getErrorMessage();
+      const { isCritical, errorCategory } = this.state;
+
+      // Color scheme based on error severity
+      const colorScheme = isCritical
+        ? {
+            border: 'border-red-200 dark:border-red-800',
+            iconBg: 'bg-red-100 dark:bg-red-900/20',
+            iconColor: 'text-red-600 dark:text-red-400',
+            badge: 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400',
+          }
+        : {
+            border: 'border-yellow-200 dark:border-yellow-800',
+            iconBg: 'bg-yellow-100 dark:bg-yellow-900/20',
+            iconColor: 'text-yellow-600 dark:text-yellow-400',
+            badge: 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400',
+          };
+
+      // Default error UI with enhanced messaging
       return (
         <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 dark:bg-gray-900">
-          <div className="w-full max-w-md rounded-lg border border-red-200 bg-white p-6 shadow-lg dark:border-red-800 dark:bg-gray-800">
+          <div className={`w-full max-w-md rounded-lg border ${colorScheme.border} bg-white p-6 shadow-lg dark:bg-gray-800`}>
+            {/* Header with Icon */}
             <div className="mb-4 flex items-center gap-3">
-              <div className="rounded-full bg-red-100 p-2 dark:bg-red-900/20">
+              <div className={`rounded-full ${colorScheme.iconBg} p-2`}>
                 <svg
-                  className="h-6 w-6 text-red-600 dark:text-red-400"
+                  className={`h-6 w-6 ${colorScheme.iconColor}`}
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -91,13 +257,26 @@ export default class ErrorBoundary extends Component<Props, State> {
                   />
                 </svg>
               </div>
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                Something went wrong
-              </h2>
+              <div className="flex-1">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                  {title}
+                </h2>
+                {/* Error Category Badge */}
+                <span className={`mt-1 inline-block rounded px-2 py-0.5 text-xs font-medium ${colorScheme.badge}`}>
+                  {errorCategory.toUpperCase()}
+                  {isCritical && ' - CRITICAL'}
+                </span>
+              </div>
             </div>
 
-            <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
-              An unexpected error occurred in the application. Please try again or contact support if the problem persists.
+            {/* Description */}
+            <p className="mb-2 text-sm text-gray-600 dark:text-gray-400">
+              {description}
+            </p>
+
+            {/* Suggestion/Auto-recovery message */}
+            <p className={`mb-4 text-sm font-medium ${isCritical ? 'text-red-600 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
+              {suggestion}
             </p>
 
             {this.state.error && (

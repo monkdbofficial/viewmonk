@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useActiveConnection } from '../lib/monkdb-context';
 import { useToast } from './ToastContext';
-import { AlertCircle, Code, CheckCircle, Copy, Check, AlertTriangle } from 'lucide-react';
+import { AlertCircle, Code, CheckCircle, Copy, Check, AlertTriangle, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
@@ -15,11 +15,20 @@ export default function APIPlayground() {
   const [headers, setHeaders] = useState('{\n  "Content-Type": "application/json"\n}');
   const [body, setBody] = useState('{\n  "stmt": "SELECT * FROM your_schema.your_table WHERE id = ?",\n  "args": [2]\n}');
   const [response, setResponse] = useState('');
+  const [responseData, setResponseData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [responseTime, setResponseTime] = useState(0);
   const [statusCode, setStatusCode] = useState(0);
   const [error, setError] = useState('');
   const [copiedCurl, setCopiedCurl] = useState(false);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [resultsPerPage, setResultsPerPage] = useState(50);
+
+  // Response metadata
+  const [responseSize, setResponseSize] = useState(0);
+  const [responseHeaders, setResponseHeaders] = useState<Record<string, string>>({});
 
   const endpoints = [
     {
@@ -85,9 +94,20 @@ export default function APIPlayground() {
 
       const endTime = performance.now();
       const time = Math.round(endTime - startTime);
+      const responseJson = JSON.stringify(result, null, 2);
+      const size = new Blob([responseJson]).size;
+
       setResponseTime(time);
       setStatusCode(200);
-      setResponse(JSON.stringify(result, null, 2));
+      setResponse(responseJson);
+      setResponseData(result);
+      setResponseSize(size);
+      setResponseHeaders({
+        'content-type': 'application/json',
+        'x-response-time': `${time}ms`,
+        'content-length': size.toString(),
+      });
+      setCurrentPage(1); // Reset pagination on new results
       toast.success('Request Successful', `Response received in ${time}ms`);
     } catch (err) {
       const endTime = performance.now();
@@ -135,6 +155,42 @@ export default function APIPlayground() {
     }
   };
 
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  };
+
+  const handleDownloadResponse = () => {
+    const blob = new Blob([response], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `monkdb-response-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success('Downloaded', 'Response saved to file');
+  };
+
+  // Paginate response rows if responseData has rows
+  const paginatedRows = useMemo(() => {
+    if (!responseData || !responseData.rows || !Array.isArray(responseData.rows)) {
+      return null;
+    }
+    const startIdx = (currentPage - 1) * resultsPerPage;
+    const endIdx = startIdx + resultsPerPage;
+    return responseData.rows.slice(startIdx, endIdx);
+  }, [responseData, currentPage, resultsPerPage]);
+
+  const totalRows = responseData?.rows?.length || 0;
+  const totalPages = Math.ceil(totalRows / resultsPerPage);
+  const startRow = totalRows > 0 ? (currentPage - 1) * resultsPerPage + 1 : 0;
+  const endRow = Math.min(currentPage * resultsPerPage, totalRows);
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Fixed Header */}
@@ -168,6 +224,61 @@ export default function APIPlayground() {
       {/* Scrollable Content */}
       <div className="flex-1 overflow-auto">
         <div className="space-y-4 p-4">
+          {/* Security Warnings */}
+          {activeConnection && (
+            <div className="space-y-3">
+              {/* Default credentials warning */}
+              {(activeConnection.config.username === 'crate' || !activeConnection.config.password) && (
+                <div className="flex items-start gap-3 rounded-lg border-2 border-orange-200 bg-orange-50 p-4 dark:border-orange-800 dark:bg-orange-900/20">
+                  <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-orange-600 dark:text-orange-400" />
+                  <div className="flex-1">
+                    <h3 className="text-sm font-bold text-orange-900 dark:text-orange-300">
+                      Security Warning: Default Credentials
+                    </h3>
+                    <p className="mt-1 text-xs text-orange-800 dark:text-orange-200">
+                      You are using default or empty credentials. This is insecure for production environments.
+                      Always use strong authentication in production.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Public API access warning */}
+              {typeof window !== 'undefined' && !window.location.hostname.match(/^(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/) && (
+                <div className="flex items-start gap-3 rounded-lg border-2 border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+                  <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600 dark:text-red-400" />
+                  <div className="flex-1">
+                    <h3 className="text-sm font-bold text-red-900 dark:text-red-300">
+                      Public Network Warning
+                    </h3>
+                    <p className="mt-1 text-xs text-red-800 dark:text-red-200">
+                      You appear to be accessing this from a public network. Ensure your MonkDB instance is properly secured
+                      with authentication and firewall rules before exposing it publicly.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Authentication status */}
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/50">
+                <div className="grid grid-cols-2 gap-4 text-xs">
+                  <div>
+                    <span className="font-medium text-gray-600 dark:text-gray-400">Host:</span>
+                    <span className="ml-2 text-gray-900 dark:text-white">
+                      {activeConnection.config.host}:{activeConnection.config.port}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-600 dark:text-gray-400">Auth:</span>
+                    <span className="ml-2 text-gray-900 dark:text-white">
+                      {activeConnection.config.username ? `User: ${activeConnection.config.username}` : 'No authentication'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Setup Instructions */}
           <div className="rounded-lg border-2 border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
             <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-blue-900 dark:text-blue-300">
@@ -353,16 +464,110 @@ export default function APIPlayground() {
             )}
           </div>
 
+          {/* Response Metadata */}
+          {response && (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/50">
+              <div className="grid grid-cols-2 gap-4 text-xs">
+                <div>
+                  <span className="font-medium text-gray-600 dark:text-gray-400">Response Size:</span>
+                  <span className="ml-2 text-gray-900 dark:text-white">
+                    {formatFileSize(responseSize)}
+                  </span>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-600 dark:text-gray-400">Content-Type:</span>
+                  <span className="ml-2 text-gray-900 dark:text-white">
+                    {responseHeaders['content-type'] || 'application/json'}
+                  </span>
+                </div>
+                {totalRows > 0 && (
+                  <div className="col-span-2">
+                    <span className="font-medium text-gray-600 dark:text-gray-400">Total Rows:</span>
+                    <span className="ml-2 text-gray-900 dark:text-white">
+                      {totalRows.toLocaleString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Pagination Controls */}
+          {totalRows > resultsPerPage && (
+            <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-2 dark:border-gray-700 dark:bg-gray-800">
+              <div className="flex items-center gap-3 text-xs text-gray-600 dark:text-gray-400">
+                <span>
+                  Showing {startRow}-{endRow} of {totalRows.toLocaleString()} results
+                </span>
+                <select
+                  value={resultsPerPage}
+                  onChange={(e) => {
+                    setResultsPerPage(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="rounded border border-gray-300 bg-white px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                >
+                  <option value={25}>25 per page</option>
+                  <option value={50}>50 per page</option>
+                  <option value={100}>100 per page</option>
+                  <option value={200}>200 per page</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="flex items-center gap-1 rounded border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                >
+                  <ChevronLeft className="h-3 w-3" />
+                  Previous
+                </button>
+                <span className="text-xs text-gray-600 dark:text-gray-400">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="flex items-center gap-1 rounded border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                >
+                  Next
+                  <ChevronRight className="h-3 w-3" />
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-            <div className="border-b border-gray-200 px-4 py-2 dark:border-gray-700">
+            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-2 dark:border-gray-700">
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                 Response Body
               </span>
+              {response && (
+                <button
+                  onClick={handleDownloadResponse}
+                  className="flex items-center gap-1 rounded bg-gray-200 px-2 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                >
+                  <Download className="h-3 w-3" />
+                  Download
+                </button>
+              )}
             </div>
             <div className="p-4">
               {response ? (
                 <pre className="overflow-x-auto text-xs text-gray-900 dark:text-gray-100">
-                  {response}
+                  {paginatedRows ?
+                    JSON.stringify({
+                      ...responseData,
+                      rows: paginatedRows,
+                      _pagination: {
+                        page: currentPage,
+                        per_page: resultsPerPage,
+                        total_rows: totalRows,
+                        showing: `${startRow}-${endRow} of ${totalRows}`
+                      }
+                    }, null, 2)
+                    : response}
                 </pre>
               ) : (
                 <p className="text-center text-sm text-gray-500 dark:text-gray-400">

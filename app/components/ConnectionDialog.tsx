@@ -3,8 +3,9 @@
 import { useState } from 'react';
 import { MonkDBClient } from '../lib/monkdb-client';
 import { isDesktopApp } from '../lib/tauri-utils';
-import { Loader2, CheckCircle, XCircle, AlertCircle, ExternalLink, Database } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, AlertCircle, ExternalLink, Database, Eye, EyeOff } from 'lucide-react';
 import DebugInfo from './DebugInfo';
+import Select from './ui/Select';
 
 interface ConnectionDialogProps {
   isOpen: boolean;
@@ -32,7 +33,6 @@ export default function ConnectionDialog({
   initialData,
   mode = 'add'
 }: ConnectionDialogProps) {
-  const [activeTab, setActiveTab] = useState<'main' | 'advanced' | 'driver'>('main');
   const [connectBy, setConnectBy] = useState<'host' | 'url'>('host');
   const [formData, setFormData] = useState<ConnectionFormData>(
     initialData || {
@@ -49,6 +49,7 @@ export default function ConnectionDialog({
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
   const [monkDBStatus, setMonkDBStatus] = useState<'checking' | 'online' | 'offline' | 'unknown'>('unknown');
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,14 +158,28 @@ export default function ConnectionDialog({
               MonkDB connection settings
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              className="h-3 w-3 rounded-full bg-red-500 hover:bg-red-600"
-              onClick={onClose}
-            />
-            <button className="h-3 w-3 rounded-full bg-yellow-500 hover:bg-yellow-600" />
-            <button className="h-3 w-3 rounded-full bg-green-500 hover:bg-green-600" />
-          </div>
+          {/* Close Button - Enterprise Grade */}
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:hover:bg-gray-700 dark:hover:text-gray-300"
+            aria-label="Close dialog"
+            title="Close"
+          >
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
         </div>
 
         {/* MonkDB Banner */}
@@ -181,45 +196,7 @@ export default function ConnectionDialog({
           <div className="flex flex-1 min-h-0 overflow-y-auto">
             {/* Left Panel - Form */}
             <div className="flex-1 p-6">
-              {/* Tabs */}
-              <div className="mb-6 flex gap-2 border-b border-gray-200 dark:border-gray-700">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('main')}
-                  className={`px-4 py-2 text-sm font-medium ${
-                    activeTab === 'main'
-                      ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
-                      : 'text-gray-600 dark:text-gray-400'
-                  }`}
-                >
-                  Main
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('advanced')}
-                  className={`px-4 py-2 text-sm font-medium ${
-                    activeTab === 'advanced'
-                      ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
-                      : 'text-gray-600 dark:text-gray-400'
-                  }`}
-                >
-                  Advanced
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('driver')}
-                  className={`px-4 py-2 text-sm font-medium ${
-                    activeTab === 'driver'
-                      ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
-                      : 'text-gray-600 dark:text-gray-400'
-                  }`}
-                >
-                  Driver properties
-                </button>
-              </div>
-
-              {activeTab === 'main' && (
-                <div className="space-y-4">
+              <div className="space-y-4">
                   {/* Setup Guide Banner */}
                   <div className={`rounded-lg border p-3 ${
                     monkDBStatus === 'online'
@@ -417,18 +394,16 @@ export default function ConnectionDialog({
 
                     {/* Auth Type */}
                     <div className="mb-4">
-                      <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Authentication:
-                      </label>
-                      <select
+                      <Select
+                        label="Authentication:"
                         value={formData.authType}
                         onChange={(e) => setFormData({ ...formData, authType: e.target.value })}
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                        fullWidth
                       >
                         <option value="Database Native">Database Native</option>
                         <option value="LDAP">LDAP</option>
                         <option value="Kerberos">Kerberos</option>
-                      </select>
+                      </Select>
                     </div>
 
                     {/* Username */}
@@ -446,26 +421,43 @@ export default function ConnectionDialog({
                       />
                     </div>
 
-                    {/* Password */}
+                    {/* Password with Show/Hide Toggle - Enterprise Grade */}
                     <div className="mb-4">
                       <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                         Password:
                         <span className="ml-2 text-xs text-gray-500">(optional)</span>
                       </label>
                       <div className="flex gap-2">
-                        <input
-                          type="password"
-                          value={formData.password}
-                          onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                          className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                          placeholder="Leave empty for no authentication"
-                        />
+                        <div className="relative flex-1">
+                          <input
+                            type={showPassword ? "text" : "password"}
+                            value={formData.password}
+                            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 pr-10 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                            placeholder="Leave empty for no authentication"
+                            autoComplete="new-password"
+                          />
+                          {/* Password Toggle Button */}
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:text-gray-400 dark:hover:bg-gray-600 dark:hover:text-gray-200"
+                            aria-label={showPassword ? "Hide password" : "Show password"}
+                            title={showPassword ? "Hide password" : "Show password"}
+                          >
+                            {showPassword ? (
+                              <EyeOff className="h-4 w-4" />
+                            ) : (
+                              <Eye className="h-4 w-4" />
+                            )}
+                          </button>
+                        </div>
                         <label className="flex items-center text-sm">
                           <input
                             type="checkbox"
                             checked={formData.savePassword}
                             onChange={(e) => setFormData({ ...formData, savePassword: e.target.checked })}
-                            className="mr-2"
+                            className="mr-2 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700"
                           />
                           <span className="text-gray-700 dark:text-gray-300">Save password</span>
                         </label>
@@ -473,25 +465,6 @@ export default function ConnectionDialog({
                     </div>
                   </div>
                 </div>
-              )}
-
-              {activeTab === 'advanced' && (
-                <div className="space-y-4">
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Advanced connection settings will be available here.
-                  </p>
-                </div>
-              )}
-
-              {activeTab === 'driver' && (
-                <div className="space-y-4">
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900">
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Driver: <span className="font-normal">MonkDB (PostgreSQL Wire Protocol)</span>
-                    </p>
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Right Panel - Info */}
@@ -504,9 +477,9 @@ export default function ConnectionDialog({
                   >
                     + SSH, SSL, ...
                   </button>
-                  <select className="flex-1 rounded border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white">
+                  <Select className="flex-1">
                     <option>No profile</option>
-                  </select>
+                  </Select>
                 </div>
 
                 <div className="mt-6 space-y-3">

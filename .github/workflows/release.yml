@@ -1,0 +1,106 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-tauri:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target universal-apple-darwin --bundles app'
+          - platform: 'windows-latest'
+            args: '--target x86_64-pc-windows-msvc'
+          - platform: 'ubuntu-22.04'
+            args: '--target x86_64-unknown-linux-gnu'
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Install dependencies (Ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'MonkDB Workbench ${{ github.ref_name }}'
+          releaseBody: |
+            ## MonkDB Workbench ${{ github.ref_name }}
+
+            ### Enterprise-Grade Database Management
+
+            #### What's Included:
+            - ✅ Next.js 16.1.1 (latest secure version)
+            - ✅ Enterprise Dashboard with real-time charts
+            - ✅ Advanced Query Editor with Monaco
+            - ✅ Full CRUD operations
+            - ✅ Schema browser and designer
+            - ✅ Docker container management
+            - ✅ Professional dark mode
+
+            #### Downloads:
+            - **macOS**: Universal binary (Intel + Apple Silicon)
+            - **Windows**: x64 installer (MSI + NSIS)
+            - **Linux**: AppImage + Deb package
+
+            #### Installation:
+            - **macOS**: Download .app or .dmg, drag to Applications
+            - **Windows**: Download .msi or .exe installer
+            - **Linux**: Download .AppImage or .deb package
+
+            ---
+            🚀 Built with Tauri 2.9 + Next.js 16 + React 19
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      - name: Create DMG (macOS only)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          chmod +x scripts/create-dmg.sh
+          ./scripts/create-dmg.sh
+
+      - name: Upload DMG artifact (macOS only)
+        if: matrix.platform == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+
+      - name: Upload Windows artifacts
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installers
+          path: |
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe

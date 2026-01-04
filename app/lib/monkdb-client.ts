@@ -208,19 +208,33 @@ export class MonkDBClient {
         throw new Error(`Failed to parse response: ${responseText.substring(0, 100)}`);
       }
 
+      // ENTERPRISE: Preserve full error structure for better error handling
       if (data.error) {
-        throw new Error(`MonkDB Error [${data.error.code}]: ${data.error.message}`);
+        const dbError = new Error(`MonkDB Error [${data.error.code}]: ${data.error.message}`);
+        // Attach the original error object for detailed error handling
+        (dbError as any).code = data.error.code;
+        (dbError as any).dbError = data.error;
+        (dbError as any).category = 'query';
+        throw dbError;
       }
 
       return data;
     } catch (error) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
-          throw new Error(`Query timeout after ${this.config.timeout}ms`);
+          const timeoutError = new Error(`Query timeout after ${this.config.timeout}ms`);
+          (timeoutError as any).category = 'network';
+          throw timeoutError;
+        }
+        // Preserve existing error category if set
+        if (!(error as any).category) {
+          (error as any).category = 'query';
         }
         throw error;
       }
-      throw new Error('Unknown error occurred');
+      const unknownError = new Error('Unknown error occurred during query execution');
+      (unknownError as any).category = 'unknown';
+      throw unknownError;
     }
   }
 
@@ -245,8 +259,14 @@ export class MonkDBClient {
 
       const data: SQLResponse<T> = await response.json();
 
+      // ENTERPRISE: Preserve full error structure for better error handling
       if (data.error) {
-        throw new Error(`MonkDB Error [${data.error.code}]: ${data.error.message}`);
+        const dbError = new Error(`MonkDB Error [${data.error.code}]: ${data.error.message}`);
+        // Attach the original error object for detailed error handling
+        (dbError as any).code = data.error.code;
+        (dbError as any).dbError = data.error;
+        (dbError as any).category = 'query';
+        throw dbError;
       }
 
       return data;

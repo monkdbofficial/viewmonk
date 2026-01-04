@@ -7,6 +7,7 @@ import { BlobProvider, useBlobStorage } from '../lib/blob-context';
 import BlobUploader from './blob/BlobUploader';
 import BlobBrowser from './blob/BlobBrowser';
 import BlobFilters, { BlobFilters as BlobFiltersType } from './blob/BlobFilters';
+import CreateTableDialog from './blob/CreateTableDialog';
 
 function BlobStorageContent() {
   const activeConnection = useActiveConnection();
@@ -23,6 +24,7 @@ function BlobStorageContent() {
 
   const [tables, setTables] = useState<string[]>([]);
   const [showUploader, setShowUploader] = useState(false);
+  const [showCreateTableDialog, setShowCreateTableDialog] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<BlobFiltersType>({
@@ -53,9 +55,8 @@ function BlobStorageContent() {
     setCurrentFolder(null);
   };
 
-  const handleCreateTable = async () => {
-    const tableName = prompt('Enter table name for BLOB storage:');
-    if (tableName && activeConnection) {
+  const handleCreateTable = async (tableName: string) => {
+    if (activeConnection) {
       await createMetadataTable(tableName);
       setTables((prev) => [...prev, tableName]);
       setCurrentTable(tableName);
@@ -197,7 +198,7 @@ function BlobStorageContent() {
               </button>
             ))}
             <button
-              onClick={handleCreateTable}
+              onClick={() => setShowCreateTableDialog(true)}
               className="flex items-center gap-1 rounded-lg border border-dashed border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
             >
               <Plus className="h-4 w-4" />
@@ -298,6 +299,14 @@ function BlobStorageContent() {
           table={currentTable}
           folder={currentFolder}
           onClose={() => setShowUploader(false)}
+        />
+      )}
+
+      {/* Create Table Dialog */}
+      {showCreateTableDialog && (
+        <CreateTableDialog
+          onClose={() => setShowCreateTableDialog(false)}
+          onCreate={handleCreateTable}
         />
       )}
     </div>
