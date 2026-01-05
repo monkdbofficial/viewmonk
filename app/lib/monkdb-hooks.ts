@@ -65,7 +65,7 @@ export function useMonkDBQuery<T = any>(
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client]); // Only depend on client, not fetchData to avoid infinite loop
+  }, [client, query, JSON.stringify(args), options?.enabled]); // Re-fetch when query/args change
 
   return { data, loading, error, refetch: fetchData };
 }
@@ -192,7 +192,7 @@ export function useTables(schemaName: string = 'doc'): UseQueryResult<TableMetad
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client]); // Only depend on client, not fetchData to avoid infinite loop
+  }, [client, schemaName]); // Re-fetch when schema changes
 
   return { data, loading, error, refetch: fetchData };
 }
@@ -272,9 +272,9 @@ export function useTableColumns(
       return;
     }
 
-    // Validate required parameters
+    // Don't fetch if no table is selected (just clear data, no error)
     if (!schemaName || !tableName) {
-      setError('Schema name and table name are required.');
+      setError(null);
       setLoading(false);
       setData(null);
       return;
@@ -297,7 +297,7 @@ export function useTableColumns(
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client]); // Only depend on client, not fetchData to avoid infinite loop
+  }, [client, schemaName, tableName]); // Re-fetch when table selection changes
 
   return { data, loading, error, refetch: fetchData };
 }
@@ -327,9 +327,9 @@ export function useTableTree(
       return;
     }
 
-    // Validate required parameters
+    // Don't fetch if no table is selected (just clear data, no error)
     if (!schemaName || !tableName) {
-      setError('Schema name and table name are required.');
+      setError(null);
       setLoading(false);
       setData(null);
       return;
@@ -352,7 +352,7 @@ export function useTableTree(
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client]); // Only depend on client, not fetchData to avoid infinite loop
+  }, [client, schemaName, tableName]); // Re-fetch when table selection changes
 
   return { data, loading, error, refetch: fetchData };
 }

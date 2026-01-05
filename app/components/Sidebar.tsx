@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 
 // Check if running in Electron - will be checked at runtime
 
@@ -11,33 +11,54 @@ interface SidebarProps {}
 export default function Sidebar({}: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const nextPathname = usePathname();
+  const router = useRouter();
+  const [currentPath, setCurrentPath] = useState<string>('');
+  const [, forceUpdate] = useState({});
 
-  // Get normalized pathname that works in both web and Tauri
-  const pathname = useMemo(() => {
-    // Try Next.js pathname first
-    if (nextPathname && nextPathname !== '/') {
-      return nextPathname;
-    }
+  // Force update on pathname changes
+  useEffect(() => {
+    const updatePath = () => {
+      if (typeof window === 'undefined') return;
 
-    // Fallback to window.location for Tauri
-    if (typeof window !== 'undefined') {
+      // Get pathname and normalize (remove trailing slash)
       let path = window.location.pathname;
-
-      // Handle Tauri protocol (tauri://localhost/path)
-      if (window.location.protocol === 'tauri:') {
-        path = window.location.pathname;
+      // Remove trailing slash except for root
+      if (path !== '/' && path.endsWith('/')) {
+        path = path.slice(0, -1);
       }
 
-      // Handle hash routing (/#/path)
-      if (window.location.hash && window.location.hash.startsWith('#/')) {
-        path = window.location.hash.substring(1);
-      }
+      setCurrentPath(path);
+      forceUpdate({}); // Force re-render
+    };
 
-      return path || nextPathname;
-    }
+    // Initial update
+    updatePath();
 
-    return nextPathname;
+    // Poll very frequently for changes
+    const interval = setInterval(updatePath, 100);
+
+    // Listen to all possible navigation events
+    window.addEventListener('popstate', updatePath);
+    window.addEventListener('hashchange', updatePath);
+
+    // Listen to click events on the document to catch Link clicks
+    const handleClick = () => setTimeout(updatePath, 10);
+    document.addEventListener('click', handleClick);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('popstate', updatePath);
+      window.removeEventListener('hashchange', updatePath);
+      document.removeEventListener('click', handleClick);
+    };
   }, [nextPathname]);
+
+  // Determine the active pathname - prefer window.location in all cases
+  // Normalize by removing trailing slash
+  let pathname = currentPath || nextPathname || '/';
+  if (pathname !== '/' && pathname.endsWith('/')) {
+    pathname = pathname.slice(0, -1);
+  }
 
   const menuItems = [
     {

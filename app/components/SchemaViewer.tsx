@@ -807,9 +807,12 @@ WHERE ${primaryKeyCol.column_name} = ?;
                       <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
                     </div>
                   ) : columnsError ? (
-                    <div className="flex items-center gap-2 rounded-lg bg-red-50 p-4 text-red-700 dark:bg-red-900/20 dark:text-red-400">
-                      <AlertCircle className="h-5 w-5" />
-                      <span className="text-sm">Failed to load columns</span>
+                    <div className="rounded-lg bg-red-50 p-4 dark:bg-red-900/20">
+                      <div className="flex items-center gap-2 text-red-700 dark:text-red-400">
+                        <AlertCircle className="h-5 w-5" />
+                        <span className="text-sm font-medium">Failed to load columns</span>
+                      </div>
+                      <p className="mt-2 text-sm text-red-600 dark:text-red-300">{columnsError}</p>
                     </div>
                   ) : columns && columns.length > 0 ? (
                     <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
