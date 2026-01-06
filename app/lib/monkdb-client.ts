@@ -232,8 +232,11 @@ export class MonkDBClient {
         }
         throw error;
       }
-      const unknownError = new Error('Unknown error occurred during query execution');
+      // Handle non-Error objects by including their details
+      const errorDetails = typeof error === 'object' ? JSON.stringify(error) : String(error);
+      const unknownError = new Error(`Query execution error: ${errorDetails}`);
       (unknownError as any).category = 'unknown';
+      (unknownError as any).originalError = error;
       throw unknownError;
     }
   }

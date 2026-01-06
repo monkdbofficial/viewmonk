@@ -92,6 +92,18 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // Ignore React hydration/hot-reload errors in development
+    const errorString = error.toString();
+    if (
+      process.env.NODE_ENV === 'development' &&
+      (errorString.includes('removeChild') ||
+       errorString.includes('Hydration') ||
+       errorString.includes('did not match'))
+    ) {
+      console.warn('[ErrorBoundary] Ignoring development-only error:', error.message);
+      return;
+    }
+
     // Log error details for debugging
     console.error('[ErrorBoundary] Caught an error:', error, errorInfo);
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { Database, HardDrive, Table, Activity, AlertCircle, Loader2, LayoutDashboard, CheckCircle, AlertTriangle, RefreshCw, TrendingUp } from 'lucide-react';
 import { useDatabaseStats, useClusterHealth, useNodes, useReadWriteRatio } from '../lib/monkdb-hooks';
@@ -18,9 +18,17 @@ export default function Dashboard() {
   const { data: nodes, loading: nodesLoading, error: nodesError, refetch: refetchNodes } = useNodes();
   const { data: readWriteRatio, loading: ratioLoading, error: ratioError, refetch: refetchRatio } = useReadWriteRatio();
 
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(false); // Disabled by default for testing
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Store refetch functions in refs to avoid recreating interval
+  const refetchFunctionsRef = useRef({ refetchStats, refetchHealth, refetchNodes, refetchRatio });
+
+  // Update refs when functions change
+  useEffect(() => {
+    refetchFunctionsRef.current = { refetchStats, refetchHealth, refetchNodes, refetchRatio };
+  }, [refetchStats, refetchHealth, refetchNodes, refetchRatio]);
 
   const handleManualRefresh = async () => {
     setIsRefreshing(true);
@@ -34,22 +42,23 @@ export default function Dashboard() {
     setIsRefreshing(false);
   };
 
-  // Auto-refresh every 10 seconds (only if enabled)
+  // Auto-refresh every 30 seconds (only if enabled)
   useEffect(() => {
     if (!activeConnection || !autoRefresh) return;
 
     const interval = setInterval(async () => {
+      // Use refs to avoid recreating interval when functions change
       await Promise.all([
-        refetchStats(),
-        refetchHealth(),
-        refetchNodes(),
-        refetchRatio()
+        refetchFunctionsRef.current.refetchStats(),
+        refetchFunctionsRef.current.refetchHealth(),
+        refetchFunctionsRef.current.refetchNodes(),
+        refetchFunctionsRef.current.refetchRatio()
       ]);
       setLastRefresh(new Date());
-    }, 10000);
+    }, 30000);
 
     return () => clearInterval(interval);
-  }, [activeConnection, autoRefresh, refetchStats, refetchHealth, refetchNodes, refetchRatio]);
+  }, [activeConnection, autoRefresh]);
 
   // Format bytes to readable size
   const formatBytes = (bytes: number): string => {
@@ -184,7 +193,7 @@ export default function Dashboard() {
                 className="h-4 w-4 rounded border-gray-300"
               />
               <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                Auto-Refresh (10s)
+                Auto-Refresh (30s)
               </span>
             </label>
             {/* Manual Refresh Button */}
@@ -216,8 +225,8 @@ export default function Dashboard() {
                 <li><strong>Cluster Nodes</strong> - Real-time node health, heap usage, and disk usage from <code className="rounded bg-blue-100 px-1 dark:bg-blue-900">sys.nodes</code></li>
                 <li><strong>Performance Metrics</strong> - Query performance and system resource trends</li>
                 <li><strong>Schema Distribution</strong> - Table and data distribution across schemas</li>
-                <li><strong>Auto-Refresh</strong> is enabled by default - data updates every 10 seconds</li>
-                <li>Uncheck <strong>Auto-Refresh</strong> to disable automatic updates or use <strong>Refresh</strong> button for manual updates</li>
+                <li><strong>Auto-Refresh</strong> is available - toggle ON for automatic data updates every 30 seconds</li>
+                <li>Use the <strong>Refresh</strong> button for manual updates anytime</li>
               </ul>
               <p className="mt-2 border-t border-blue-300 pt-2 dark:border-blue-700">
                 <strong>Note:</strong> All data is live from your MonkDB cluster and updates in real-time.

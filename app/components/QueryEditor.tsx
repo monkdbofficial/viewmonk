@@ -604,9 +604,11 @@ export default function QueryEditor() {
       }
       // DQL Operations (Data Query Language)
       else {
+        const rowText = result.rowcount === 1 ? 'row' : 'rows';
         toast.success(
-          'Query Executed Successfully',
-          `Found ${result.rowcount} rows in ${(result.duration || duration).toFixed(2)}ms`
+          '✅ Query Successful',
+          `Retrieved ${result.rowcount} ${rowText} in ${(result.duration || duration).toFixed(2)}ms`,
+          5000
         );
       }
     } catch (err) {
@@ -2189,13 +2191,18 @@ WITH (max_num_segments = 1);`,
               </div>
             ) : (
               <div className="flex flex-1 items-center justify-center">
-                <div className="text-center">
-                  <Database className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600" />
-                  <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-                    Execute a query to see results here
+                <div className="text-center max-w-md">
+                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-900/20">
+                    <Database className="h-8 w-8 text-blue-500 dark:text-blue-400" />
+                  </div>
+                  <h3 className="mt-4 text-base font-medium text-gray-900 dark:text-white">
+                    Ready to Execute
+                  </h3>
+                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                    Write your SQL query above and press <kbd className="rounded bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-800 dark:bg-gray-700 dark:text-gray-200">Cmd+Enter</kbd> or click the Run button
                   </p>
-                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                    Press Cmd/Ctrl + Enter to execute
+                  <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                    Results will appear here with row count and execution time
                   </p>
                 </div>
               </div>

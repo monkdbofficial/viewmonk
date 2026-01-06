@@ -12,26 +12,35 @@ interface ChartData {
 
 export default function QueryPerformanceChart() {
   const chartRef = useRef<HTMLDivElement>(null);
+  const chartInstanceRef = useRef<echarts.ECharts | null>(null);
   const activeConnection = useActiveConnection();
   const [chartData, setChartData] = useState<ChartData>({ hours: [], avgTimes: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasData, setHasData] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   const fetchData = async () => {
-    if (!activeConnection) return;
+    console.log('QueryPerformanceChart: fetchData called, activeConnection:', !!activeConnection);
+    if (!activeConnection) {
+      console.log('QueryPerformanceChart: No active connection, aborting fetch');
+      return;
+    }
 
     try {
-      setLoading(true);
+      // Only show loading state on initial load, not on refreshes
+      if (isInitialLoad) {
+        setLoading(true);
+      }
       setError(null);
 
       const query = `
         SELECT
           DATE_TRUNC('hour', started) AS hour,
-          AVG(ended - started) AS avg_duration_ms,
+          AVG(EXTRACT(EPOCH FROM (ended - started)) * 1000) AS avg_duration_ms,
           COUNT(*) AS query_count
         FROM sys.jobs_log
-        WHERE started > CURRENT_TIMESTAMP - INTERVAL '24 hours'
+        WHERE started > CURRENT_TIMESTAMP - INTERVAL '1 day'
           AND error IS NULL
         GROUP BY DATE_TRUNC('hour', started)
         ORDER BY hour ASC
@@ -41,20 +50,25 @@ export default function QueryPerformanceChart() {
 
       if (result.rows.length > 0) {
         console.log('QueryPerformanceChart: Fetched', result.rows.length, 'hourly data points');
+        console.log('QueryPerformanceChart: Sample row:', result.rows[0]);
         const hours: string[] = [];
         const avgTimes: number[] = [];
 
         result.rows.forEach((row: any[]) => {
           const hourTimestamp = row[0];
-          const avgDuration = row[1] || 0;
+          const avgDuration = row[1];
 
           const date = new Date(hourTimestamp);
           const hourStr = `${date.getHours().toString().padStart(2, '0')}:00`;
 
+          // Handle null/undefined/NaN values
+          const duration = avgDuration != null && !isNaN(avgDuration) ? Number(avgDuration) : 0;
+
           hours.push(hourStr);
-          avgTimes.push(Math.round(avgDuration * 100) / 100);
+          avgTimes.push(Math.round(duration * 100) / 100);
         });
 
+        console.log('QueryPerformanceChart: Processed avgTimes:', avgTimes);
         setChartData({ hours, avgTimes });
         setHasData(true);
       } else {
@@ -77,23 +91,50 @@ export default function QueryPerformanceChart() {
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
       setHasData(false);
     } finally {
-      setLoading(false);
+      if (isInitialLoad) {
+        setLoading(false);
+        setIsInitialLoad(false);
+      }
     }
   };
 
   useEffect(() => {
     fetchData();
+    // Silent background refresh every 30 seconds - no loading state, no blink
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
   }, [activeConnection]);
 
+  // Initialize chart when div becomes available (after loading completes)
   useEffect(() => {
-    if (!chartRef.current || !chartData.hours.length || loading) return;
+    if (!chartRef.current || chartInstanceRef.current) return;
 
-    const chart = echarts.init(chartRef.current, undefined, {
+    console.log('QueryPerformanceChart: Initializing chart instance');
+    chartInstanceRef.current = echarts.init(chartRef.current, undefined, {
       renderer: 'canvas',
     });
 
+    const handleResize = () => chartInstanceRef.current?.resize();
+    window.addEventListener('resize', handleResize);
+
+    // Cleanup only on unmount
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.dispose();
+        chartInstanceRef.current = null;
+      }
+    };
+  }, [loading, error, hasData]); // Run when these change so chart initializes after loading
+
+  // Update chart data whenever it changes
+  useEffect(() => {
+    if (!chartInstanceRef.current || !chartData.hours.length) {
+      console.log('QueryPerformanceChart: Cannot update - instance:', !!chartInstanceRef.current, 'data length:', chartData.hours.length);
+      return;
+    }
+
+    console.log('QueryPerformanceChart: Updating chart with data:', chartData.avgTimes);
     const isDark = document.documentElement.classList.contains('dark');
 
     const option = {
@@ -185,22 +226,20 @@ export default function QueryPerformanceChart() {
           },
         },
       ],
-      animationDuration: 750,
+      animationDuration: 300,
     } as any;
 
-    chart.setOption(option);
+    // Update chart data smoothly without recreation
+    chartInstanceRef.current.setOption(option, { notMerge: false });
+    console.log('QueryPerformanceChart: Chart updated with setOption');
+  }, [chartData]);
 
-    const handleResize = () => chart.resize();
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      chart.dispose();
-    };
-  }, [chartData, loading]);
+  // Debug logging
+  console.log('QueryPerformanceChart render:', { loading, error, hasData, chartDataLength: chartData.hours.length });
 
   // Loading Skeleton
   if (loading) {
+    console.log('QueryPerformanceChart: Showing loading skeleton');
     return (
       <div className="flex h-[250px] w-full animate-pulse flex-col gap-3">
         <div className="flex items-end justify-between gap-2">
@@ -222,6 +261,7 @@ export default function QueryPerformanceChart() {
 
   // Error State
   if (error) {
+    console.log('QueryPerformanceChart: Showing error state:', error);
     return (
       <div className="flex h-[250px] w-full flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-red-300 bg-red-50/50 dark:border-red-800 dark:bg-red-900/10">
         <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
@@ -248,6 +288,7 @@ export default function QueryPerformanceChart() {
 
   // Empty State
   if (!hasData) {
+    console.log('QueryPerformanceChart: Showing empty state (no data available)');
     return (
       <div className="relative h-[250px] w-full">
         <div ref={chartRef} className="h-full w-full" />
@@ -274,5 +315,6 @@ export default function QueryPerformanceChart() {
     );
   }
 
+  console.log('QueryPerformanceChart: Rendering chart div');
   return <div ref={chartRef} className="h-[250px] w-full" />;
 }

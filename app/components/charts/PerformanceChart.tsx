@@ -13,26 +13,31 @@ interface QueryStats {
 
 export default function PerformanceChart() {
   const chartRef = useRef<HTMLDivElement>(null);
+  const chartInstanceRef = useRef<echarts.ECharts | null>(null);
   const activeConnection = useActiveConnection();
   const [stats, setStats] = useState<QueryStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasData, setHasData] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   const fetchStats = async () => {
     if (!activeConnection) return;
 
     try {
-      setLoading(true);
+      // Only show loading state on initial load, not on refreshes
+      if (isInitialLoad) {
+        setLoading(true);
+      }
       setError(null);
 
       const query = `
         SELECT
           DATE_TRUNC('hour', started) AS hour,
           COUNT(*) AS query_count,
-          AVG(ended - started) AS avg_duration_ms
+          AVG(EXTRACT(EPOCH FROM (ended - started)) * 1000) AS avg_duration_ms
         FROM sys.jobs_log
-        WHERE started > CURRENT_TIMESTAMP - INTERVAL '24 hours'
+        WHERE started > CURRENT_TIMESTAMP - INTERVAL '1 day'
           AND error IS NULL
         GROUP BY DATE_TRUNC('hour', started)
         ORDER BY hour ASC
@@ -42,21 +47,27 @@ export default function PerformanceChart() {
 
       if (result.rows.length > 0) {
         console.log('PerformanceChart: Fetched', result.rows.length, 'hourly data points');
+        console.log('PerformanceChart: Sample row:', result.rows[0]);
         const hours: QueryStats[] = result.rows.map((row: any[]) => {
           const hourTimestamp = row[0];
-          const queryCount = row[1] || 0;
-          const avgDuration = row[2] || 0;
+          const queryCount = row[1];
+          const avgDuration = row[2];
 
           const date = new Date(hourTimestamp);
           const hourStr = `${date.getHours().toString().padStart(2, '0')}:00`;
 
+          // Handle null/undefined/NaN values
+          const count = queryCount != null && !isNaN(queryCount) ? Number(queryCount) : 0;
+          const duration = avgDuration != null && !isNaN(avgDuration) ? Number(avgDuration) : 0;
+
           return {
             timeLabel: hourStr,
-            queryCount,
-            avgDuration: Math.round(avgDuration * 100) / 100,
+            queryCount: count,
+            avgDuration: Math.round(duration * 100) / 100,
           };
         });
 
+        console.log('PerformanceChart: Processed stats:', hours);
         setStats(hours);
         setHasData(true);
       } else {
@@ -81,23 +92,47 @@ export default function PerformanceChart() {
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
       setHasData(false);
     } finally {
-      setLoading(false);
+      if (isInitialLoad) {
+        setLoading(false);
+        setIsInitialLoad(false);
+      }
     }
   };
 
   useEffect(() => {
     fetchStats();
+    // Silent background refresh every 30 seconds - no loading state, no blink
     const interval = setInterval(fetchStats, 30000);
     return () => clearInterval(interval);
   }, [activeConnection]);
 
+  // Initialize chart when div becomes available (after loading completes)
   useEffect(() => {
-    if (!chartRef.current || stats.length === 0 || loading) return;
+    if (!chartRef.current || chartInstanceRef.current) return;
 
-    const chart = echarts.init(chartRef.current, undefined, {
+    console.log('PerformanceChart: Initializing chart instance');
+    chartInstanceRef.current = echarts.init(chartRef.current, undefined, {
       renderer: 'canvas',
     });
 
+    const handleResize = () => chartInstanceRef.current?.resize();
+    window.addEventListener('resize', handleResize);
+
+    // Cleanup only on unmount
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.dispose();
+        chartInstanceRef.current = null;
+      }
+    };
+  }, [loading, error, hasData]); // Run when these change so chart initializes after loading
+
+  // Update chart data whenever it changes
+  useEffect(() => {
+    if (!chartInstanceRef.current || stats.length === 0) return;
+
+    console.log('PerformanceChart: Updating chart with', stats.length, 'data points');
     const isDark = document.documentElement.classList.contains('dark');
 
     const timeLabels = stats.map((s) => s.timeLabel);
@@ -254,19 +289,12 @@ export default function PerformanceChart() {
           symbolSize: 6,
         },
       ],
-      animationDuration: 750,
+      animationDuration: 300,
     } as any;
 
-    chart.setOption(option);
-
-    const handleResize = () => chart.resize();
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      chart.dispose();
-    };
-  }, [stats, loading]);
+    // Update chart data smoothly without recreation
+    chartInstanceRef.current.setOption(option, { notMerge: false });
+  }, [stats]);
 
   // Loading Skeleton
   if (loading) {

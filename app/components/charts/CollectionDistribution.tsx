@@ -14,11 +14,13 @@ interface SchemaStats {
 
 export default function CollectionDistribution() {
   const chartRef = useRef<HTMLDivElement>(null);
+  const chartInstanceRef = useRef<echarts.ECharts | null>(null);
   const activeConnection = useActiveConnection();
   const { data: schemas } = useSchemas();
   const [schemaData, setSchemaData] = useState<SchemaStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   const fetchSchemaStats = async () => {
     if (!activeConnection || !schemas || schemas.length === 0) {
@@ -27,7 +29,10 @@ export default function CollectionDistribution() {
     }
 
     try {
-      setLoading(true);
+      // Only show loading state on initial load, not on refreshes
+      if (isInitialLoad) {
+        setLoading(true);
+      }
       setError(null);
 
       const query = `
@@ -61,23 +66,47 @@ export default function CollectionDistribution() {
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
       setSchemaData([]);
     } finally {
-      setLoading(false);
+      if (isInitialLoad) {
+        setLoading(false);
+        setIsInitialLoad(false);
+      }
     }
   };
 
   useEffect(() => {
     fetchSchemaStats();
+    // Silent background refresh every 30 seconds - no loading state, no blink
     const interval = setInterval(fetchSchemaStats, 30000);
     return () => clearInterval(interval);
   }, [activeConnection, schemas]);
 
+  // Initialize chart when div becomes available (after loading completes)
   useEffect(() => {
-    if (!chartRef.current || loading) return;
+    if (!chartRef.current || chartInstanceRef.current) return;
 
-    const chart = echarts.init(chartRef.current, undefined, {
+    console.log('CollectionDistribution: Initializing chart instance');
+    chartInstanceRef.current = echarts.init(chartRef.current, undefined, {
       renderer: 'canvas',
     });
 
+    const handleResize = () => chartInstanceRef.current?.resize();
+    window.addEventListener('resize', handleResize);
+
+    // Cleanup only on unmount
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.dispose();
+        chartInstanceRef.current = null;
+      }
+    };
+  }, [loading, error]); // Run when these change so chart initializes after loading
+
+  // Update chart data whenever it changes
+  useEffect(() => {
+    if (!chartInstanceRef.current) return;
+
+    console.log('CollectionDistribution: Updating chart with', schemaData.length, 'schemas');
     const isDark = document.documentElement.classList.contains('dark');
 
     const data =
@@ -178,19 +207,12 @@ export default function CollectionDistribution() {
           color: colors,
         },
       ],
-      animationDuration: 1000,
+      animationDuration: 300,
     } as any;
 
-    chart.setOption(option);
-
-    const handleResize = () => chart.resize();
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      chart.dispose();
-    };
-  }, [schemaData, loading]);
+    // Update chart data smoothly without recreation
+    chartInstanceRef.current.setOption(option, { notMerge: false });
+  }, [schemaData]);
 
   // Loading Skeleton
   if (loading) {

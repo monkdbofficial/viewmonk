@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import { MonkDBClient, MonkDBConfig, createMonkDBClient } from './monkdb-client';
 import { isDesktopApp } from './tauri-utils';
 import { useNotifications } from './notification-context';
@@ -37,7 +37,11 @@ export function MonkDBProvider({ children }: { children: React.ReactNode }) {
   const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null);
   const { addNotification } = useNotifications();
 
-  const activeConnection = connections.find((c) => c.id === activeConnectionId) || null;
+  // Memoize activeConnection to prevent unnecessary re-renders
+  const activeConnection = useMemo(() =>
+    connections.find((c) => c.id === activeConnectionId) || null,
+    [connections, activeConnectionId]
+  );
 
   // Load connections from server on mount
   useEffect(() => {
