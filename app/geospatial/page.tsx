@@ -51,9 +51,30 @@ export default function GeospatialPage() {
   const [error, setError] = useState<string | null>(null);
   const [copiedTemplate, setCopiedTemplate] = useState<string | null>(null);
 
-  // NOTE: Sample data removed for production
-  // This feature now requires REAL geospatial data from your database
-  // Use the Import/Export tab to load data or execute queries in Query Builder
+  // Auto-load all stores on page mount
+  useEffect(() => {
+    if (activeConnection) {
+      loadAllStores();
+    }
+  }, [activeConnection]);
+
+  const loadAllStores = async () => {
+    const query = `SELECT
+  id,
+  store_name as name,
+  latitude(location) as latitude,
+  longitude(location) as longitude,
+  city,
+  state,
+  category,
+  ROUND(revenue, 2) as revenue
+FROM monkdb.stores
+ORDER BY state, city;`;
+
+    await handleQueryExecute(query);
+    // Switch to map view after loading stores
+    setActiveTab('map');
+  };
 
   const handleQueryExecute = async (query: string) => {
     if (!activeConnection) {
@@ -68,29 +89,44 @@ export default function GeospatialPage() {
       console.log('Executing geospatial query:', query);
       const result = await activeConnection.client.query(query);
 
-      // Transform database results to query results format
-      const results = result.rows.map((row, index) => ({
-        id: row[0] || index,
-        name: row[1] || `Result ${index + 1}`,
-        distance: typeof row[2] === 'number' ? row[2] : undefined,
-        ...row,
-      }));
+      // Transform database results - CrateDB returns rows as arrays
+      // Expected column order: id, name, latitude, longitude, ...
+      const results = result.rows.map((row, index) => {
+        const obj: any = {
+          id: row[0] !== null && row[0] !== undefined ? row[0] : index,
+          name: row[1] || `Result ${index + 1}`,
+          latitude: row[2],
+          longitude: row[3],
+        };
+
+        // Add any additional columns
+        if (row.length > 4) {
+          obj.city = row[4];
+          obj.state = row[5];
+          obj.category = row[6];
+          obj.revenue = row[7];
+          obj.distance_km = typeof row[2] === 'number' && row.length > 5 ? row[row.length - 1] : undefined;
+        }
+
+        return obj;
+      });
 
       setQueryResults(results);
 
-      // If results contain geospatial data, update map
-      // This is a simplified example - you may need to adjust based on your data structure
+      // Transform to map points
       const newPoints: GeoPoint[] = results
-        .filter((r: any) => r.latitude && r.longitude)
+        .filter((r: any) => r.latitude !== null && r.latitude !== undefined &&
+                            r.longitude !== null && r.longitude !== undefined)
         .map((r: any) => ({
           id: String(r.id),
           coordinates: [r.longitude, r.latitude],
           properties: r,
         }));
 
+      console.log('Transformed points:', newPoints.length, newPoints);
+
       if (newPoints.length > 0) {
         setGeoPoints(newPoints);
-        setActiveTab('map'); // Switch to map view to show results
         toast.success('Query Executed', `Found ${results.length} results, ${newPoints.length} mapped points`);
       } else {
         toast.success('Query Executed', `${results.length} results returned`);
@@ -228,23 +264,23 @@ export default function GeospatialPage() {
       {/* Scrollable Content */}
       <div className="flex-1 overflow-auto">
         <div className="space-y-4 p-4">
-          {/* Setup Instructions */}
+          {/* Usage Instructions */}
           <div className="rounded-lg border-2 border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
             <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-blue-900 dark:text-blue-300">
               <AlertTriangle className="h-4 w-4" />
-              Configuration Required - How to Use This Feature
+              How to Use Geospatial Data Tools
             </h3>
             <div className="space-y-2 text-xs text-blue-800 dark:text-blue-200">
-              <p><strong>This feature requires geospatial data in your MonkDB database.</strong></p>
+              <p><strong>All 15 stores from <code className="rounded bg-blue-100 px-1 dark:bg-blue-900">monkdb.stores</code> are automatically loaded on the map!</strong></p>
               <ol className="ml-4 list-decimal space-y-1">
-                <li>Create a table with GEO_POINT or GEO_SHAPE columns in your database</li>
-                <li>Use the <strong>Query Builder</strong> tab to execute geospatial queries</li>
-                <li>Use the <strong>Import/Export</strong> tab to load GeoJSON, WKT, or CSV data</li>
-                <li>Results will appear on the <strong>Map View</strong> automatically</li>
-                <li>Click on the map to see coordinates and generate spatial queries</li>
+                <li><strong>Map View</strong> - See all store locations on the interactive map</li>
+                <li><strong>Query Builder</strong> - Execute custom geospatial queries (proximity search, filtering, etc.)</li>
+                <li>Use demo queries from the side panel: "Stores near Times Square", "All California stores", etc.</li>
+                <li>Click markers on the map to see store details</li>
+                <li>Use geospatial functions: <code className="rounded bg-blue-100 px-1 dark:bg-blue-900">distance()</code>, <code className="rounded bg-blue-100 px-1 dark:bg-blue-900">within()</code>, <code className="rounded bg-blue-100 px-1 dark:bg-blue-900">latitude()</code>, <code className="rounded bg-blue-100 px-1 dark:bg-blue-900">longitude()</code></li>
               </ol>
               <p className="mt-2 border-t border-blue-300 pt-2 dark:border-blue-700">
-                <strong>Example:</strong> Create a table with <code className="rounded bg-blue-100 px-1 dark:bg-blue-900">CREATE TABLE locations (id INTEGER, name TEXT, location GEO_POINT)</code>
+                <strong>Tip:</strong> Switch to Map View tab to see all stores plotted on the map right now!
               </p>
             </div>
           </div>
@@ -357,7 +393,7 @@ export default function GeospatialPage() {
           {activeTab === 'query' && (
             <SpatialQueryBuilder
               onQueryExecute={handleQueryExecute}
-              initialCollection="your_schema.your_table"
+              initialCollection="monkdb.stores"
             />
           )}
 
@@ -401,18 +437,18 @@ export default function GeospatialPage() {
             <div className="mb-3 flex items-center gap-2">
               <Code className="h-4 w-4 text-gray-600 dark:text-gray-400" />
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                SQL Templates (Replace placeholders)
+                Demo Queries - Ready to Use
               </h3>
             </div>
             <div className="space-y-3">
               <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-900">
                 <div className="mb-2 flex items-center justify-between">
                   <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                    Points within radius
+                    Stores near Times Square (50km)
                   </p>
                   <button
                     onClick={() => handleCopyTemplate(
-                      `-- Replace 'your_schema.your_table' and 'geo_column'\nSELECT * FROM your_schema.your_table\nWHERE distance(geo_column,\n  'POINT(lon lat)') < 1000\nORDER BY distance(geo_column,\n  'POINT(lon lat)');`,
+                      `SELECT\n  id,\n  store_name as name,\n  latitude(location) as latitude,\n  longitude(location) as longitude,\n  city,\n  ROUND(distance(location, 'POINT(-73.9851 40.7589)') / 1000, 2) as distance_km\nFROM monkdb.stores\nWHERE distance(location, 'POINT(-73.9851 40.7589)') < 50000\nORDER BY distance(location, 'POINT(-73.9851 40.7589)');`,
                       'radius'
                     )}
                     className="flex items-center gap-1 rounded bg-gray-200 px-2 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-300 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
@@ -431,23 +467,31 @@ export default function GeospatialPage() {
                   </button>
                 </div>
                 <pre className="overflow-x-auto text-xs text-gray-600 dark:text-gray-400">
-                  <code>{`-- Replace 'your_schema.your_table' and 'geo_column'
-SELECT * FROM your_schema.your_table
-WHERE distance(geo_column,
-  'POINT(lon lat)') < 1000
-ORDER BY distance(geo_column,
-  'POINT(lon lat)');`}</code>
+                  <code>{`SELECT
+  id,
+  store_name as name,
+  latitude(location) as latitude,
+  longitude(location) as longitude,
+  city,
+  ROUND(distance(location,
+    'POINT(-73.9851 40.7589)') / 1000, 2)
+    as distance_km
+FROM monkdb.stores
+WHERE distance(location,
+  'POINT(-73.9851 40.7589)') < 50000
+ORDER BY distance(location,
+  'POINT(-73.9851 40.7589)');`}</code>
                 </pre>
               </div>
 
               <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-900">
                 <div className="mb-2 flex items-center justify-between">
                   <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                    Points in polygon
+                    All California stores
                   </p>
                   <button
                     onClick={() => handleCopyTemplate(
-                      `-- Replace with actual coordinates\nSELECT * FROM your_schema.your_table\nWHERE within(geo_column,\n  'POLYGON((\n    lon1 lat1,\n    lon2 lat2,\n    lon3 lat3,\n    lon1 lat1\n  ))');`,
+                      `SELECT\n  id,\n  store_name as name,\n  latitude(location) as latitude,\n  longitude(location) as longitude,\n  city,\n  category,\n  ROUND(revenue, 2) as revenue\nFROM monkdb.stores\nWHERE state = 'CA'\nORDER BY revenue DESC;`,
                       'polygon'
                     )}
                     className="flex items-center gap-1 rounded bg-gray-200 px-2 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-300 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
@@ -466,26 +510,28 @@ ORDER BY distance(geo_column,
                   </button>
                 </div>
                 <pre className="overflow-x-auto text-xs text-gray-600 dark:text-gray-400">
-                  <code>{`-- Replace with actual coordinates
-SELECT * FROM your_schema.your_table
-WHERE within(geo_column,
-  'POLYGON((
-    lon1 lat1,
-    lon2 lat2,
-    lon3 lat3,
-    lon1 lat1
-  ))');`}</code>
+                  <code>{`SELECT
+  id,
+  store_name as name,
+  latitude(location) as latitude,
+  longitude(location) as longitude,
+  city,
+  category,
+  ROUND(revenue, 2) as revenue
+FROM monkdb.stores
+WHERE state = 'CA'
+ORDER BY revenue DESC;`}</code>
                 </pre>
               </div>
 
               <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-900">
                 <div className="mb-2 flex items-center justify-between">
                   <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                    Intersecting shapes
+                    5 nearest to Downtown LA
                   </p>
                   <button
                     onClick={() => handleCopyTemplate(
-                      `-- For shape-based queries\nSELECT * FROM your_schema.your_table\nWHERE intersects(geo_column,\n  'POLYGON((\n    lon1 lat1,\n    lon2 lat2,\n    lon3 lat3,\n    lon1 lat1\n  ))');`,
+                      `SELECT\n  store_name as name,\n  city,\n  latitude(location) as latitude,\n  longitude(location) as longitude,\n  category,\n  ROUND(distance(location, 'POINT(-118.2437 34.0522)') / 1000, 2) as distance_km\nFROM monkdb.stores\nORDER BY distance(location, 'POINT(-118.2437 34.0522)')\nLIMIT 5;`,
                       'intersects'
                     )}
                     className="flex items-center gap-1 rounded bg-gray-200 px-2 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-300 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
@@ -504,15 +550,19 @@ WHERE within(geo_column,
                   </button>
                 </div>
                 <pre className="overflow-x-auto text-xs text-gray-600 dark:text-gray-400">
-                  <code>{`-- For shape-based queries
-SELECT * FROM your_schema.your_table
-WHERE intersects(geo_column,
-  'POLYGON((
-    lon1 lat1,
-    lon2 lat2,
-    lon3 lat3,
-    lon1 lat1
-  ))');`}</code>
+                  <code>{`SELECT
+  store_name as name,
+  city,
+  latitude(location) as latitude,
+  longitude(location) as longitude,
+  category,
+  ROUND(distance(location,
+    'POINT(-118.2437 34.0522)') / 1000, 2)
+    as distance_km
+FROM monkdb.stores
+ORDER BY distance(location,
+  'POINT(-118.2437 34.0522)')
+LIMIT 5;`}</code>
                 </pre>
               </div>
             </div>

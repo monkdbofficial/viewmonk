@@ -22,23 +22,24 @@ function generateSQLQuery(
   config: AggregationConfig,
   dateRange: DateRange
 ): string {
-  const timeBucketMap: Record<TimeBucket, string> = {
-    '1m': '1 minute',
-    '5m': '5 minutes',
-    '15m': '15 minutes',
-    '30m': '30 minutes',
-    '1h': '1 hour',
-    '6h': '6 hours',
-    '12h': '12 hours',
-    '1d': '1 day',
-    '7d': '7 days',
+  // Map time buckets to DATE_TRUNC interval names
+  const dateTruncIntervalMap: Record<TimeBucket, string> = {
+    '1m': 'minute',
+    '5m': 'minute',
+    '15m': 'minute',
+    '30m': 'minute',
+    '1h': 'hour',
+    '6h': 'hour',
+    '12h': 'hour',
+    '1d': 'day',
+    '7d': 'day',
   };
 
-  const interval = timeBucketMap[config.timeBucket];
+  const dateTruncInterval = dateTruncIntervalMap[config.timeBucket];
 
   // Build SELECT clause
   const selectClauses = [
-    `DATE_TRUNC('${config.timeBucket.replace(/\d+/, '')}', ${timestampColumn}) AS time_bucket`,
+    `DATE_TRUNC('${dateTruncInterval}', ${timestampColumn}) AS time_bucket`,
   ];
 
   config.metrics.forEach((metric) => {
@@ -46,7 +47,7 @@ function generateSQLQuery(
     if (metric.function === 'PERCENTILE_95') {
       selectClauses.push(`PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY ${metric.column}) AS ${alias}`);
     } else if (metric.function === 'PERCENTILE_99') {
-      selectClauses.push(`PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY ${alias}) AS ${alias}`);
+      selectClauses.push(`PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY ${metric.column}) AS ${alias}`);
     } else {
       selectClauses.push(`${metric.function}(${metric.column}) AS ${alias}`);
     }
@@ -87,10 +88,11 @@ export default function TimeSeriesPage() {
   const [aggregationConfig, setAggregationConfig] = useState<AggregationConfig>({
     timeBucket: '1h',
     metrics: [
-      { column: 'value_column', function: 'AVG', alias: 'avg_value' },
-      { column: 'value_column', function: 'MAX', alias: 'max_value' },
+      { column: 'temperature', function: 'AVG', alias: 'avg_temperature' },
+      { column: 'temperature', function: 'MAX', alias: 'max_temperature' },
+      { column: 'response_time', function: 'AVG', alias: 'avg_response_time' },
     ],
-    groupBy: [],
+    groupBy: ['sensor_id'],
   });
   const [generatedSQL, setGeneratedSQL] = useState('');
   const [showSQL, setShowSQL] = useState(false);
@@ -98,11 +100,11 @@ export default function TimeSeriesPage() {
   const [anomalyTimestamps, setAnomalyTimestamps] = useState<Date[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Load data from database - COMMENTED OUT: Requires user to provide table name
-  // To use: Update the SQL query with your actual table and column names
+  // Load data from database
   useEffect(() => {
-    // Only load data if user has configured table/columns
-    // loadData(); // Commented out - requires real table configuration
+    if (activeConnection) {
+      loadData();
+    }
   }, [dateRange, aggregationConfig]);
 
   const loadData = async () => {
@@ -111,42 +113,62 @@ export default function TimeSeriesPage() {
       return;
     }
 
-    // Check if user is still using placeholder values
-    const hasPlaceholders =
-      aggregationConfig.metrics.some(m => m.column.includes('column')) ||
-      aggregationConfig.metrics.some(m => m.column === 'value_column');
-
-    if (hasPlaceholders) {
-      alert(
-        '⚠️ Configuration Required\n\n' +
-        'This feature requires configuration:\n\n' +
-        '1. Update column names in "Aggregation Builder"\n' +
-        '2. Click "Generate SQL" to see the query\n' +
-        '3. Update table name in the generated SQL\n' +
-        '4. Copy and run the SQL in Query Editor\n\n' +
-        'The "Refresh" button only works after you configure your actual table and columns in the source code.'
-      );
-      return;
-    }
-
     setLoading(true);
 
     try {
-      // IMPORTANT: This requires updating the source code with your actual table name
-      // For now, this is just a SQL generator - use Query Editor to execute queries
-
-      alert(
-        '⚠️ Feature Not Fully Configured\n\n' +
-        'To use auto-refresh, you need to:\n\n' +
-        '1. Edit app/timeseries/page.tsx\n' +
-        '2. Replace "your_schema.your_table" with your actual table\n' +
-        '3. Replace "timestamp_column" with your actual column\n\n' +
-        'For now, use "Generate SQL" → Copy → Run in Query Editor'
+      // Generate the SQL query for the actual table
+      const sql = generateSQLQuery(
+        'monkdb.sensor_readings',
+        'timestamp',
+        aggregationConfig,
+        dateRange
       );
 
+      console.log('Executing time-series query:', sql);
+      const result = await activeConnection.client.query(sql);
+
+      if (result.rows && result.rows.length > 0) {
+        console.log('Time-series data loaded:', result.rows.length, 'rows');
+
+        // Transform data into time-series format
+        const dataByMetric: { [key: string]: TimeSeriesDataPoint[] } = {};
+
+        result.rows.forEach((row: any[]) => {
+          const timestamp = new Date(row[0]); // time_bucket
+
+          // Process each metric column (skip first column which is time_bucket)
+          aggregationConfig.metrics.forEach((metric, index) => {
+            const metricKey = metric.alias || `${metric.function.toLowerCase()}_${metric.column}`;
+            const value = row[index + 1]; // +1 to skip time_bucket column
+
+            if (!dataByMetric[metricKey]) {
+              dataByMetric[metricKey] = [];
+            }
+
+            if (value !== null && value !== undefined && !isNaN(Number(value))) {
+              dataByMetric[metricKey].push({
+                timestamp,
+                value: Number(value),
+              });
+            }
+          });
+        });
+
+        // Convert to TimeSeriesSeries format
+        const seriesData: TimeSeriesSeries[] = Object.entries(dataByMetric).map(([name, data]) => ({
+          name,
+          data: data.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()),
+        }));
+
+        setSeries(seriesData);
+        console.log('Time-series visualization ready with', seriesData.length, 'series');
+      } else {
+        console.log('No time-series data found');
+        setSeries([]);
+      }
     } catch (error) {
       console.error('Failed to load time-series data:', error);
-      alert('Failed to load data. Please check the configuration.');
+      alert('Failed to load data: ' + (error instanceof Error ? error.message : 'Unknown error'));
       setSeries([]);
     } finally {
       setLoading(false);
@@ -155,8 +177,8 @@ export default function TimeSeriesPage() {
 
   const handleGenerateSQL = () => {
     const sql = generateSQLQuery(
-      'your_schema.your_table',
-      'timestamp_column',
+      'monkdb.sensor_readings',
+      'timestamp',
       aggregationConfig,
       dateRange
     );
@@ -166,7 +188,7 @@ export default function TimeSeriesPage() {
 
   const handleCopySQL = () => {
     navigator.clipboard.writeText(generatedSQL);
-    alert('✅ SQL Copied!\n\nNow:\n1. Go to Query Editor (/query-editor)\n2. Paste the SQL\n3. Update table/column names\n4. Execute to see results');
+    alert('✅ SQL Copied!\n\nYou can now:\n1. Run this in Query Editor to verify\n2. Modify it for custom analysis\n3. Use it in other tools');
   };
 
   const handleAnomaliesDetected = useCallback((anomalies: Anomaly[]) => {
@@ -266,19 +288,20 @@ export default function TimeSeriesPage() {
         <div className="rounded-lg border-2 border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
           <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-blue-900 dark:text-blue-300">
             <AlertTriangle className="h-4 w-4" />
-            Configuration Required - How to Use This Feature
+            How to Use Time-Series Analytics
           </h3>
           <div className="space-y-2 text-xs text-blue-800 dark:text-blue-200">
-            <p><strong>This feature requires a time-series table in your MonkDB database.</strong></p>
+            <p><strong>This feature visualizes data from the <code className="rounded bg-blue-100 px-1 dark:bg-blue-900">monkdb.sensor_readings</code> table.</strong></p>
             <ol className="ml-4 list-decimal space-y-1">
-              <li>Configure your time-series aggregation in the <strong>"Aggregation Builder"</strong> panel below</li>
-              <li>Replace <code className="rounded bg-blue-100 px-1 dark:bg-blue-900">value_column</code> with your actual column name</li>
-              <li>Click <strong>"Generate SQL"</strong> to see the query</li>
-              <li>Update the SQL with your actual table name (e.g., <code className="rounded bg-blue-100 px-1 dark:bg-blue-900">sensors.readings</code>)</li>
-              <li>Copy the SQL and run it in the <strong>Query Editor</strong> to see real data</li>
+              <li>Use the <strong>"Date Range Picker"</strong> to select your time window</li>
+              <li>Configure aggregations in the <strong>"Aggregation Builder"</strong> panel (time buckets, metrics, grouping)</li>
+              <li>Data will automatically refresh when you change settings</li>
+              <li>Click <strong>"Refresh"</strong> to manually reload data</li>
+              <li>Click <strong>"Generate SQL"</strong> to see the exact query being executed</li>
+              <li>Use <strong>"Export"</strong> to download data as CSV</li>
             </ol>
             <p className="mt-2 border-t border-blue-300 pt-2 dark:border-blue-700">
-              <strong>Note:</strong> The "Refresh" button above will attempt to load data using the generated SQL, but requires you to update the table/column names in the code first.
+              <strong>Tip:</strong> The Anomaly Detector will automatically highlight unusual patterns in your data.
             </p>
           </div>
         </div>
@@ -333,7 +356,7 @@ export default function TimeSeriesPage() {
             <div className="mb-3 flex items-center justify-between">
               <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
                 <Code className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                Generated SQL Query (Replace placeholders with actual values)
+                Generated SQL Query
               </h3>
               <div className="flex gap-2">
                 <button

@@ -106,9 +106,9 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
     }));
 
     try {
-      // TODO: In a real implementation, use Tauri's dialog API to get file paths
-      // For now, we'll use a placeholder path - the backend will need to handle File objects
-      const tempPath = file.name; // This is a placeholder
+      // Read file content as bytes in the browser
+      const arrayBuffer = await file.arrayBuffer();
+      const fileBytes = Array.from(new Uint8Array(arrayBuffer));
 
       // Update progress to uploading
       setUploadProgress(prev => new Map(prev).set(progressKey, {
@@ -126,7 +126,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         request: {
           connection_id: activeConnection.id,
           table_name: table,
-          file_path: tempPath,
+          file_content: fileBytes,
           filename: file.name,
           folder_path: folder || null,
           content_type: file.type || 'application/octet-stream',
