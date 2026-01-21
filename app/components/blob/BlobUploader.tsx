@@ -27,6 +27,7 @@ export default function BlobUploader({ table, folder, onClose }: BlobUploaderPro
   const [isDragging, setIsDragging] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [duplicateFile, setDuplicateFile] = useState<{file: File; existingFile: any} | null>(null);
 
   // Validate connection on mount
   useEffect(() => {
@@ -37,6 +38,23 @@ export default function BlobUploader({ table, folder, onClose }: BlobUploaderPro
       setConnectionError(null);
     }
   }, [activeConnection, toast]);
+
+  // Auto-close dialog when all uploads complete successfully
+  useEffect(() => {
+    if (files.length === 0) return;
+
+    const allCompleted = files.every(f => f.status === 'completed');
+    const anyPending = files.some(f => f.status === 'pending' || f.status === 'uploading');
+
+    if (allCompleted && !anyPending) {
+      console.log('[BlobUploader] All uploads successful, closing dialog in 1.5s');
+      const timer = setTimeout(() => {
+        onClose();
+      }, 1500);
+
+      return () => clearTimeout(timer);
+    }
+  }, [files, onClose]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -66,17 +84,76 @@ export default function BlobUploader({ table, folder, onClose }: BlobUploaderPro
     }
   }, []);
 
-  const addFiles = (newFiles: File[]) => {
-    const filesWithStatus: FileWithStatus[] = newFiles.map((file) => ({
-      file,
-      status: 'pending',
-      progress: 0,
-    }));
-    setFiles((prev) => [...prev, ...filesWithStatus]);
+  const addFiles = async (newFiles: File[]) => {
+    // Check each file for duplicates
+    for (const file of newFiles) {
+      const existing = await checkDuplicate(file);
+      if (existing) {
+        // Show duplicate dialog
+        setDuplicateFile({ file, existingFile: existing });
+        return; // Process one at a time
+      } else {
+        // No duplicate, add to upload queue
+        const fileWithStatus: FileWithStatus = {
+          file,
+          status: 'pending',
+          progress: 0,
+        };
+        setFiles((prev) => [...prev, fileWithStatus]);
+      }
+    }
   };
 
   const removeFile = (index: number) => {
     setFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Calculate SHA1 hash of a file
+  const calculateSHA1 = async (file: File): Promise<string> => {
+    const buffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-1', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashHex;
+  };
+
+  // Check if file already exists
+  const checkDuplicate = async (file: File): Promise<any | null> => {
+    if (!activeConnection || !table) return null;
+
+    try {
+      const sha1Hash = await calculateSHA1(file);
+      const metadataTable = `${table}_blob_metadata`;
+      const sql = `SELECT * FROM ${metadataTable} WHERE sha1_hash = '${sha1Hash}' AND deleted_at IS NULL LIMIT 1`;
+
+      const response = await fetch('/api/sql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-monkdb-host': activeConnection.config.host,
+          'x-monkdb-port': activeConnection.config.port.toString(),
+        },
+        body: JSON.stringify({ stmt: sql }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.rows && data.rows.length > 0) {
+          return {
+            id: data.rows[0][0],
+            sha1_hash: data.rows[0][1],
+            filename: data.rows[0][2],
+            file_size: data.rows[0][4],
+            content_type: data.rows[0][5],
+            uploaded_at: data.rows[0][6],
+          };
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error('[BlobUploader] Duplicate check failed:', error);
+      return null;
+    }
   };
 
   const categorizeError = (error: any): string => {
@@ -112,17 +189,28 @@ export default function BlobUploader({ table, folder, onClose }: BlobUploaderPro
       return;
     }
 
+    console.log('[BlobUploader] Starting upload process...');
+    console.log('[BlobUploader] Active connection:', activeConnection.name);
+    console.log('[BlobUploader] Table:', table);
+    console.log('[BlobUploader] Folder:', folder);
+
     // Upload files in batches of 3
     const CONCURRENT_UPLOADS = 3;
     const pendingFiles = files.filter((f) => f.status === 'pending');
 
+    console.log(`[BlobUploader] Uploading ${pendingFiles.length} pending files...`);
+
     for (let i = 0; i < pendingFiles.length; i += CONCURRENT_UPLOADS) {
       const batch = pendingFiles.slice(i, i + CONCURRENT_UPLOADS);
+      console.log(`[BlobUploader] Processing batch ${i / CONCURRENT_UPLOADS + 1}, ${batch.length} files`);
+
       await Promise.all(
         batch.map(async (fileWithStatus) => {
           const index = files.indexOf(fileWithStatus);
 
           try {
+            console.log(`[BlobUploader] Uploading file: ${fileWithStatus.file.name}`);
+
             // Update status to uploading
             setFiles((prev) => {
               const updated = [...prev];
@@ -132,6 +220,8 @@ export default function BlobUploader({ table, folder, onClose }: BlobUploaderPro
 
             await uploadFile(table, fileWithStatus.file, folder || undefined);
 
+            console.log(`[BlobUploader] File uploaded successfully: ${fileWithStatus.file.name}`);
+
             // Update status to completed
             setFiles((prev) => {
               const updated = [...prev];
@@ -140,7 +230,8 @@ export default function BlobUploader({ table, folder, onClose }: BlobUploaderPro
             });
           } catch (error: any) {
             const categorizedError = categorizeError(error);
-            console.error('[Blob Upload Error]', error);
+            console.error('[BlobUploader] Upload error for', fileWithStatus.file.name, ':', error);
+            console.error('[BlobUploader] Error stack:', error.stack);
 
             // Update status to failed
             setFiles((prev) => {
@@ -159,6 +250,8 @@ export default function BlobUploader({ table, folder, onClose }: BlobUploaderPro
         })
       );
     }
+
+    console.log('[BlobUploader] All uploads completed');
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -349,6 +442,80 @@ export default function BlobUploader({ table, folder, onClose }: BlobUploaderPro
           </div>
         </div>
       </div>
+
+      {/* Duplicate File Dialog */}
+      {duplicateFile && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 p-4">
+          <div className="max-w-md w-full rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-800">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-yellow-100 dark:bg-yellow-900/30">
+                <AlertCircle className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                  Duplicate File Detected
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  This file already exists
+                </p>
+              </div>
+            </div>
+
+            <div className="mb-6 rounded-lg bg-gray-50 p-4 dark:bg-gray-700">
+              <div className="mb-3">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  File you're uploading:
+                </p>
+                <p className="text-sm text-gray-900 dark:text-white">
+                  {duplicateFile.file.name} ({(duplicateFile.file.size / 1024 / 1024).toFixed(2)} MB)
+                </p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Existing file:
+                </p>
+                <p className="text-sm text-gray-900 dark:text-white">
+                  {duplicateFile.existingFile.filename} ({(duplicateFile.existingFile.file_size / 1024 / 1024).toFixed(2)} MB)
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Uploaded: {new Date(duplicateFile.existingFile.uploaded_at).toLocaleString()}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <button
+                onClick={() => {
+                  // Keep both - upload anyway
+                  const fileWithStatus: FileWithStatus = {
+                    file: duplicateFile.file,
+                    status: 'pending',
+                    progress: 0,
+                  };
+                  setFiles((prev) => [...prev, fileWithStatus]);
+                  setDuplicateFile(null);
+                }}
+                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+              >
+                Keep Both Files
+              </button>
+              <button
+                onClick={() => {
+                  // Skip this file
+                  setDuplicateFile(null);
+                  toast.info('Skipped', `Skipped duplicate file: ${duplicateFile.file.name}`);
+                }}
+                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+              >
+                Skip This File
+              </button>
+              <p className="text-center text-xs text-gray-500 dark:text-gray-400 pt-2">
+                Note: Files are identified by their content (SHA1 hash), not filename.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

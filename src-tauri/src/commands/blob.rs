@@ -7,8 +7,9 @@ use crate::models::{
 use crate::state::AppState;
 use crate::utils::{DbError, Result};
 use chrono::Utc;
+use sha1::Digest;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Write;
 use tauri::State;
 use uuid::Uuid;
 use zip::write::{SimpleFileOptions, ZipWriter};
@@ -48,19 +49,28 @@ pub async fn upload_blob(
         .get_connection(&request.connection_id)
         .ok_or_else(|| DbError::DatabaseNotFound(request.connection_id.clone()))?;
 
-    // 2. Validate file
-    let validator = FileValidator::default();
-    let validation_result = validator.validate_file(&request.file_path)?;
+    // 2. Validate file content (from bytes)
+    let file_size = request.file_content.len() as u64;
 
-    if !validation_result.valid {
+    // Validate file size (max 100MB)
+    const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100MB
+    if file_size > MAX_FILE_SIZE {
         return Err(DbError::ValidationError(format!(
-            "File validation failed: {}",
-            validation_result.errors.join(", ")
+            "File size {} exceeds maximum allowed size of {} bytes",
+            file_size, MAX_FILE_SIZE
         )));
     }
 
-    // 3. Calculate SHA-1 hash
-    let sha1_hash = validation_result.sha1_preview;
+    if file_size == 0 {
+        return Err(DbError::ValidationError(
+            "File is empty".to_string()
+        ));
+    }
+
+    // 3. Calculate SHA-1 hash from file content
+    let mut hasher = sha1::Sha1::new();
+    hasher.update(&request.file_content);
+    let sha1_hash = format!("{:x}", hasher.finalize());
     log::debug!("File SHA-1: {}", sha1_hash);
 
     // 4. Upload to MonkDB via HTTP API
@@ -72,13 +82,7 @@ pub async fn upload_blob(
         sha1_hash
     );
 
-    // Read file for upload
-    let mut file = File::open(&request.file_path)
-        .map_err(|e| DbError::ValidationError(format!("Failed to open file: {}", e)))?;
-
-    let mut file_bytes = Vec::new();
-    file.read_to_end(&mut file_bytes)
-        .map_err(|e| DbError::ValidationError(format!("Failed to read file: {}", e)))?;
+    let file_bytes = request.file_content.clone();
 
     // Create HTTP client
     let client = reqwest::Client::new();
@@ -86,7 +90,7 @@ pub async fn upload_blob(
     // Build request
     let req_builder = client
         .put(&blob_url)
-        .header("Content-Type", &validation_result.content_type)
+        .header("Content-Type", &request.content_type)
         .body(file_bytes);
 
     // TODO: Add authentication when security module is implemented
@@ -98,8 +102,8 @@ pub async fn upload_blob(
         .await
         .map_err(|e| DbError::QueryFailed(format!("HTTP upload failed: {}", e)))?;
 
-    if !response.status().is_success() {
-        let status = response.status();
+    let status = response.status();
+    if !status.is_success() {
         let error_text = response
             .text()
             .await
@@ -108,6 +112,11 @@ pub async fn upload_blob(
             "Upload failed with status {}: {}",
             status, error_text
         )));
+    }
+
+    // Check for 201 Created status (expected from MonkDB)
+    if status.as_u16() != 201 && status.as_u16() != 200 {
+        log::warn!("Unexpected success status code: {}", status);
     }
 
     log::info!("BLOB uploaded successfully: {}", sha1_hash);
@@ -134,7 +143,7 @@ pub async fn upload_blob(
         sha1_hash,
         request.filename.replace("'", "''"),
         request.folder_path.as_ref().map(|f| format!("'{}'", f.replace("'", "''"))).unwrap_or_else(|| "NULL".to_string()),
-        validation_result.file_size,
+        file_size,
         request.content_type.replace("'", "''"),
         "NULL".to_string(), // uploaded_by - TODO: get from session
         request.metadata.as_ref().map(|m| format!("'{}'::OBJECT", m.to_string().replace("'", "''"))).unwrap_or_else(|| "NULL".to_string())
@@ -153,8 +162,8 @@ pub async fn upload_blob(
         serde_json::json!({
             "sha1_hash": sha1_hash,
             "filename": request.filename,
-            "file_size": validation_result.file_size,
-            "content_type": validation_result.content_type,
+            "file_size": file_size,
+            "content_type": request.content_type,
         }),
     ));
 
@@ -424,7 +433,7 @@ pub async fn create_blob_metadata_table(
             connection_id
         )))?;
 
-    // Create metadata table SQL
+    // Create metadata table SQL with improved schema
     let metadata_table = format!("{}_blob_metadata", table_name);
     let create_sql = format!(
         r#"CREATE TABLE IF NOT EXISTS {} (
@@ -436,14 +445,90 @@ pub async fn create_blob_metadata_table(
             content_type TEXT NOT NULL,
             uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             uploaded_by TEXT,
-            metadata OBJECT
+            metadata OBJECT,
+            version INT DEFAULT 1,
+            is_active BOOLEAN DEFAULT TRUE
         )"#,
         metadata_table
     );
 
+    // Create indexes for better query performance
+    let create_indexes = vec![
+        format!("CREATE INDEX IF NOT EXISTS idx_{}_sha1_hash ON {} (sha1_hash)", table_name, metadata_table),
+        format!("CREATE INDEX IF NOT EXISTS idx_{}_folder_path ON {} (folder_path)", table_name, metadata_table),
+        format!("CREATE INDEX IF NOT EXISTS idx_{}_uploaded_at ON {} (uploaded_at)", table_name, metadata_table),
+        format!("CREATE INDEX IF NOT EXISTS idx_{}_filename ON {} (filename)", table_name, metadata_table),
+    ];
+
     driver.execute_query(&create_sql).await?;
 
-    log::info!("BLOB metadata table created: {}", metadata_table);
+    // Create indexes
+    for index_sql in create_indexes {
+        match driver.execute_query(&index_sql).await {
+            Ok(_) => log::debug!("Index created successfully"),
+            Err(e) => log::warn!("Failed to create index: {}", e),
+        }
+    }
+
+    log::info!("BLOB metadata table and indexes created: {}", metadata_table);
+
+    Ok(())
+}
+
+/// Create a BLOB table in MonkDB
+#[tauri::command]
+pub async fn create_blob_table(
+    connection_id: String,
+    table_name: String,
+    num_shards: Option<u32>,
+    blobs_path: Option<String>,
+    number_of_replicas: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<()> {
+    log::info!(
+        "Creating BLOB table '{}' on connection: {}",
+        table_name,
+        connection_id
+    );
+
+    // Get driver
+    let driver = state
+        .get_driver(&connection_id)
+        .ok_or_else(|| DbError::ValidationError(format!(
+            "No driver found for connection: {}",
+            connection_id
+        )))?;
+
+    // Build CREATE BLOB TABLE statement
+    let mut create_sql = format!("CREATE BLOB TABLE {}", table_name);
+
+    // Add CLUSTERED clause if specified
+    if let Some(shards) = num_shards {
+        if shards > 0 {
+            create_sql.push_str(&format!(" CLUSTERED INTO {} SHARDS", shards));
+        }
+    }
+
+    // Add WITH clause for storage parameters
+    let mut with_params = Vec::new();
+    if let Some(path) = blobs_path {
+        with_params.push(format!("blobs_path = '{}'", path.replace("'", "''")));
+    }
+    if let Some(replicas) = number_of_replicas {
+        with_params.push(format!("number_of_replicas = {}", replicas));
+    }
+
+    if !with_params.is_empty() {
+        create_sql.push_str(&format!(" WITH ({})", with_params.join(", ")));
+    }
+
+    // Execute the CREATE BLOB TABLE command
+    driver.execute_query(&create_sql).await?;
+
+    log::info!("BLOB table '{}' created successfully", table_name);
+
+    // Automatically create the metadata table
+    create_blob_metadata_table(connection_id.clone(), table_name.clone(), state).await?;
 
     Ok(())
 }

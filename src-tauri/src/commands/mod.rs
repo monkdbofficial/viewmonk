@@ -8,8 +8,8 @@ pub mod schema;
 pub mod table_designer;
 
 pub use blob::{
-    create_blob_metadata_table, delete_blob, download_blob, download_blobs_as_zip, list_blobs,
-    upload_blob, validate_file,
+    create_blob_metadata_table, create_blob_table, delete_blob, download_blob,
+    download_blobs_as_zip, list_blobs, upload_blob, validate_file,
 };
 pub use connection::{
     connect_database, disconnect_database, get_connection_info, list_connections, test_connection,

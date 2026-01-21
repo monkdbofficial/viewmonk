@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 pub struct UploadBlobRequest {
     pub connection_id: String,
     pub table_name: String,
-    pub file_path: String,  // Temporary file path
+    pub file_content: Vec<u8>,  // File content as bytes from browser
     pub filename: String,
     pub folder_path: Option<String>,
     pub content_type: String,

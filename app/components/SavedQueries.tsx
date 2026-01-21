@@ -17,13 +17,6 @@ import {
   ClockIcon,
 } from 'lucide-react';
 
-// Declare Tauri global type
-declare global {
-  interface Window {
-    __TAURI__?: any;
-  }
-}
-
 export interface SavedQuery {
   id: string;
   name: string;
