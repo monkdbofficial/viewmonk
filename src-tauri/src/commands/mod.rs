@@ -5,6 +5,7 @@ pub mod monitoring;
 pub mod query;
 pub mod saved_queries;
 pub mod schema;
+pub mod system;
 pub mod table_designer;
 
 pub use blob::{
@@ -32,6 +33,7 @@ pub use saved_queries::{
 pub use schema::{
     get_schema_metadata, get_table_columns, list_schemas, list_tables,
 };
+pub use system::get_os_username;
 pub use table_designer::{
     create_table_advanced, generate_table_sql, validate_table_design,
 };

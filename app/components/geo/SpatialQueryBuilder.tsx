@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { MapPin, Circle, Square, Maximize2, Play, Copy, Check, AlertCircle } from 'lucide-react';
-import SearchableSelect from '../common/SearchableSelect';
-import { useSchemaMetadata } from '@/app/lib/hooks/useSchemaMetadata';
+import TableColumnSelector, { TableColumnSelection } from './TableColumnSelector';
+import { geospatialConfig } from '@/app/config/geospatial.config';
 
 interface QueryTemplate {
   name: string;
@@ -23,83 +23,27 @@ export default function SpatialQueryBuilder({
   onQueryChange,
   initialCollection = ''
 }: SpatialQueryBuilderProps) {
-  const { tables, columns, loading: schemaLoading } = useSchemaMetadata();
-
   const [queryType, setQueryType] = useState<'distance' | 'within' | 'intersects'>('distance');
-  const [collection, setCollection] = useState(initialCollection);
-  const [fieldName, setFieldName] = useState('');
+  const [tableSelection, setTableSelection] = useState<TableColumnSelection | null>(null);
+  const collection = tableSelection?.fullTableName || '';
+  const fieldName = tableSelection?.geoColumn || '';
 
-  // Distance query parameters
-  const [centerLat, setCenterLat] = useState('40.7128');
-  const [centerLng, setCenterLng] = useState('-74.0060');
-  const [radius, setRadius] = useState('1000');
-  const [radiusUnit, setRadiusUnit] = useState<'meters' | 'kilometers' | 'miles'>('meters');
+  // Distance query parameters - use config defaults
+  const [centerLat, setCenterLat] = useState(geospatialConfig.query.presets.usa.lat.toString());
+  const [centerLng, setCenterLng] = useState(geospatialConfig.query.presets.usa.lng.toString());
+  const [radius, setRadius] = useState(geospatialConfig.query.defaultRadius.toString());
+  const [radiusUnit, setRadiusUnit] = useState<'meters' | 'kilometers' | 'miles'>(geospatialConfig.query.defaultRadiusUnit);
 
   // Within/Intersects parameters
   const [geometry, setGeometry] = useState('POLYGON((-74.0060 40.7128, -73.9352 40.7306, -73.9712 40.7831, -74.0060 40.7128))');
 
   // UI state
-  const [generatedQuery, setGeneratedQuery] = useState('');
+  const [generatedQuery, setGeneratedQuery] = useState('-- Select a table to begin');
   const [copied, setCopied] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [orderBy, setOrderBy] = useState(true);
-  const [limit, setLimit] = useState('100');
+  const [limit, setLimit] = useState(geospatialConfig.query.defaultLimit.toString());
   const [wktError, setWktError] = useState<string | null>(null);
-
-  // Debug: Log all columns to see what types we have
-  useEffect(() => {
-    if (columns.length > 0) {
-      console.log('[SpatialQueryBuilder] All columns:', columns);
-      console.log('[SpatialQueryBuilder] Unique column types:',
-        [...new Set(columns.map(c => c.type))].sort()
-      );
-    }
-  }, [columns]);
-
-  // Get table names with geo columns (flexible matching for geo types)
-  // If no geo columns found, fall back to showing all tables
-  const geoTables = [...new Set(
-    columns
-      .filter(col => {
-        const lowerType = col.type.toLowerCase();
-        // Match various geo type formats: geo_point, geopoint, geo point, etc.
-        return lowerType.includes('geo') ||
-               lowerType.includes('point') ||
-               lowerType.includes('shape') ||
-               lowerType.includes('geometry');
-      })
-      .map(col => `${col.schema}.${col.table}`)
-  )];
-
-  const allTables = [...new Set(
-    tables.map(t => `${t.schema}.${t.name}`)
-  )];
-
-  const tableNames = geoTables.length > 0 ? geoTables : allTables;
-
-  // Get geo columns for selected table (flexible matching)
-  // If no geo columns found, show all columns
-  const selectedTableGeoColumns = collection
-    ? columns
-        .filter(col => {
-          const fullTableName = `${col.schema}.${col.table}`;
-          const lowerType = col.type.toLowerCase();
-          return fullTableName === collection &&
-                 (lowerType.includes('geo') ||
-                  lowerType.includes('point') ||
-                  lowerType.includes('shape') ||
-                  lowerType.includes('geometry'));
-        })
-        .map(col => col.name)
-    : [];
-
-  const allColumnsForTable = collection
-    ? columns
-        .filter(col => `${col.schema}.${col.table}` === collection)
-        .map(col => col.name)
-    : [];
-
-  const geoColumns = selectedTableGeoColumns.length > 0 ? selectedTableGeoColumns : allColumnsForTable;
 
   // WKT validation patterns
   const WKT_PATTERNS = {
@@ -167,6 +111,16 @@ export default function SpatialQueryBuilder({
 
   // Generate query based on parameters
   useEffect(() => {
+    if (!collection || !fieldName || !tableSelection) {
+      setGeneratedQuery('-- Select a table and configure query parameters');
+      return;
+    }
+
+    // Build column list - use selected columns instead of SELECT *
+    const selectedCols = tableSelection.columns.length > 0
+      ? tableSelection.columns.map(c => c.name).join(', ')
+      : '*';
+
     let query = '';
 
     switch (queryType) {
@@ -177,7 +131,8 @@ export default function SpatialQueryBuilder({
           ? parseFloat(radius) * 1609.34
           : parseFloat(radius);
 
-        query = `SELECT * FROM ${collection}
+        query = `SELECT ${selectedCols}
+FROM ${collection}
 WHERE distance(${fieldName}, 'POINT(${centerLng} ${centerLat})') < ${radiusInMeters}`;
 
         if (orderBy) {
@@ -186,12 +141,14 @@ WHERE distance(${fieldName}, 'POINT(${centerLng} ${centerLat})') < ${radiusInMet
         break;
 
       case 'within':
-        query = `SELECT * FROM ${collection}
+        query = `SELECT ${selectedCols}
+FROM ${collection}
 WHERE within(${fieldName}, '${geometry}')`;
         break;
 
       case 'intersects':
-        query = `SELECT * FROM ${collection}
+        query = `SELECT ${selectedCols}
+FROM ${collection}
 WHERE intersects(${fieldName}, '${geometry}')`;
         break;
     }
@@ -206,7 +163,7 @@ WHERE intersects(${fieldName}, '${geometry}')`;
     if (onQueryChange) {
       onQueryChange(query);
     }
-  }, [queryType, collection, fieldName, centerLat, centerLng, radius, radiusUnit, geometry, orderBy, limit]);
+  }, [queryType, collection, fieldName, centerLat, centerLng, radius, radiusUnit, geometry, orderBy, limit, tableSelection]);
 
   const handleExecuteQuery = () => {
     if (onQueryExecute) {
@@ -299,34 +256,12 @@ WHERE intersects(${fieldName}, '${geometry}')`;
       {/* Query Parameters */}
       <div className="flex-1 overflow-y-auto p-4">
         <div className="space-y-4">
-          {/* Collection and Field */}
-          <div className="grid grid-cols-2 gap-4">
-            <SearchableSelect
-              label="Collection"
-              value={collection}
-              onChange={(value) => {
-                setCollection(value);
-                setFieldName(''); // Reset field when collection changes
-              }}
-              options={tableNames}
-              placeholder="Select table with geo columns..."
-              loading={schemaLoading}
-              onClear={() => {
-                setCollection('');
-                setFieldName('');
-              }}
-            />
-            <SearchableSelect
-              label="Field Name"
-              value={fieldName}
-              onChange={setFieldName}
-              options={geoColumns}
-              placeholder={collection ? 'Select geo column...' : 'Select a collection first'}
-              disabled={!collection || geoColumns.length === 0}
-              loading={schemaLoading}
-              onClear={() => setFieldName('')}
-            />
-          </div>
+          {/* Table and Column Selection */}
+          <TableColumnSelector
+            onSelectionChange={setTableSelection}
+            initialTable={initialCollection}
+            showGeoColumnsOnly={false}
+          />
 
           {/* Distance Query Parameters */}
           {queryType === 'distance' && (

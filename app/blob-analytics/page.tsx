@@ -24,6 +24,8 @@ import {
   TrendingDown,
 } from 'lucide-react';
 import { useBlobStorage } from '../lib/blob-context';
+import QuotaMonitoringDialog from '../components/blob/QuotaMonitoringDialog';
+import AuditLogViewer from '../components/blob/AuditLogViewer';
 
 const BlobFileTypeChart = dynamic(() => import('../components/charts/BlobFileTypeChart'), { ssr: false });
 const BlobStorageTrendsChart = dynamic(() => import('../components/charts/BlobStorageTrendsChart'), { ssr: false });
@@ -40,6 +42,8 @@ export default function BlobAnalyticsPage() {
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showQuotaDialog, setShowQuotaDialog] = useState(false);
+  const [showAuditDialog, setShowAuditDialog] = useState(false);
 
   const loadAnalytics = async () => {
     if (!table) return;
@@ -148,6 +152,25 @@ export default function BlobAnalyticsPage() {
                 Last: {lastRefresh.toLocaleTimeString()}
               </span>
             )}
+
+            <button
+              onClick={() => setShowQuotaDialog(true)}
+              className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              title="Storage Quota"
+            >
+              <HardDrive className="h-4 w-4" />
+              Quota
+            </button>
+
+            <button
+              onClick={() => setShowAuditDialog(true)}
+              className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              title="Audit Log"
+            >
+              <FileText className="h-4 w-4" />
+              Audit
+            </button>
+
             <button
               onClick={handleRefresh}
               disabled={isRefreshing || loading}
@@ -391,6 +414,16 @@ export default function BlobAnalyticsPage() {
           )}
         </div>
       </div>
+
+      {/* Quota Monitoring Dialog */}
+      {showQuotaDialog && (
+        <QuotaMonitoringDialog onClose={() => setShowQuotaDialog(false)} />
+      )}
+
+      {/* Audit Log Viewer */}
+      {showAuditDialog && (
+        <AuditLogViewer onClose={() => setShowAuditDialog(false)} />
+      )}
     </div>
   );
 }

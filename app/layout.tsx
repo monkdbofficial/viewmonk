@@ -10,6 +10,7 @@ import { QueryTabsProvider } from "./lib/query-tabs-context";
 import { NotificationProvider } from "./lib/notification-context";
 import { SavedViewsProvider } from "./lib/saved-views-context";
 import { BlobProvider } from "./lib/blob-context";
+import { UserProvider } from "./lib/user-context";
 import ErrorBoundary from "./components/ErrorBoundary";
 
 const geistSans = Geist({
@@ -40,20 +41,22 @@ export default function RootLayout({
       >
         <ErrorBoundary>
           <ThemeProvider>
-            <NotificationProvider>
-              <MonkDBProvider>
-                <BlobProvider>
-                  <SavedViewsProvider>
-                    <QueryTabsProvider>
-                      <ToastProvider>
-                        <AppLayout>{children}</AppLayout>
-                        <ToastContainer />
-                      </ToastProvider>
-                    </QueryTabsProvider>
-                  </SavedViewsProvider>
-                </BlobProvider>
-              </MonkDBProvider>
-            </NotificationProvider>
+            <UserProvider>
+              <NotificationProvider>
+                <MonkDBProvider>
+                  <BlobProvider>
+                    <SavedViewsProvider>
+                      <QueryTabsProvider>
+                        <ToastProvider>
+                          <AppLayout>{children}</AppLayout>
+                          <ToastContainer />
+                        </ToastProvider>
+                      </QueryTabsProvider>
+                    </SavedViewsProvider>
+                  </BlobProvider>
+                </MonkDBProvider>
+              </NotificationProvider>
+            </UserProvider>
           </ThemeProvider>
         </ErrorBoundary>
       </body>

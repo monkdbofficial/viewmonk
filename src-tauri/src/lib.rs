@@ -67,6 +67,8 @@ pub fn run() {
       commands::blob::list_blobs,
       commands::blob::create_blob_metadata_table,
       commands::blob::create_blob_table,
+      // System commands
+      commands::system::get_os_username,
       // Table designer commands
       commands::table_designer::generate_table_sql,
       commands::table_designer::validate_table_design,

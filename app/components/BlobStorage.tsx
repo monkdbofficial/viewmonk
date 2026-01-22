@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { Database, FolderOpen, Upload, Grid, List, Search, RefreshCw, Plus, Info, BookOpen, BarChart3, Trash2, MoreVertical, Trash, X, AlertTriangle, ChevronDown, Check } from 'lucide-react';
+import { Database, FolderOpen, Upload, Grid, List, Search, RefreshCw, Plus, Info, BookOpen, BarChart3, Trash2, MoreVertical, Trash, X, AlertTriangle, ChevronDown, Check, Wrench } from 'lucide-react';
 import { useActiveConnection } from '../lib/monkdb-context';
 import { BlobProvider, useBlobStorage } from '../lib/blob-context';
 import BlobUploader from './blob/BlobUploader';
@@ -10,6 +10,7 @@ import BlobBrowser from './blob/BlobBrowser';
 import BlobFilters, { BlobFilters as BlobFiltersType } from './blob/BlobFilters';
 import CreateTableDialog from './blob/CreateTableDialog';
 import MigrateTableDialog from './blob/MigrateTableDialog';
+import AdvancedFeaturesDialog from './blob/AdvancedFeaturesDialog';
 
 function BlobStorageContent() {
   const router = useRouter();
@@ -38,6 +39,7 @@ function BlobStorageContent() {
   const [showSupportedTypesModal, setShowSupportedTypesModal] = useState(false);
   const [showSqlGuideModal, setShowSqlGuideModal] = useState(false);
   const [showMigrateDialog, setShowMigrateDialog] = useState(false);
+  const [showAdvancedDialog, setShowAdvancedDialog] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'size' | 'date'>('date');
@@ -495,6 +497,15 @@ function BlobStorageContent() {
                 >
                   <RefreshCw className="h-4 w-4 text-gray-600 dark:text-gray-400" />
                 </button>
+
+                <button
+                  onClick={() => setShowAdvancedDialog(true)}
+                  className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                  title="Advanced Features"
+                >
+                  <Wrench className="h-4 w-4" />
+                  Advanced
+                </button>
               </>
             )}
           </div>
@@ -831,6 +842,11 @@ function BlobStorageContent() {
             }
           }}
         />
+      )}
+
+      {/* Advanced Features Dialog */}
+      {showAdvancedDialog && (
+        <AdvancedFeaturesDialog onClose={() => setShowAdvancedDialog(false)} selectedFile={null} />
       )}
 
       {/* Supported File Types Modal */}
