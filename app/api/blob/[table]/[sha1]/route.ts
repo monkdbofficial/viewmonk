@@ -1,4 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  isValidSQLIdentifier,
+  isValidSHA1,
+  isValidHostname,
+  isValidPort,
+  apiRateLimiter,
+  sanitizeErrorMessage
+} from '@/app/lib/validation';
 
 // Force route to be dynamic (not cached)
 export const dynamic = 'force-dynamic';
@@ -11,20 +19,67 @@ export async function PUT(
 ) {
   try {
     const { table, sha1 } = await params;
-    console.log('[Blob Proxy] PUT request:', { table, sha1 });
+
+    // SECURITY: Validate table name to prevent SQL injection and path traversal
+    if (!isValidSQLIdentifier(table)) {
+      console.error('[Blob Proxy] Invalid table name:', table);
+      return NextResponse.json(
+        { error: 'Invalid table name. Only alphanumeric characters, underscores, and dots are allowed.' },
+        { status: 400 }
+      );
+    }
+
+    // SECURITY: Validate SHA1 hash format
+    if (!isValidSHA1(sha1)) {
+      console.error('[Blob Proxy] Invalid SHA1 hash:', sha1);
+      return NextResponse.json(
+        { error: 'Invalid SHA1 hash format. Must be 40 hexadecimal characters.' },
+        { status: 400 }
+      );
+    }
 
     // Get MonkDB connection info from headers
     const host = request.headers.get('x-monkdb-host') || 'localhost';
-    const port = request.headers.get('x-monkdb-port') || '4200';
+    const portStr = request.headers.get('x-monkdb-port') || '4200';
     const contentType = request.headers.get('content-type') || 'application/octet-stream';
-    console.log('[Blob Proxy] Headers:', { host, port, contentType });
+
+    // SECURITY: Validate hostname to prevent SSRF attacks
+    if (!isValidHostname(host)) {
+      console.error('[Blob Proxy] Invalid hostname:', host);
+      return NextResponse.json(
+        { error: 'Invalid hostname.' },
+        { status: 400 }
+      );
+    }
+
+    // SECURITY: Validate port number
+    if (!isValidPort(portStr)) {
+      console.error('[Blob Proxy] Invalid port:', portStr);
+      return NextResponse.json(
+        { error: 'Invalid port number.' },
+        { status: 400 }
+      );
+    }
+
+    // SECURITY: Rate limiting
+    const clientId = request.headers.get('x-forwarded-for') ||
+                     request.headers.get('x-real-ip') ||
+                     'unknown';
+    if (!apiRateLimiter.check(`blob-put:${clientId}`)) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Please try again later.' },
+        { status: 429 }
+      );
+    }
+
+    console.log('[Blob Proxy] PUT request (validated):', { table, sha1, host, port: portStr });
 
     // Read request body
     const body = await request.arrayBuffer();
     console.log('[Blob Proxy] Body size:', body.byteLength, 'bytes');
 
     // Forward to MonkDB
-    const monkdbUrl = `http://${host}:${port}/_blobs/${table}/${sha1}`;
+    const monkdbUrl = `http://${host}:${portStr}/_blobs/${table}/${sha1}`;
     console.log('[Blob Proxy] Forwarding to:', monkdbUrl);
 
     const response = await fetch(monkdbUrl, {
@@ -64,7 +119,7 @@ export async function PUT(
   } catch (error: any) {
     console.error('[Blob Proxy] Upload error:', error);
     return NextResponse.json(
-      { error: error.message || 'Upload failed' },
+      { error: sanitizeErrorMessage(error) },
       { status: 500 }
     );
   }
@@ -78,18 +133,55 @@ export async function GET(
   try {
     const { table, sha1 } = await params;
 
+    // SECURITY: Validate table name
+    if (!isValidSQLIdentifier(table)) {
+      console.error('[Blob Proxy] Invalid table name:', table);
+      return NextResponse.json(
+        { error: 'Invalid table name.' },
+        { status: 400 }
+      );
+    }
+
+    // SECURITY: Validate SHA1 hash
+    if (!isValidSHA1(sha1)) {
+      console.error('[Blob Proxy] Invalid SHA1 hash:', sha1);
+      return NextResponse.json(
+        { error: 'Invalid SHA1 hash format.' },
+        { status: 400 }
+      );
+    }
+
     // Get connection info from headers (for download), query params (for img tags), or use defaults
     const host = request.headers.get('x-monkdb-host') ||
                  request.nextUrl.searchParams.get('host') ||
                  'localhost';
-    const port = request.headers.get('x-monkdb-port') ||
-                 request.nextUrl.searchParams.get('port') ||
-                 '4200';
+    const portStr = request.headers.get('x-monkdb-port') ||
+                    request.nextUrl.searchParams.get('port') ||
+                    '4200';
 
-    console.log('[Blob Proxy] GET request:', { table, sha1, host, port });
+    // SECURITY: Validate hostname and port
+    if (!isValidHostname(host)) {
+      return NextResponse.json({ error: 'Invalid hostname.' }, { status: 400 });
+    }
+    if (!isValidPort(portStr)) {
+      return NextResponse.json({ error: 'Invalid port.' }, { status: 400 });
+    }
+
+    // SECURITY: Rate limiting
+    const clientId = request.headers.get('x-forwarded-for') ||
+                     request.headers.get('x-real-ip') ||
+                     'unknown';
+    if (!apiRateLimiter.check(`blob-get:${clientId}`)) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded.' },
+        { status: 429 }
+      );
+    }
+
+    console.log('[Blob Proxy] GET request (validated):', { table, sha1, host, port: portStr });
 
     // Forward to MonkDB
-    const monkdbUrl = `http://${host}:${port}/_blobs/${table}/${sha1}`;
+    const monkdbUrl = `http://${host}:${portStr}/_blobs/${table}/${sha1}`;
     const response = await fetch(monkdbUrl);
 
     if (!response.ok) {
@@ -118,7 +210,7 @@ export async function GET(
   } catch (error: any) {
     console.error('[Blob Proxy] Download error:', error);
     return NextResponse.json(
-      { error: error.message || 'Download failed' },
+      { error: sanitizeErrorMessage(error) },
       { status: 500 }
     );
   }
@@ -132,11 +224,48 @@ export async function DELETE(
   try {
     const { table, sha1 } = await params;
 
+    // SECURITY: Validate table name
+    if (!isValidSQLIdentifier(table)) {
+      console.error('[Blob Proxy] Invalid table name:', table);
+      return NextResponse.json(
+        { error: 'Invalid table name.' },
+        { status: 400 }
+      );
+    }
+
+    // SECURITY: Validate SHA1 hash
+    if (!isValidSHA1(sha1)) {
+      console.error('[Blob Proxy] Invalid SHA1 hash:', sha1);
+      return NextResponse.json(
+        { error: 'Invalid SHA1 hash format.' },
+        { status: 400 }
+      );
+    }
+
     const host = request.headers.get('x-monkdb-host') || 'localhost';
-    const port = request.headers.get('x-monkdb-port') || '4200';
+    const portStr = request.headers.get('x-monkdb-port') || '4200';
+
+    // SECURITY: Validate hostname and port
+    if (!isValidHostname(host)) {
+      return NextResponse.json({ error: 'Invalid hostname.' }, { status: 400 });
+    }
+    if (!isValidPort(portStr)) {
+      return NextResponse.json({ error: 'Invalid port.' }, { status: 400 });
+    }
+
+    // SECURITY: Rate limiting
+    const clientId = request.headers.get('x-forwarded-for') ||
+                     request.headers.get('x-real-ip') ||
+                     'unknown';
+    if (!apiRateLimiter.check(`blob-delete:${clientId}`)) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded.' },
+        { status: 429 }
+      );
+    }
 
     // Forward to MonkDB
-    const monkdbUrl = `http://${host}:${port}/_blobs/${table}/${sha1}`;
+    const monkdbUrl = `http://${host}:${portStr}/_blobs/${table}/${sha1}`;
     const response = await fetch(monkdbUrl, {
       method: 'DELETE',
     });
@@ -153,7 +282,7 @@ export async function DELETE(
   } catch (error: any) {
     console.error('[Blob Proxy] Delete error:', error);
     return NextResponse.json(
-      { error: error.message || 'Delete failed' },
+      { error: sanitizeErrorMessage(error) },
       { status: 500 }
     );
   }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -31,7 +31,7 @@ const BlobFileTypeChart = dynamic(() => import('../components/charts/BlobFileTyp
 const BlobStorageTrendsChart = dynamic(() => import('../components/charts/BlobStorageTrendsChart'), { ssr: false });
 const BlobActivityChart = dynamic(() => import('../components/charts/BlobActivityChart'), { ssr: false });
 
-export default function BlobAnalyticsPage() {
+function BlobAnalyticsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const table = searchParams.get('table');
@@ -425,5 +425,13 @@ export default function BlobAnalyticsPage() {
         <AuditLogViewer onClose={() => setShowAuditDialog(false)} />
       )}
     </div>
+  );
+}
+
+export default function BlobAnalyticsPage() {
+  return (
+    <Suspense fallback={<div className="flex h-screen items-center justify-center"><div className="text-gray-500">Loading...</div></div>}>
+      <BlobAnalyticsContent />
+    </Suspense>
   );
 }

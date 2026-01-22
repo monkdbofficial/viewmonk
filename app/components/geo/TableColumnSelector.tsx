@@ -10,6 +10,7 @@ interface TableColumnSelectorProps {
   initialTable?: string;
   initialColumns?: string[];
   showGeoColumnsOnly?: boolean;
+  compact?: boolean;
 }
 
 export interface TableColumnSelection {
@@ -31,6 +32,7 @@ export default function TableColumnSelector({
   initialTable = '',
   initialColumns = [],
   showGeoColumnsOnly = false,
+  compact = false,
 }: TableColumnSelectorProps) {
   const { tables, columns, loading } = useSchemaMetadata();
 
@@ -63,9 +65,13 @@ export default function TableColumnSelector({
       const matchesTable = c.schema === selectedSchema && c.table === selectedTable;
       if (!matchesTable) return false;
 
-      if (showGeoColumnsOnly) {
+      // In compact mode, always get ALL columns (not just geo columns)
+      // In normal mode, respect showGeoColumnsOnly flag
+      if (showGeoColumnsOnly && !compact) {
         const lowerType = c.type.toLowerCase();
-        return lowerType.includes('geo') || lowerType.includes('point') || lowerType.includes('shape');
+        const isGeoCol = lowerType.includes('geo') || lowerType.includes('point') || lowerType.includes('shape');
+        console.log(`[TableColumnSelector] Filtering column ${c.name} (${c.type}): isGeo=${isGeoCol}, compact=${compact}, showGeoOnly=${showGeoColumnsOnly}`);
+        return isGeoCol;
       }
 
       return true;
@@ -76,6 +82,8 @@ export default function TableColumnSelector({
       isGeo: isGeoType(c.type),
     }));
 
+  console.log(`[TableColumnSelector] columnsForTable for ${selectedSchema}.${selectedTable}:`, columnsForTable, `compact=${compact}, showGeoOnly=${showGeoColumnsOnly}`);
+
   // Auto-select geo column if only one exists
   useEffect(() => {
     const geoColumns = columnsForTable.filter(c => c.isGeo);
@@ -83,6 +91,13 @@ export default function TableColumnSelector({
       setGeoColumn(geoColumns[0].name);
     }
   }, [columnsForTable]);
+
+  // In compact mode, auto-select all columns when table changes
+  useEffect(() => {
+    if (compact && columnsForTable.length > 0 && selectedColumns.length === 0) {
+      setSelectedColumns(columnsForTable.map(c => c.name));
+    }
+  }, [compact, columnsForTable, selectedColumns.length]);
 
   // Parse initial table
   useEffect(() => {
@@ -144,6 +159,41 @@ export default function TableColumnSelector({
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     c.type.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Compact inline version for map control bar
+  if (compact) {
+    return (
+      <div className="flex items-center gap-2">
+        <SearchableSelect
+          value={selectedSchema}
+          onChange={handleSchemaChange}
+          options={schemas}
+          placeholder="Schema"
+          loading={loading}
+          onClear={() => handleSchemaChange('')}
+        />
+        <SearchableSelect
+          value={selectedTable}
+          onChange={handleTableChange}
+          options={tablesForSchema.map(t => t.name)}
+          placeholder="Table"
+          disabled={!selectedSchema}
+          loading={loading}
+          onClear={() => handleTableChange('')}
+        />
+        {showGeoColumnsOnly && selectedTable && columnsForTable.length > 0 && (
+          <SearchableSelect
+            value={geoColumn || ''}
+            onChange={setGeoColumn}
+            options={columnsForTable.map(c => c.name)}
+            placeholder="Geo Column"
+            loading={loading}
+            onClear={() => setGeoColumn(null)}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

@@ -49,6 +49,7 @@ export default function MapboxViewerPro({
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
   const drawRef = useRef<MapboxDraw | null>(null);
+  const layerControlRef = useRef<HTMLDivElement>(null);
 
   const [mapLoaded, setMapLoaded] = useState(false);
   const [show3D, setShow3D] = useState(false);
@@ -79,7 +80,7 @@ export default function MapboxViewerPro({
 
     // Add geocoder (search)
     const geocoder = new MapboxGeocoder({
-      accessToken: mapboxgl.accessToken,
+      accessToken: mapboxgl.accessToken as string,
       mapboxgl: mapboxgl as any,
       marker: false,
       placeholder: 'Search for places...',
@@ -165,7 +166,7 @@ export default function MapboxViewerPro({
     drawRef.current = draw;
 
     // Handle draw events
-    map.on('draw.create', (e) => {
+    map.on('draw.create', (e: any) => {
       if (onDrawComplete) {
         onDrawComplete(e.features[0].geometry);
       }
@@ -302,6 +303,23 @@ export default function MapboxViewerPro({
     mapRef.current.setStyle(`mapbox://styles/mapbox/${style}`);
   };
 
+  // Close layer control dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (layerControlRef.current && !layerControlRef.current.contains(event.target as Node)) {
+        setShowLayerControl(false);
+      }
+    };
+
+    if (showLayerControl) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showLayerControl]);
+
   // Update center and zoom
   useEffect(() => {
     if (mapRef.current && mapLoaded) {
@@ -330,20 +348,21 @@ export default function MapboxViewerPro({
 
     if (geoPoints.length === 0) return;
 
+    // Always create GeoJSON source for heatmap and clustering
+    const geojson = {
+      type: 'FeatureCollection' as const,
+      features: geoPoints.map(point => ({
+        type: 'Feature' as const,
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [point.coordinates[0], point.coordinates[1]]
+        },
+        properties: point.properties || {}
+      }))
+    };
+
     // Use clustering for many points
     if (showClustering && geoPoints.length > geospatialConfig.map.clusteringThreshold) {
-      const geojson = {
-        type: 'FeatureCollection' as const,
-        features: geoPoints.map(point => ({
-          type: 'Feature' as const,
-          geometry: {
-            type: 'Point' as const,
-            coordinates: [point.coordinates[0], point.coordinates[1]]
-          },
-          properties: point.properties || {}
-        }))
-      };
-
       mapRef.current.addSource('points', {
         type: 'geojson',
         data: geojson,
@@ -376,7 +395,8 @@ export default function MapboxViewerPro({
             30,
             30,
             40
-          ]
+          ],
+          'circle-opacity': showHeatmap ? 0.3 : 1
         }
       });
 
@@ -403,7 +423,8 @@ export default function MapboxViewerPro({
           'circle-color': geospatialConfig.map.mapbox.markerColor,
           'circle-radius': 8,
           'circle-stroke-width': 2,
-          'circle-stroke-color': '#fff'
+          'circle-stroke-color': '#fff',
+          'circle-opacity': showHeatmap ? 0.3 : 1
         }
       });
 
@@ -412,11 +433,11 @@ export default function MapboxViewerPro({
         const features = mapRef.current!.queryRenderedFeatures(e.point, {
           layers: ['clusters']
         });
-        const clusterId = features[0].properties.cluster_id;
+        const clusterId = features[0].properties!.cluster_id;
         (mapRef.current!.getSource('points') as mapboxgl.GeoJSONSource).getClusterExpansionZoom(
           clusterId,
           (err, zoom) => {
-            if (err) return;
+            if (err || !zoom) return;
             mapRef.current!.easeTo({
               center: (features[0].geometry as any).coordinates,
               zoom: zoom
@@ -425,56 +446,189 @@ export default function MapboxViewerPro({
         );
       });
 
-      // Heatmap layer
-      if (showHeatmap) {
-        mapRef.current.addLayer({
-          id: 'heatmap-layer',
-          type: 'heatmap',
-          source: 'points',
-          maxzoom: 15,
-          paint: {
-            'heatmap-weight': 1,
-            'heatmap-intensity': 1,
-            'heatmap-color': [
-              'interpolate',
-              ['linear'],
-              ['heatmap-density'],
-              0, 'rgba(33,102,172,0)',
-              0.2, 'rgb(103,169,207)',
-              0.4, 'rgb(209,229,240)',
-              0.6, 'rgb(253,219,199)',
-              0.8, 'rgb(239,138,98)',
-              1, 'rgb(178,24,43)'
-            ],
-            'heatmap-radius': 30,
-            'heatmap-opacity': 0.8
-          }
-        }, 'clusters');
-      }
+      // Click on unclustered point to show popup
+      mapRef.current.on('click', 'unclustered-point', (e) => {
+        if (!e.features || e.features.length === 0) return;
+
+        const feature = e.features[0];
+        const coordinates = (feature.geometry as any).coordinates.slice();
+        const properties = feature.properties || {};
+
+        // Find the matching point from geoPoints to get full data
+        const matchingPoint = geoPoints.find(p =>
+          Math.abs(p.coordinates[0] - coordinates[0]) < 0.00001 &&
+          Math.abs(p.coordinates[1] - coordinates[1]) < 0.00001
+        );
+
+        const lat = coordinates[1];
+        const lng = coordinates[0];
+        const coordinatesStr = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+        const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+        const appleMapsUrl = `https://maps.apple.com/?q=${lat},${lng}`;
+        const pointId = matchingPoint?.id || properties.id || 'Unknown';
+        const displayProps = matchingPoint?.properties || properties;
+
+        new mapboxgl.Popup({ maxWidth: '400px' })
+          .setLngLat(coordinates)
+          .setHTML(`
+            <div style="padding: 16px; min-width: 280px; max-width: 400px; font-family: system-ui, -apple-system, sans-serif;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #e5e7eb;">
+                <h3 style="font-weight: 700; font-size: 16px; color: #111827; margin: 0;">${pointId}</h3>
+                <button
+                  onclick="navigator.clipboard.writeText('${coordinatesStr}'); this.innerHTML='✓ Copied!'; setTimeout(() => this.innerHTML='📋 Copy', 2000)"
+                  style="padding: 6px 12px; font-size: 12px; background: #dbeafe; color: #1e40af; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;"
+                  title="Copy coordinates"
+                >
+                  📋 Copy
+                </button>
+              </div>
+
+              ${Object.keys(displayProps).length > 0 ? `
+                <div style="margin-bottom: 16px;">
+                  ${Object.entries(displayProps)
+                    .map(([key, value]) => {
+                      let formattedValue = value;
+                      if (typeof value === 'number') {
+                        formattedValue = value.toLocaleString();
+                      } else if (typeof value === 'string' && value.match(/^https?:\/\//)) {
+                        formattedValue = `<a href="${value}" target="_blank" style="color: #2563eb; text-decoration: underline;">${value}</a>`;
+                      }
+
+                      return `
+                        <div style="display: grid; grid-template-columns: 100px 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid #f3f4f6; align-items: start;">
+                          <span style="font-weight: 600; font-size: 13px; color: #6b7280;">${key}:</span>
+                          <span style="font-size: 13px; color: #111827; word-break: break-word;">${formattedValue}</span>
+                        </div>
+                      `;
+                    }).join('')}
+                </div>
+              ` : ''}
+
+              <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #e5e7eb;">
+                <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6b7280; margin-bottom: 12px;">
+                  <span>📍</span>
+                  <span style="font-family: 'Courier New', monospace; font-weight: 500;">${coordinatesStr}</span>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                  <a
+                    href="${googleMapsUrl}"
+                    target="_blank"
+                    style="padding: 8px 12px; font-size: 12px; background: #d1fae5; color: #065f46; border-radius: 6px; text-align: center; text-decoration: none; font-weight: 500; display: block;"
+                  >
+                    🗺️ Google Maps
+                  </a>
+                  <a
+                    href="${appleMapsUrl}"
+                    target="_blank"
+                    style="padding: 8px 12px; font-size: 12px; background: #f3f4f6; color: #374151; border-radius: 6px; text-align: center; text-decoration: none; font-weight: 500; display: block;"
+                  >
+                    🍎 Apple Maps
+                  </a>
+                </div>
+              </div>
+            </div>
+          `)
+          .addTo(mapRef.current!);
+      });
+
+      // Change cursor on hover for unclustered points
+      mapRef.current.on('mouseenter', 'unclustered-point', () => {
+        if (mapRef.current) mapRef.current.getCanvas().style.cursor = 'pointer';
+      });
+
+      mapRef.current.on('mouseleave', 'unclustered-point', () => {
+        if (mapRef.current) mapRef.current.getCanvas().style.cursor = '';
+      });
+
+      // Change cursor on hover for clusters
+      mapRef.current.on('mouseenter', 'clusters', () => {
+        if (mapRef.current) mapRef.current.getCanvas().style.cursor = 'pointer';
+      });
+
+      mapRef.current.on('mouseleave', 'clusters', () => {
+        if (mapRef.current) mapRef.current.getCanvas().style.cursor = '';
+      });
 
     } else {
+      // Add GeoJSON source without clustering for heatmap and markers
+      mapRef.current.addSource('points', {
+        type: 'geojson',
+        data: geojson,
+        cluster: false
+      });
       // Use individual markers for few points
       geoPoints.forEach((point) => {
         const [lng, lat] = point.coordinates;
 
-        // Create popup
+        // Create popup with enhanced features
+        const coordinatesStr = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+        const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+        const appleMapsUrl = `https://maps.apple.com/?q=${lat},${lng}`;
+
         const popup = new mapboxgl.Popup({
           offset: 25,
           closeButton: true,
           closeOnClick: false,
-          className: 'custom-popup'
+          className: 'custom-popup',
+          maxWidth: '400px'
         }).setHTML(`
-          <div class="p-3">
-            <h3 class="font-bold text-sm mb-2 text-gray-900 dark:text-white">${point.id}</h3>
-            ${point.properties ? Object.entries(point.properties)
-              .map(([key, value]) => `
-                <div class="flex justify-between gap-4 py-1 text-xs border-b border-gray-100 dark:border-gray-700">
-                  <span class="font-semibold text-gray-600 dark:text-gray-400">${key}:</span>
-                  <span class="text-gray-900 dark:text-white">${value}</span>
-                </div>
-              `).join('') : ''}
-            <div class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-              📍 ${lat.toFixed(6)}, ${lng.toFixed(6)}
+          <div style="padding: 16px; min-width: 280px; max-width: 400px; font-family: system-ui, -apple-system, sans-serif;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #e5e7eb;">
+              <h3 style="font-weight: 700; font-size: 16px; color: #111827; margin: 0;">${point.id}</h3>
+              <button
+                onclick="navigator.clipboard.writeText('${coordinatesStr}'); this.innerHTML='✓ Copied!'; setTimeout(() => this.innerHTML='📋 Copy', 2000)"
+                style="padding: 6px 12px; font-size: 12px; background: #dbeafe; color: #1e40af; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;"
+                title="Copy coordinates"
+              >
+                📋 Copy
+              </button>
+            </div>
+
+            ${point.properties ? `
+              <div style="margin-bottom: 16px;">
+                ${Object.entries(point.properties)
+                  .map(([key, value]) => {
+                    // Format values based on type
+                    let formattedValue = value;
+                    if (typeof value === 'number') {
+                      formattedValue = value.toLocaleString();
+                    } else if (typeof value === 'string' && value.match(/^https?:\/\//)) {
+                      formattedValue = `<a href="${value}" target="_blank" style="color: #2563eb; text-decoration: underline;">${value}</a>`;
+                    }
+
+                    return `
+                      <div style="display: grid; grid-template-columns: 100px 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid #f3f4f6; align-items: start;">
+                        <span style="font-weight: 600; font-size: 13px; color: #6b7280;">${key}:</span>
+                        <span style="font-size: 13px; color: #111827; word-break: break-word;">${formattedValue}</span>
+                      </div>
+                    `;
+                  }).join('')}
+              </div>
+            ` : ''}
+
+            <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #e5e7eb;">
+              <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6b7280; margin-bottom: 12px;">
+                <span>📍</span>
+                <span style="font-family: 'Courier New', monospace; font-weight: 500;">${coordinatesStr}</span>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <a
+                  href="${googleMapsUrl}"
+                  target="_blank"
+                  style="padding: 8px 12px; font-size: 12px; background: #d1fae5; color: #065f46; border-radius: 6px; text-align: center; text-decoration: none; font-weight: 500; display: block;"
+                >
+                  🗺️ Google Maps
+                </a>
+                <a
+                  href="${appleMapsUrl}"
+                  target="_blank"
+                  style="padding: 8px 12px; font-size: 12px; background: #f3f4f6; color: #374151; border-radius: 6px; text-align: center; text-decoration: none; font-weight: 500; display: block;"
+                >
+                  🍎 Apple Maps
+                </a>
+              </div>
             </div>
           </div>
         `);
@@ -489,6 +643,7 @@ export default function MapboxViewerPro({
         el.style.border = '3px solid white';
         el.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
         el.style.cursor = 'pointer';
+        el.style.opacity = showHeatmap ? '0.3' : '1';
 
         const marker = new mapboxgl.Marker({ element: el })
           .setLngLat([lng, lat])
@@ -496,6 +651,33 @@ export default function MapboxViewerPro({
           .addTo(mapRef.current!);
 
         markersRef.current.push(marker);
+      });
+    }
+
+    // Add heatmap layer (works with or without clustering)
+    if (showHeatmap && mapRef.current.getSource('points')) {
+      mapRef.current.addLayer({
+        id: 'heatmap-layer',
+        type: 'heatmap',
+        source: 'points',
+        maxzoom: 15,
+        paint: {
+          'heatmap-weight': 1,
+          'heatmap-intensity': 1,
+          'heatmap-color': [
+            'interpolate',
+            ['linear'],
+            ['heatmap-density'],
+            0, 'rgba(33,102,172,0)',
+            0.2, 'rgb(103,169,207)',
+            0.4, 'rgb(209,229,240)',
+            0.6, 'rgb(253,219,199)',
+            0.8, 'rgb(239,138,98)',
+            1, 'rgb(178,24,43)'
+          ],
+          'heatmap-radius': 30,
+          'heatmap-opacity': 0.8
+        }
       });
     }
 
@@ -566,19 +748,20 @@ export default function MapboxViewerPro({
     <div className="relative h-full w-full overflow-hidden rounded-lg">
       <div ref={mapContainerRef} style={{ height }} className="w-full" />
 
-      {/* Control Panel */}
-      <div className="absolute right-3 top-3 z-10 space-y-2">
+      {/* Control Panel - Moved to left side below search bar */}
+      <div className="absolute left-3 top-16 z-10 space-y-2">
         {/* Layer Control */}
-        <button
-          onClick={() => setShowLayerControl(!showLayerControl)}
-          className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white shadow-lg hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:hover:bg-gray-700"
-          title="Layer Controls"
-        >
-          <Layers className="h-5 w-5 text-gray-700 dark:text-gray-300" />
-        </button>
+        <div ref={layerControlRef}>
+          <button
+            onClick={() => setShowLayerControl(!showLayerControl)}
+            className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white shadow-lg hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:hover:bg-gray-700"
+            title="Layer Controls"
+          >
+            <Layers className="h-5 w-5 text-gray-700 dark:text-gray-300" />
+          </button>
 
-        {showLayerControl && (
-          <div className="w-64 rounded-lg border border-gray-300 bg-white p-3 shadow-lg dark:border-gray-600 dark:bg-gray-800">
+          {showLayerControl && (
+            <div className="w-64 rounded-lg border border-gray-300 bg-white p-3 shadow-lg dark:border-gray-600 dark:bg-gray-800">
             <h3 className="mb-3 text-sm font-bold text-gray-900 dark:text-white">
               Map Layers
             </h3>
@@ -647,7 +830,8 @@ export default function MapboxViewerPro({
               </select>
             </div>
           </div>
-        )}
+          )}
+        </div>
 
         {/* Quick Actions */}
         <button

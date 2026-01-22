@@ -1,4 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  isValidHostname,
+  isValidPort,
+  apiRateLimiter,
+  sanitizeErrorMessage
+} from '@/app/lib/validation';
 
 // Force route to be dynamic (not cached)
 export const dynamic = 'force-dynamic';
@@ -8,15 +14,45 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     console.log('[SQL Proxy] Received POST request');
-    console.log('[SQL Proxy] Headers:', {
-      host: request.headers.get('x-monkdb-host'),
-      port: request.headers.get('x-monkdb-port'),
-      contentType: request.headers.get('content-type'),
-    });
 
     // Get MonkDB connection info from headers
     const host = request.headers.get('x-monkdb-host') || 'localhost';
-    const port = request.headers.get('x-monkdb-port') || '4200';
+    const portStr = request.headers.get('x-monkdb-port') || '4200';
+
+    // SECURITY: Validate hostname to prevent SSRF attacks
+    if (!isValidHostname(host)) {
+      console.error('[SQL Proxy] Invalid hostname:', host);
+      return NextResponse.json(
+        { error: 'Invalid hostname.' },
+        { status: 400 }
+      );
+    }
+
+    // SECURITY: Validate port number
+    if (!isValidPort(portStr)) {
+      console.error('[SQL Proxy] Invalid port:', portStr);
+      return NextResponse.json(
+        { error: 'Invalid port number.' },
+        { status: 400 }
+      );
+    }
+
+    // SECURITY: Rate limiting (100 requests per minute per IP)
+    const clientId = request.headers.get('x-forwarded-for') ||
+                     request.headers.get('x-real-ip') ||
+                     'unknown';
+    if (!apiRateLimiter.check(`sql:${clientId}`)) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Please try again later.' },
+        { status: 429 }
+      );
+    }
+
+    console.log('[SQL Proxy] Headers (validated):', {
+      host,
+      port: portStr,
+      contentType: request.headers.get('content-type'),
+    });
 
     // Get SQL statement from body
     let body;
@@ -32,7 +68,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Forward to MonkDB
-    const monkdbUrl = `http://${host}:${port}/_sql`;
+    const monkdbUrl = `http://${host}:${portStr}/_sql`;
     console.log('[SQL Proxy] Forwarding to:', monkdbUrl);
 
     const response = await fetch(monkdbUrl, {
@@ -63,7 +99,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('[SQL Proxy] Query error:', error);
     return NextResponse.json(
-      { error: error.message || 'Query failed' },
+      { error: sanitizeErrorMessage(error) },
       { status: 500 }
     );
   }
@@ -72,12 +108,21 @@ export async function POST(request: NextRequest) {
 // Add OPTIONS handler for CORS preflight
 export async function OPTIONS(request: NextRequest) {
   console.log('[SQL Proxy] Received OPTIONS request (CORS preflight)');
+
+  // SECURITY: Use environment variable for allowed origins instead of wildcard
+  // In production, this should be a whitelist of specific domains
+  const allowedOrigin = process.env.NEXT_PUBLIC_ALLOWED_ORIGIN ||
+                        process.env.NEXTAUTH_URL ||
+                        request.headers.get('origin') ||
+                        '*';
+
   return new NextResponse(null, {
     status: 200,
     headers: {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': allowedOrigin,
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, x-monkdb-host, x-monkdb-port',
+      'Access-Control-Allow-Credentials': 'true',
     },
   });
 }

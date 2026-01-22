@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import SpatialQueryBuilder from '../components/geo/SpatialQueryBuilder';
-import GeoDataImporter from '../components/geo/GeoDataImporter';
 import EnterpriseDataPanel from '../components/geo/EnterpriseDataPanel';
-import { Map, Database, Upload, Code, AlertTriangle, CheckCircle, Copy, Check, AlertCircle, RefreshCw, Settings, Info, Play, X, MapPin } from 'lucide-react';
+import TableColumnSelector, { TableColumnSelection } from '../components/geo/TableColumnSelector';
+import { Map, Database, Settings, Code, AlertTriangle, CheckCircle, Copy, Check, AlertCircle, RefreshCw, Info, Play, X, MapPin, Eye, EyeOff, Search } from 'lucide-react';
 import { useActiveConnection } from '../lib/monkdb-context';
 import { useToast } from '../components/ToastContext';
 import { geospatialConfig } from '../config/geospatial.config';
@@ -36,7 +36,7 @@ interface GeoShape {
   properties?: Record<string, any>;
 }
 
-type ActiveTab = 'map' | 'query' | 'import' | 'manage';
+type ActiveTab = 'map' | 'query' | 'manage';
 
 export default function GeospatialPage() {
   const activeConnection = useActiveConnection();
@@ -50,34 +50,137 @@ export default function GeospatialPage() {
   const [drawnGeometry, setDrawnGeometry] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [noGeoColumnError, setNoGeoColumnError] = useState<{tableName: string, show: boolean} | null>(null);
+  const [hasExecutedQuery, setHasExecutedQuery] = useState(false);
+  const [mapCollapsed, setMapCollapsed] = useState(false);
+  const [savedQueries, setSavedQueries] = useState<Array<{id: string, name: string, sql: string, type: string}>>([]);
+  const [queryHistory, setQueryHistory] = useState<string[]>([]);
   const [copiedTemplate, setCopiedTemplate] = useState<string | null>(null);
   const [showQueryInfo, setShowQueryInfo] = useState<string | null>(null);
   const [showUsageInfo, setShowUsageInfo] = useState(false);
   const [showDemoQueries, setShowDemoQueries] = useState(false);
+  const [mapTableSelection, setMapTableSelection] = useState<TableColumnSelection | null>(null);
+  const [showMapFilters, setShowMapFilters] = useState(false);
+  const [mapFilters, setMapFilters] = useState<Array<{column: string, operator: string, value: string}>>([]);
 
-  // Auto-load all stores on page mount
-  useEffect(() => {
-    if (activeConnection) {
-      loadAllStores();
+  // Load all data from selected table on Map View
+  const handleMapTableSelection = async (selection: TableColumnSelection | null) => {
+    setMapTableSelection(selection);
+
+    if (!selection || !activeConnection) {
+      return;
     }
-  }, [activeConnection]);
 
-  const loadAllStores = async () => {
+    console.log('Map table selection:', selection);
+    console.log('Available columns:', selection.columns);
+
+    // Build query to load all data from selected table
+    const geoCol = selection.columns.find(c => c.type.toLowerCase().includes('geo'));
+    if (!geoCol) {
+      const tableName = `${selection.schema}.${selection.table}`;
+      setNoGeoColumnError({ tableName, show: true });
+      toast.error('No Geo Column', 'Selected table does not have a geospatial column.');
+      return;
+    }
+
+    // Clear any previous error
+    setNoGeoColumnError(null);
+
+    const geoColumnName = geoCol.name;
+    const isGeoPoint = geoCol.type.toLowerCase().includes('geo_point');
+
+    // Find name/label column
+    const nameCol = selection.columns.find(c =>
+      c.name.toLowerCase().includes('name') ||
+      c.name.toLowerCase().includes('title') ||
+      c.name.toLowerCase().includes('label')
+    );
+    const nameColumnName = nameCol ? nameCol.name : 'id';
+
+    // Find id column
+    const idCol = selection.columns.find(c =>
+      c.name.toLowerCase() === 'id' ||
+      c.name.toLowerCase() === '_id'
+    );
+    const idColumnName = idCol ? idCol.name : 'id';
+
+    // Build SELECT columns
+    let selectColumns = [];
+
+    // Always include id first
+    if (idCol) {
+      selectColumns.push(idColumnName);
+    } else {
+      selectColumns.push('ROW_NUMBER() OVER() as id');
+    }
+
+    // Add name column
+    if (nameCol) {
+      selectColumns.push(`${nameColumnName} as name`);
+    }
+
+    // Add latitude/longitude for GEO_POINT
+    if (isGeoPoint) {
+      selectColumns.push(`latitude(${geoColumnName}) as latitude`);
+      selectColumns.push(`longitude(${geoColumnName}) as longitude`);
+    }
+
+    // Add other columns (limit to first 10 to avoid overwhelming)
+    const otherCols = selection.columns
+      .filter(c =>
+        c.name !== idColumnName &&
+        c.name !== nameColumnName &&
+        c.name !== geoColumnName &&
+        !c.type.toLowerCase().includes('geo')
+      )
+      .slice(0, 10)
+      .map(c => {
+        // Round numeric columns
+        if (c.type.toLowerCase().includes('double') || c.type.toLowerCase().includes('float')) {
+          return `ROUND(${c.name}, 2) as ${c.name}`;
+        }
+        return c.name;
+      });
+
+    selectColumns = selectColumns.concat(otherCols);
+
+    // Build WHERE clause from filters
+    let whereClause = '';
+    if (mapFilters.length > 0) {
+      const conditions = mapFilters.map(filter => {
+        const column = selection.columns.find(c => c.name === filter.column);
+        const isNumeric = column?.type.toLowerCase().includes('int') ||
+                          column?.type.toLowerCase().includes('double') ||
+                          column?.type.toLowerCase().includes('float');
+
+        switch (filter.operator) {
+          case 'equals':
+            return isNumeric ? `${filter.column} = ${filter.value}` : `${filter.column} = '${filter.value}'`;
+          case 'contains':
+            return `${filter.column} LIKE '%${filter.value}%'`;
+          case 'starts_with':
+            return `${filter.column} LIKE '${filter.value}%'`;
+          case 'greater_than':
+            return `${filter.column} > ${filter.value}`;
+          case 'less_than':
+            return `${filter.column} < ${filter.value}`;
+          default:
+            return isNumeric ? `${filter.column} = ${filter.value}` : `${filter.column} = '${filter.value}'`;
+        }
+      });
+      whereClause = `\nWHERE ${conditions.join(' AND ')}`;
+    }
+
     const query = `SELECT
-  id,
-  store_name as name,
-  latitude(location) as latitude,
-  longitude(location) as longitude,
-  city,
-  state,
-  category,
-  ROUND(revenue, 2) as revenue
-FROM monkdb.stores
-ORDER BY state, city;`;
+  ${selectColumns.join(',\n  ')}
+FROM ${selection.schema}.${selection.table}${whereClause}
+LIMIT 1000;`;
+
+    console.log('Generated query:', query);
+    console.log('Select columns:', selectColumns);
 
     await handleQueryExecute(query);
-    // Switch to map view after loading stores
-    setActiveTab('map');
+    toast.success('Table Loaded', `Loaded data from ${selection.schema}.${selection.table}`);
   };
 
   const handleQueryExecute = async (query: string) => {
@@ -88,28 +191,37 @@ ORDER BY state, city;`;
 
     setLoading(true);
     setError(null);
+    setHasExecutedQuery(true);
+
+    // Add to query history (keep last 10)
+    setQueryHistory(prev => {
+      const updated = [query, ...prev.filter(q => q !== query)];
+      return updated.slice(0, 10);
+    });
 
     try {
       console.log('Executing geospatial query:', query);
       const result = await activeConnection.client.query(query);
 
       // Transform database results - CrateDB returns rows as arrays
-      // Expected column order: id, name, latitude, longitude, ...
+      // Dynamically map columns based on result.cols metadata
       const results = result.rows.map((row, index) => {
-        const obj: any = {
-          id: row[0] !== null && row[0] !== undefined ? row[0] : index,
-          name: row[1] || `Result ${index + 1}`,
-          latitude: row[2],
-          longitude: row[3],
-        };
+        const obj: any = {};
 
-        // Add any additional columns
-        if (row.length > 4) {
-          obj.city = row[4];
-          obj.state = row[5];
-          obj.category = row[6];
-          obj.revenue = row[7];
-          obj.distance_km = typeof row[2] === 'number' && row.length > 5 ? row[row.length - 1] : undefined;
+        // Map each column by its name from metadata
+        result.cols.forEach((col: string, colIndex: number) => {
+          obj[col] = row[colIndex];
+        });
+
+        // Ensure we have required fields for mapping
+        // If no id column, generate one
+        if (!obj.id && obj.id !== 0) {
+          obj.id = index;
+        }
+
+        // If no name column, generate a default
+        if (!obj.name) {
+          obj.name = `Result ${index + 1}`;
         }
 
         return obj;
@@ -132,6 +244,7 @@ ORDER BY state, city;`;
       if (newPoints.length > 0) {
         setGeoPoints(newPoints);
         toast.success('Query Executed', `Found ${results.length} results, ${newPoints.length} mapped points`);
+        // Keep user on query tab to see results on right side map
       } else {
         toast.success('Query Executed', `${results.length} results returned`);
       }
@@ -186,96 +299,164 @@ ORDER BY state, city;`;
     setTimeout(() => setCopiedTemplate(null), 2000);
   };
 
-  // Demo queries with metadata
+  // Demo queries - Educational SQL templates with column guidance
   const demoQueries = [
     {
       id: 'radius',
-      title: 'Stores near Times Square (50km)',
-      description: 'Find all stores within 50 kilometers of Times Square, New York City',
+      title: 'Proximity Search Template',
+      description: 'Find all records within a radius of a specific point',
       queryType: 'Proximity Search (Distance)',
-      useCase: 'Finding nearby locations within a specific radius',
+      useCase: 'Finding nearby locations (stores, offices, customers, etc.)',
       whatItDoes: [
-        'Calculates distance from Times Square (40.7589°N, 73.9851°W)',
-        'Filters stores within 50km radius',
-        'Returns store details with calculated distance',
+        'Calculates distance from a reference point',
+        'Filters records within specified radius (meters)',
+        'Returns record details with calculated distance',
         'Orders results by distance (nearest first)',
       ],
-      expectedResults: '3-5 stores in the NYC area',
-      location: 'Times Square, New York City',
-      coordinates: 'POINT(-73.9851 40.7589)',
-      query: `SELECT
-  id,
-  store_name as name,
-  latitude(location) as latitude,
-  longitude(location) as longitude,
-  city,
-  ROUND(distance(location, 'POINT(-73.9851 40.7589)') / 1000, 2) as distance_km
-FROM monkdb.stores
-WHERE distance(location, 'POINT(-73.9851 40.7589)') < 50000
-ORDER BY distance(location, 'POINT(-73.9851 40.7589)');`,
+      expectedResults: 'All records within the specified radius',
+      location: 'Use Query Builder for visual interface',
+      coordinates: 'POINT(longitude latitude)',
+      query: `-- 📍 Proximity Search Template
+-- Find locations within a radius of a point
+
+SELECT
+  id,                              -- Required: Unique identifier
+  name_column as name,             -- Required: Display label (store_name, customer_name, etc.)
+  latitude(geo_column) as latitude,   -- Required: Latitude for map display
+  longitude(geo_column) as longitude, -- Required: Longitude for map display
+  other_column1,                   -- Optional: Any additional data (city, address, etc.)
+  other_column2,                   -- Optional: More data (category, type, etc.)
+  ROUND(distance(geo_column, 'POINT(-73.9851 40.7589)') / 1000, 2) as distance_km
+FROM schema.table
+WHERE distance(geo_column, 'POINT(-73.9851 40.7589)') < 50000
+ORDER BY distance(geo_column, 'POINT(-73.9851 40.7589)');
+
+-- 📝 Column Requirements:
+-- ✅ id: Unique identifier (INTEGER or TEXT)
+-- ✅ name/label: Display name for markers (TEXT)
+-- ✅ geo_column: GEO_POINT column with coordinates
+-- ✅ Additional columns: Any data you want in map popups
+
+-- 🔧 How to Customize:
+-- 1. Replace 'schema.table' with your table name (e.g., monkdb.stores)
+-- 2. Replace 'geo_column' with your GEO_POINT column name (e.g., location)
+-- 3. Replace 'name_column' with your name/label column (e.g., store_name)
+-- 4. Replace POINT coordinates with your center point
+-- 5. Adjust radius: 50000 meters = 50km
+
+-- 💡 Example:
+-- SELECT id, store_name as name, latitude(location), longitude(location),
+--        city, state FROM monkdb.stores
+-- WHERE distance(location, 'POINT(-118.2437 34.0522)') < 10000;`,
       icon: '📍',
     },
     {
-      id: 'polygon',
-      title: 'All California stores',
-      description: 'Find all stores located in California state, ordered by revenue',
-      queryType: 'Attribute Filter',
-      useCase: 'Regional analysis and revenue comparison',
+      id: 'nearest',
+      title: 'Nearest Neighbor Template',
+      description: 'Find the N closest records to a specific location',
+      queryType: 'Nearest Neighbor Search',
+      useCase: 'Finding closest locations for delivery, service routing, or recommendations',
       whatItDoes: [
-        'Filters stores by state attribute (state = "CA")',
-        'Returns store details including revenue',
-        'Orders results by revenue (highest first)',
-        'Shows business performance by location',
+        'Calculates distance from reference point to all records',
+        'Sorts all records by proximity (nearest first)',
+        'Returns only the top N nearest records',
+        'Useful for "find 5 nearest stores" type queries',
       ],
-      expectedResults: '2-4 California stores',
-      location: 'California, USA',
-      coordinates: 'State-based filter (no coordinates)',
-      query: `SELECT
-  id,
-  store_name as name,
-  latitude(location) as latitude,
-  longitude(location) as longitude,
-  city,
-  category,
-  ROUND(revenue, 2) as revenue
-FROM monkdb.stores
-WHERE state = 'CA'
-ORDER BY revenue DESC;`,
-      icon: '🏪',
+      expectedResults: 'Top N records closest to your location',
+      location: 'Use Query Builder for visual interface',
+      coordinates: 'POINT(longitude latitude)',
+      query: `-- 🎯 Nearest Neighbor Template
+-- Find the N closest locations to a point
+
+SELECT
+  id,                              -- Required: Unique identifier
+  name_column as name,             -- Required: Display label
+  latitude(geo_column) as latitude,   -- Required: For map
+  longitude(geo_column) as longitude, -- Required: For map
+  other_column1,                   -- Optional: Additional info (category, rating, etc.)
+  ROUND(distance(geo_column, 'POINT(-118.2437 34.0522)') / 1000, 2) as distance_km
+FROM schema.table
+ORDER BY distance(geo_column, 'POINT(-118.2437 34.0522)')
+LIMIT 10;                          -- Number of results (change to 5, 20, etc.)
+
+-- 📝 Column Requirements:
+-- ✅ id: Unique identifier
+-- ✅ name/label: What to display on map markers
+-- ✅ geo_column: GEO_POINT column (location, coordinates, position, etc.)
+
+-- 🔧 How to Customize:
+-- 1. Change LIMIT number (5, 10, 20 for top N results)
+-- 2. Replace POINT with your location coordinates
+-- 3. Add more columns for richer marker popups
+-- 4. Order by distance is automatic (nearest first)
+
+-- 💡 Example Use Cases:
+-- • Find 5 nearest coffee shops: LIMIT 5
+-- • Find 10 closest warehouses: LIMIT 10
+-- • Route planning: LIMIT 3 for top choices`,
+      icon: '🎯',
     },
     {
-      id: 'intersects',
-      title: '5 nearest to Downtown LA',
-      description: 'Find the 5 closest stores to Downtown Los Angeles',
-      queryType: 'Nearest Neighbor Search',
-      useCase: 'Finding closest locations for delivery or service routing',
+      id: 'within',
+      title: 'Within Polygon Template',
+      description: 'Find all records inside a polygon area',
+      queryType: 'Polygon Search (Within)',
+      useCase: 'Regional analysis, delivery zones, city boundaries, custom areas',
       whatItDoes: [
-        'Calculates distance from Downtown LA (34.0522°N, 118.2437°W)',
-        'Sorts all stores by proximity',
-        'Returns only the top 5 nearest stores',
-        'Includes distance calculation in kilometers',
+        'Checks if points are within a polygon boundary',
+        'Filters records by geographic area',
+        'Returns all matching records in the region',
+        'Perfect for city limits, districts, or custom zones',
       ],
-      expectedResults: '5 stores closest to Los Angeles',
-      location: 'Downtown Los Angeles, California',
-      coordinates: 'POINT(-118.2437 34.0522)',
-      query: `SELECT
-  store_name as name,
-  city,
-  latitude(location) as latitude,
-  longitude(location) as longitude,
-  category,
-  ROUND(distance(location, 'POINT(-118.2437 34.0522)') / 1000, 2) as distance_km
-FROM monkdb.stores
-ORDER BY distance(location, 'POINT(-118.2437 34.0522)')
-LIMIT 5;`,
-      icon: '🎯',
+      expectedResults: 'All records within the defined polygon area',
+      location: 'Use Query Builder to draw polygon visually',
+      coordinates: 'POLYGON((lon lat, lon lat, ...))',
+      query: `-- 🗺️ Within Polygon Template
+-- Find all locations inside a specific area
+
+SELECT
+  id,                              -- Required: Unique identifier
+  name_column as name,             -- Required: Display label
+  latitude(geo_column) as latitude,   -- Required: For map
+  longitude(geo_column) as longitude, -- Required: For map
+  other_column1,                   -- Optional: Zone, district, etc.
+  other_column2                    -- Optional: Status, type, etc.
+FROM schema.table
+WHERE within(geo_column, 'POLYGON((
+  -118.5 34.0,    -- Southwest corner (lon lat)
+  -118.0 34.0,    -- Southeast corner
+  -118.0 34.5,    -- Northeast corner
+  -118.5 34.5,    -- Northwest corner
+  -118.5 34.0     -- Close polygon (same as first point)
+))');
+
+-- 📝 Column Requirements:
+-- ✅ id: Unique identifier
+-- ✅ name/label: Display name for markers
+-- ✅ geo_column: GEO_POINT column with coordinates
+
+-- 🔧 How to Customize:
+-- 1. Draw polygon visually in Query Builder (easier!)
+-- 2. OR manually define POLYGON coordinates (lon lat format)
+-- 3. First and last point must be identical (close the polygon)
+-- 4. Coordinates are in longitude, latitude order
+
+-- 💡 Example Use Cases:
+-- • All stores in downtown area
+-- • Customers in specific ZIP code boundary
+-- • Deliveries within city limits
+-- • Locations in a sales territory
+
+-- ⚠️ Important:
+-- Polygon must be closed (first point = last point)
+-- Use longitude THEN latitude (POINT(lon lat))`,
+      icon: '🗺️',
     },
   ];
 
   const tabs = [
     { id: 'map', label: 'Map View', icon: Map },
     { id: 'query', label: 'Query Builder', icon: Database },
-    { id: 'import', label: 'Import/Export', icon: Upload },
     { id: 'manage', label: 'Data Management', icon: Settings },
   ];
 
@@ -447,121 +628,493 @@ LIMIT 5;`,
             </div>
           )}
 
-          {/* Empty State for Map */}
+          {/* Map View - Table Selection & Empty State */}
           {activeTab === 'map' && geoPoints.length === 0 && geoShapes.length === 0 && !loading && (
-            <div className="flex h-full items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50/50 dark:border-gray-700 dark:bg-gray-800/50">
-              <div className="max-w-md p-8 text-center">
-                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30">
-                  <Map className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+            <div className="flex h-full flex-col gap-4 overflow-auto p-6">
+              {/* Table Selector Card */}
+              <div className="rounded-lg border-2 border-dashed border-blue-300 bg-blue-50/50 p-6 dark:border-blue-700 dark:bg-blue-900/10">
+                <div className="mb-4 flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                    <Map className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                      Select a Table to Visualize on Map
+                    </h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Choose a table with geospatial columns to see all its location data on the map
+                    </p>
+                  </div>
                 </div>
-                <h3 className="mt-4 text-lg font-bold text-gray-900 dark:text-white">
-                  No Geospatial Data
-                </h3>
-                <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                  Execute a geospatial query from the Query Builder tab or import data to visualize locations on the map.
-                </p>
-                <button
-                  onClick={() => setActiveTab('query')}
-                  className="mt-6 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
-                >
-                  Go to Query Builder
-                </button>
+
+                {/* Table Column Selector */}
+                <TableColumnSelector
+                  onSelectionChange={handleMapTableSelection}
+                  showGeoColumnsOnly={true}
+                  compact={true}
+                />
+
+                {/* No Geo Column Error - Dismissible */}
+                {noGeoColumnError?.show && (
+                  <div className="mt-4 rounded-lg border-2 border-red-300 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="h-5 w-5 flex-shrink-0 text-red-600 dark:text-red-400" />
+                      <div className="flex-1">
+                        <h4 className="text-sm font-semibold text-red-900 dark:text-red-200">
+                          No Geospatial Columns Found
+                        </h4>
+                        <p className="mt-1 text-sm text-red-800 dark:text-red-300">
+                          The table <strong>{noGeoColumnError.tableName}</strong> does not have any geospatial columns (GEO_POINT or GEO_SHAPE).
+                        </p>
+                        <p className="mt-2 text-xs text-red-700 dark:text-red-400">
+                          Please select a different table or add geospatial columns to this table in Data Management.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setNoGeoColumnError(null)}
+                        className="flex-shrink-0 rounded-lg p-1 text-red-600 transition-colors hover:bg-red-100 dark:text-red-400 dark:hover:bg-red-900/40"
+                        title="Dismiss"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {mapTableSelection && (
+                  <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800 dark:bg-green-900/20">
+                    <div className="flex items-center gap-2 text-sm text-green-800 dark:text-green-200">
+                      <CheckCircle className="h-4 w-4" />
+                      <span>
+                        Loading all data from <strong>{mapTableSelection.schema}.{mapTableSelection.table}</strong>
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Alternative Options */}
+              <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+                <h4 className="mb-3 text-sm font-semibold text-gray-900 dark:text-white">
+                  Other Options
+                </h4>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setActiveTab('query')}
+                    className="flex w-full items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-left transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-100 dark:bg-purple-900/30">
+                      <Database className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-gray-900 dark:text-white">
+                        Build Custom Query
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        Use Query Builder for proximity searches, filters, and advanced spatial queries
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('manage')}
+                    className="flex w-full items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-left transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-100 dark:bg-orange-900/30">
+                      <Settings className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-gray-900 dark:text-white">
+                        Import Data
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        Import geospatial data from CSV, GeoJSON, or other formats
+                      </div>
+                    </div>
+                  </button>
+                </div>
               </div>
             </div>
           )}
 
           {activeTab === 'map' && (geoPoints.length > 0 || geoShapes.length > 0) && (
-            <DynamicMapViewer
-              geoPoints={geoPoints}
-              geoShapes={geoShapes}
-              onMapClick={handleMapClick}
-              onDrawComplete={handleDrawComplete}
-              center={[
-                geospatialConfig.map.defaultCenter.lng,
-                geospatialConfig.map.defaultCenter.lat
-              ]}
-              zoom={geospatialConfig.map.defaultZoom}
-              height="100%"
-            />
+            <div className="flex h-full flex-col gap-2">
+              {/* No Geo Column Error - Dismissible (Active Map) */}
+              {noGeoColumnError?.show && (
+                <div className="rounded-lg border-2 border-red-300 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
+                  <div className="flex items-center gap-3">
+                    <AlertCircle className="h-4 w-4 flex-shrink-0 text-red-600 dark:text-red-400" />
+                    <div className="flex-1">
+                      <p className="text-sm text-red-800 dark:text-red-300">
+                        <strong>{noGeoColumnError.tableName}</strong> does not have geospatial columns. Please select a table with GEO_POINT or GEO_SHAPE columns.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setNoGeoColumnError(null)}
+                      className="flex-shrink-0 rounded-lg p-1 text-red-600 transition-colors hover:bg-red-100 dark:text-red-400 dark:hover:bg-red-900/40"
+                      title="Dismiss"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Compact Control Bar */}
+              <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gradient-to-r from-gray-50 to-white px-3 py-2 dark:border-gray-700 dark:from-gray-800 dark:to-gray-800">
+                {/* Current Table Badge */}
+                {mapTableSelection ? (
+                  <div className="flex items-center gap-2 rounded-md bg-blue-100 px-3 py-1.5 dark:bg-blue-900/30">
+                    <Database className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                    <span className="text-xs font-medium text-blue-900 dark:text-blue-300">
+                      {mapTableSelection.schema}.{mapTableSelection.table}
+                    </span>
+                    <span className="text-xs text-blue-700 dark:text-blue-400">
+                      ({geoPoints.length + geoShapes.length})
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 rounded-md bg-gray-100 px-3 py-1.5 dark:bg-gray-700">
+                    <MapPin className="h-3.5 w-3.5 text-gray-600 dark:text-gray-400" />
+                    <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                      Query Results ({geoPoints.length + geoShapes.length})
+                    </span>
+                  </div>
+                )}
+
+                {/* Spacer */}
+                <div className="flex-1"></div>
+
+                {/* Table Selector - Inline */}
+                <div className="flex items-center gap-2">
+                  <TableColumnSelector
+                    onSelectionChange={handleMapTableSelection}
+                    showGeoColumnsOnly={true}
+                    compact={true}
+                  />
+                  {mapTableSelection && (
+                    <button
+                      onClick={() => setShowMapFilters(!showMapFilters)}
+                      className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        showMapFilters || mapFilters.length > 0
+                          ? 'border-blue-300 bg-blue-100 text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                          : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                      }`}
+                      title="Filter data"
+                    >
+                      🔍 Filters {mapFilters.length > 0 && `(${mapFilters.length})`}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setMapTableSelection(null);
+                      setGeoPoints([]);
+                      setGeoShapes([]);
+                      setQueryResults([]);
+                      setMapFilters([]);
+                    }}
+                    className="rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30"
+                    title="Clear map"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              {/* Filter Panel */}
+              {showMapFilters && mapTableSelection && (
+                <div className="rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-5 shadow-sm dark:border-blue-900 dark:from-blue-950 dark:to-gray-800">
+                  {/* Header */}
+                  <div className="mb-4 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 dark:bg-blue-500">
+                        <Search className="h-4 w-4 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+                          Filter Data
+                        </h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Search and filter your map results
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowMapFilters(false)}
+                      className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-300"
+                      title="Close filters"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  {/* Active Filters */}
+                  {mapFilters.length > 0 ? (
+                    <div className="mb-4 space-y-3">
+                      {mapFilters.map((filter, index) => (
+                        <div key={index} className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                          <div className="mb-2 flex items-center justify-between">
+                            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                              Filter #{index + 1}
+                            </span>
+                            <button
+                              onClick={() => {
+                                setMapFilters(mapFilters.filter((_, i) => i !== index));
+                              }}
+                              className="rounded-md p-1 text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                              title="Remove filter"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-12 gap-2">
+                            {/* Column Select */}
+                            <div className="col-span-4">
+                              <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                                Column
+                              </label>
+                              <select
+                                value={filter.column}
+                                onChange={(e) => {
+                                  const newFilters = [...mapFilters];
+                                  newFilters[index].column = e.target.value;
+                                  setMapFilters(newFilters);
+                                }}
+                                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                              >
+                                {mapTableSelection.columns
+                                  .filter(c => !c.type.toLowerCase().includes('geo'))
+                                  .map(col => (
+                                    <option key={col.name} value={col.name}>{col.name}</option>
+                                  ))}
+                              </select>
+                            </div>
+
+                            {/* Operator Select */}
+                            <div className="col-span-4">
+                              <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                                Condition
+                              </label>
+                              <select
+                                value={filter.operator}
+                                onChange={(e) => {
+                                  const newFilters = [...mapFilters];
+                                  newFilters[index].operator = e.target.value;
+                                  setMapFilters(newFilters);
+                                }}
+                                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                              >
+                                <option value="equals">= Equals</option>
+                                <option value="contains">⊃ Contains</option>
+                                <option value="starts_with">⊲ Starts with</option>
+                                <option value="greater_than">&gt; Greater than</option>
+                                <option value="less_than">&lt; Less than</option>
+                              </select>
+                            </div>
+
+                            {/* Value Input */}
+                            <div className="col-span-4">
+                              <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                                Value
+                              </label>
+                              <input
+                                type="text"
+                                value={filter.value}
+                                onChange={(e) => {
+                                  const newFilters = [...mapFilters];
+                                  newFilters[index].value = e.target.value;
+                                  setMapFilters(newFilters);
+                                }}
+                                placeholder="Enter value..."
+                                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 transition-colors placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder:text-gray-500"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mb-4 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 p-6 text-center dark:border-gray-700 dark:bg-gray-800/50">
+                      <Search className="mx-auto mb-2 h-8 w-8 text-gray-400" />
+                      <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                        No filters added yet
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-500">
+                        Click "Add Filter" to start filtering your data
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-3">
+                    {/* Add Filter Button */}
+                    <button
+                      onClick={() => {
+                        const firstNonGeoColumn = mapTableSelection.columns.find(c => !c.type.toLowerCase().includes('geo'));
+                        if (firstNonGeoColumn) {
+                          setMapFilters([...mapFilters, { column: firstNonGeoColumn.name, operator: 'equals', value: '' }]);
+                        }
+                      }}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-lg border-2 border-dashed border-blue-300 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900"
+                    >
+                      <span className="text-lg">+</span>
+                      Add Filter
+                    </button>
+
+                    {/* Apply & Clear Buttons */}
+                    {mapFilters.length > 0 && (
+                      <>
+                        <button
+                          onClick={() => {
+                            setMapFilters([]);
+                            handleMapTableSelection(mapTableSelection);
+                          }}
+                          className="rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                        >
+                          Clear All
+                        </button>
+                        <button
+                          onClick={() => handleMapTableSelection(mapTableSelection)}
+                          className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-3 text-sm font-semibold text-white shadow-lg transition-all hover:from-blue-700 hover:to-blue-800 hover:shadow-xl"
+                        >
+                          <Play className="h-4 w-4" />
+                          Apply Filters
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Map Viewer */}
+              <div className="flex-1 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+                <DynamicMapViewer
+                  geoPoints={geoPoints}
+                  geoShapes={geoShapes}
+                  onMapClick={handleMapClick}
+                  onDrawComplete={handleDrawComplete}
+                  center={[
+                    geospatialConfig.map.defaultCenter.lng,
+                    geospatialConfig.map.defaultCenter.lat
+                  ]}
+                  zoom={geospatialConfig.map.defaultZoom}
+                  height="100%"
+                />
+              </div>
+            </div>
           )}
 
           {activeTab === 'query' && (
-            <SpatialQueryBuilder
-              onQueryExecute={handleQueryExecute}
-              initialCollection="monkdb.stores"
-            />
-          )}
-
-          {activeTab === 'import' && (
-            <GeoDataImporter onImport={handleDataImport} />
-          )}
-
-          {activeTab === 'manage' && (
-            <EnterpriseDataPanel onDataChange={loadAllStores} />
-          )}
-        </div>
-
-        {/* Side Panel - Only show when there's content */}
-        {((selectedCoords && activeTab === 'map') || (queryResults.length > 0 && activeTab === 'query')) && (
-          <div className="w-96 space-y-4 overflow-y-auto">
-            {/* Selected Coordinates */}
-            {selectedCoords && activeTab === 'map' && (
-            <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-              <h3 className="mb-3 text-sm font-semibold text-gray-900 dark:text-white">
-                Selected Location
-              </h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Latitude:</span>
-                  <span className="font-mono text-gray-900 dark:text-white">
-                    {selectedCoords[0].toFixed(6)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Longitude:</span>
-                  <span className="font-mono text-gray-900 dark:text-white">
-                    {selectedCoords[1].toFixed(6)}
-                  </span>
-                </div>
-                <div className="mt-3 rounded-lg bg-gray-50 p-2 dark:bg-gray-900">
-                  <code className="text-xs text-gray-700 dark:text-gray-300">
-                    POINT({selectedCoords[1].toFixed(6)} {selectedCoords[0].toFixed(6)})
-                  </code>
-                </div>
+            <div className="flex h-full gap-4">
+              {/* Query Builder - Left Side - Dynamic Width */}
+              <div className={`flex-shrink-0 transition-all duration-300 ${mapCollapsed ? 'flex-1' : 'w-96'}`}>
+                <SpatialQueryBuilder
+                  onQueryExecute={handleQueryExecute}
+                  queryHistory={queryHistory}
+                  onLoadQuery={handleQueryExecute}
+                />
               </div>
-            </div>
-          )}
 
-          {/* Query Results */}
-          {queryResults.length > 0 && activeTab === 'query' && (
-            <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-              <h3 className="mb-3 text-sm font-semibold text-gray-900 dark:text-white">
-                Query Results ({queryResults.length})
-              </h3>
-              <div className="space-y-2">
-                {queryResults.map((result, index) => (
-                  <div
-                    key={index}
-                    className="rounded-lg bg-gray-50 p-3 dark:bg-gray-900"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">
-                        {result.name}
-                      </span>
-                      {result.distance && (
-                        <span className="text-xs text-gray-600 dark:text-gray-400">
-                          {result.distance.toFixed(2)}m
-                        </span>
+              {/* Map Results - Right Side - Collapsible */}
+              {!mapCollapsed && (
+              <div className="flex-1 overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 relative">
+                {geoPoints.length === 0 && !loading ? (
+                  <div className="flex h-full items-center justify-center p-8">
+                    <div className="max-w-lg text-center">
+                      <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${hasExecutedQuery ? 'bg-orange-100 dark:bg-orange-900/30' : 'bg-gray-100 dark:bg-gray-900'}`}>
+                        <MapPin className={`h-8 w-8 ${hasExecutedQuery ? 'text-orange-500 dark:text-orange-400' : 'text-gray-400 dark:text-gray-600'}`} />
+                      </div>
+                      <h3 className="mt-4 text-lg font-bold text-gray-900 dark:text-white">
+                        {hasExecutedQuery ? '0 Results Found' : 'No Results Yet'}
+                      </h3>
+                      {hasExecutedQuery ? (
+                        <div className="mt-3 space-y-3">
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                            Your query executed successfully but returned no results.
+                          </p>
+                          <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 dark:border-orange-900/50 dark:bg-orange-900/20">
+                            <p className="text-xs font-semibold text-orange-900 dark:text-orange-300 mb-2">
+                              💡 Try these solutions:
+                            </p>
+                            <ul className="space-y-1.5 text-left text-xs text-orange-800 dark:text-orange-200">
+                              <li className="flex items-start gap-2">
+                                <span className="mt-0.5">•</span>
+                                <span><strong>Increase the radius</strong> - Try 50km or 100km instead of 1km</span>
+                              </li>
+                              <li className="flex items-start gap-2">
+                                <span className="mt-0.5">•</span>
+                                <span><strong>Change location</strong> - Click a different preset city</span>
+                              </li>
+                              <li className="flex items-start gap-2">
+                                <span className="mt-0.5">•</span>
+                                <span><strong>Use larger polygon</strong> - For Within/Intersects queries</span>
+                              </li>
+                              <li className="flex items-start gap-2">
+                                <span className="mt-0.5">•</span>
+                                <span><strong>Check your data</strong> - Verify stores exist in your database</span>
+                              </li>
+                            </ul>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                          Build your query on the left and click "Execute Query" to see results on this map.
+                        </p>
                       )}
                     </div>
                   </div>
-                ))}
+                ) : (
+                  <DynamicMapViewer
+                    geoPoints={geoPoints}
+                    geoShapes={geoShapes}
+                    onMapClick={handleMapClick}
+                    onDrawComplete={handleDrawComplete}
+                    center={[
+                      geospatialConfig.map.defaultCenter.lng,
+                      geospatialConfig.map.defaultCenter.lat
+                    ]}
+                    zoom={geospatialConfig.map.defaultZoom}
+                    height="100%"
+                  />
+                )}
+
+                {/* Collapse Map Button - Inside map panel */}
+                <button
+                  onClick={() => setMapCollapsed(true)}
+                  className="absolute right-2 top-2 z-20 flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-lg transition-all hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                  title="Hide map preview"
+                >
+                  <EyeOff className="h-3.5 w-3.5" />
+                  Hide Map
+                </button>
               </div>
+              )}
+
+              {/* Expand Map Button - Shows when map is collapsed */}
+              {mapCollapsed && (
+                <button
+                  onClick={() => setMapCollapsed(false)}
+                  className="flex flex-shrink-0 items-center gap-2 rounded-lg border-2 border-dashed border-blue-300 bg-blue-50 px-4 py-8 text-sm font-medium text-blue-700 transition-all hover:border-blue-400 hover:bg-blue-100 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:border-blue-600 dark:hover:bg-blue-900/30"
+                  title="Show map preview"
+                >
+                  <Eye className="h-5 w-5" />
+                  <div className="text-left">
+                    <div className="font-semibold">Show Map</div>
+                    <div className="text-xs text-blue-600 dark:text-blue-400">View Results</div>
+                  </div>
+                </button>
+              )}
             </div>
           )}
 
-          </div>
-        )}
+          {activeTab === 'manage' && (
+            <EnterpriseDataPanel onDataChange={() => {
+              // Refresh data after changes - user can re-execute queries manually
+              toast.success('Data Updated', 'Please re-execute your query to see updated results');
+            }} />
+          )}
+        </div>
           </div>
         </div>
       </div>
@@ -774,14 +1327,54 @@ LIMIT 5;`,
 
             <div className="p-6">
               <div className="space-y-6">
-                {/* Auto-loaded Data */}
+                {/* Creating Geospatial Tables */}
+                <div className="rounded-lg border-2 border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
+                  <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-green-900 dark:text-green-300">
+                    <Settings className="h-4 w-4" />
+                    📝 How to Create Geospatial Tables
+                  </h3>
+                  <div className="space-y-3 text-sm text-green-800 dark:text-green-200">
+                    <p className="font-semibold">Required Columns for Map Visualization:</p>
+                    <div className="space-y-2 rounded-lg bg-white/50 p-3 dark:bg-green-900/30">
+                      <div className="flex items-start gap-2">
+                        <span className="font-mono text-xs">✅</span>
+                        <div>
+                          <strong>id</strong> (INTEGER or TEXT) - Unique identifier for each record
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="font-mono text-xs">✅</span>
+                        <div>
+                          <strong>name/label column</strong> (TEXT) - Display name (e.g., store_name, customer_name, location_name)
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="font-mono text-xs">✅</span>
+                        <div>
+                          <strong>geo_column</strong> (GEO_POINT or GEO_SHAPE) - Location coordinates
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="font-mono text-xs">💡</span>
+                        <div>
+                          <strong>Additional columns</strong> (any type) - Extra data shown in map popups (city, address, category, revenue, etc.)
+                        </div>
+                      </div>
+                    </div>
+                    <p className="mt-3 rounded-lg bg-white/50 p-3 dark:bg-green-900/30">
+                      <strong>💡 Tip:</strong> Go to <strong>Data Management → Create Table</strong> tab to create your geospatial table with a visual wizard!
+                    </p>
+                  </div>
+                </div>
+
+                {/* Table Selection */}
                 <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
                   <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-blue-900 dark:text-blue-300">
-                    <CheckCircle className="h-4 w-4" />
-                    Auto-loaded Data
+                    <Database className="h-4 w-4" />
+                    Dynamic Table Selection
                   </h3>
                   <p className="text-sm text-blue-800 dark:text-blue-200">
-                    All 15 stores from <code className="rounded bg-blue-100 px-1.5 py-0.5 font-mono text-xs dark:bg-blue-900">monkdb.stores</code> are automatically loaded on the map when you open this page!
+                    Choose any table with geospatial columns (GEO_POINT or GEO_SHAPE) from your database. The system automatically detects all columns and adapts to your table's schema!
                   </p>
                 </div>
 
@@ -799,7 +1392,7 @@ LIMIT 5;`,
                         <div>
                           <h4 className="font-semibold text-gray-900 dark:text-white">Map View</h4>
                           <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                            See all store locations on an interactive map. Click markers to see store details including name, city, category, and revenue.
+                            Visualize all geospatial data on an interactive map. Click markers to see record details and properties from your selected table.
                           </p>
                         </div>
                       </div>
@@ -928,15 +1521,88 @@ LIMIT 5;`,
                   </div>
                 </div>
 
+                {/* Column Naming Best Practices */}
+                <div>
+                  <h3 className="mb-3 text-sm font-bold text-gray-900 dark:text-white">
+                    📋 Column Naming Best Practices
+                  </h3>
+                  <div className="space-y-3">
+                    <div className="rounded-lg border border-purple-200 bg-purple-50 p-3 dark:border-purple-800 dark:bg-purple-900/20">
+                      <h4 className="mb-2 text-sm font-semibold text-purple-900 dark:text-purple-300">
+                        Recommended Column Names
+                      </h4>
+                      <div className="space-y-2 text-xs text-purple-800 dark:text-purple-200">
+                        <div className="flex gap-2">
+                          <strong className="min-w-[100px]">ID Column:</strong>
+                          <span className="font-mono">id, _id, store_id, customer_id, location_id</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <strong className="min-w-[100px]">Name Column:</strong>
+                          <span className="font-mono">name, store_name, customer_name, location_name, title</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <strong className="min-w-[100px]">Geo Column:</strong>
+                          <span className="font-mono">location, coordinates, position, geo_point, geo_location</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <strong className="min-w-[100px]">Address:</strong>
+                          <span className="font-mono">address, street_address, full_address</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <strong className="min-w-[100px]">City/State:</strong>
+                          <span className="font-mono">city, state, region, district, zone</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
+                      <h4 className="mb-2 text-sm font-semibold text-blue-900 dark:text-blue-300">
+                        Example Table Structures
+                      </h4>
+                      <div className="space-y-3 text-xs">
+                        <div>
+                          <div className="mb-1 font-semibold text-blue-800 dark:text-blue-200">Retail Stores:</div>
+                          <code className="block rounded bg-white p-2 dark:bg-blue-900/30">
+                            id, store_name, location (GEO_POINT), address, city, state, category, revenue, employees
+                          </code>
+                        </div>
+                        <div>
+                          <div className="mb-1 font-semibold text-blue-800 dark:text-blue-200">Customer Locations:</div>
+                          <code className="block rounded bg-white p-2 dark:bg-blue-900/30">
+                            customer_id, customer_name, coordinates (GEO_POINT), address, city, state, zip_code, phone
+                          </code>
+                        </div>
+                        <div>
+                          <div className="mb-1 font-semibold text-blue-800 dark:text-blue-200">Delivery Zones:</div>
+                          <code className="block rounded bg-white p-2 dark:bg-blue-900/30">
+                            zone_id, zone_name, boundary (GEO_SHAPE), coverage_area, delivery_fee, active_status
+                          </code>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Pro Tip */}
                 <div className="rounded-lg border-2 border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
                   <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-green-900 dark:text-green-300">
-                    <AlertTriangle className="h-4 w-4" />
-                    💡 Pro Tip
+                    <CheckCircle className="h-4 w-4" />
+                    💡 Quick Start Guide
                   </h3>
-                  <p className="text-sm text-green-800 dark:text-green-200">
-                    Click the <strong>Info</strong> button on any demo query to see detailed explanations, expected results, and execute it directly from the modal!
-                  </p>
+                  <div className="space-y-2 text-sm text-green-800 dark:text-green-200">
+                    <p>
+                      <strong>1.</strong> Go to <strong>Data Management → Create Table</strong> to set up your geospatial table
+                    </p>
+                    <p>
+                      <strong>2.</strong> Add required columns: id, name, and a GEO_POINT column
+                    </p>
+                    <p>
+                      <strong>3.</strong> Use <strong>Map View</strong> to select your table and visualize all data
+                    </p>
+                    <p>
+                      <strong>4.</strong> Try <strong>Demo Queries</strong> to learn geospatial SQL patterns
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>

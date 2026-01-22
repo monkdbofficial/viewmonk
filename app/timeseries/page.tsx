@@ -271,6 +271,7 @@ export default function TimeSeriesPage() {
   };
 
   const handleGenerateSQL = () => {
+    if (!tableConfig) return;
     const fullTableName = `${tableConfig.schemaName}.${tableConfig.tableName}`;
     const sql = generateSQLQuery(
       fullTableName,

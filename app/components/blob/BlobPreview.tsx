@@ -399,8 +399,8 @@ export default function BlobPreview({ blob, allBlobs, onClose, onDelete }: BlobP
       // Load Markdown and render as HTML
       fetch(blobUrl)
         .then(response => response.text())
-        .then(text => {
-          const html = marked(text);
+        .then(async text => {
+          const html = await marked(text);
           setOfficeHtml(html);
           setLoading(false);
         })

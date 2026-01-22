@@ -135,16 +135,16 @@ export default function SearchableSelect({
         type="button"
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
-        className={`relative w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+        className={`relative w-full min-w-[180px] rounded-lg border px-4 py-2.5 text-left text-sm font-medium transition-all ${
           error
             ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
-            : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
+            : 'border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20'
         } ${
-          disabled ? 'cursor-not-allowed bg-gray-100 opacity-50' : 'bg-white hover:border-gray-400'
-        } dark:border-gray-600 dark:bg-gray-700 dark:text-white`}
+          disabled ? 'cursor-not-allowed bg-gray-100 opacity-50' : 'bg-white hover:border-gray-400 hover:shadow-sm'
+        } dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:hover:border-gray-500`}
       >
-        <div className="flex items-center justify-between gap-2">
-          <span className={value ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}>
+        <div className="flex items-center justify-between gap-3">
+          <span className={value ? 'text-gray-900 dark:text-white truncate' : 'text-gray-500 dark:text-gray-400'}>
             {value || placeholder}
           </span>
           <div className="flex items-center gap-1">
@@ -175,9 +175,9 @@ export default function SearchableSelect({
 
       {/* Dropdown */}
       {isOpen && (
-        <div className="absolute z-50 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+        <div className="absolute z-50 mt-2 w-full min-w-[180px] rounded-lg border border-gray-300 bg-white shadow-xl dark:border-gray-600 dark:bg-gray-800">
           {/* Search Input */}
-          <div className="border-b border-gray-200 p-2 dark:border-gray-700">
+          <div className="border-b border-gray-200 p-3 dark:border-gray-700">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <input
@@ -187,30 +187,30 @@ export default function SearchableSelect({
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Search..."
-                className="w-full rounded border border-gray-300 py-1.5 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                className="w-full rounded-md border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
               />
             </div>
           </div>
 
           {/* Options List */}
-          <div className="max-h-60 overflow-y-auto">
+          <div className="max-h-72 overflow-y-auto py-1">
             {filteredOptions.length > 0 ? (
               filteredOptions.map((option, index) => (
                 <button
                   key={option}
                   type="button"
                   onClick={() => handleSelect(option)}
-                  className={`w-full px-3 py-2 text-left text-sm transition-colors ${
+                  className={`w-full px-4 py-2.5 text-left text-sm transition-colors ${
                     index === highlightedIndex
                       ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                      : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
-                  } ${option === value ? 'font-medium' : ''}`}
+                      : 'text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700'
+                  } ${option === value ? 'font-medium text-blue-600 dark:text-blue-400' : ''}`}
                 >
                   {option}
                 </button>
               ))
             ) : (
-              <div className="px-3 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+              <div className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                 {loading ? (
                   <div className="flex items-center justify-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" />
