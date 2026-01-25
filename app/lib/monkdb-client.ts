@@ -100,7 +100,7 @@ export class MonkDBClient {
     try {
       // Desktop app: Use Tauri command instead of fetch
       if (!this.useProxy && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-        console.log('[MonkDBClient] Using Tauri command (Desktop mode)');
+        // console.log('[MonkDBClient] Using Tauri command (Desktop mode)');
 
         // Dynamically import Tauri invoke
         const { invoke } = await import('@tauri-apps/api/core');
@@ -163,12 +163,13 @@ export class MonkDBClient {
         }
       }
 
-      console.log('[MonkDBClient] Query Request:', {
-        baseUrl: this.baseUrl,
-        useProxy: this.useProxy,
-        stmt: stmt.substring(0, 100),
-        hasAuth: !!headers['Authorization'],
-      });
+      // Only log requests in development for debugging
+      // console.log('[MonkDBClient] Query Request:', {
+      //   baseUrl: this.baseUrl,
+      //   useProxy: this.useProxy,
+      //   stmt: stmt.substring(0, 100),
+      //   hasAuth: !!headers['Authorization'],
+      // });
 
       const response = await fetch(this.baseUrl, {
         method: 'POST',
@@ -179,32 +180,51 @@ export class MonkDBClient {
 
       clearTimeout(timeoutId);
 
-      console.log('[MonkDBClient] Response Status:', response.status, response.statusText);
+      // Only log errors, not successful responses (reduces console noise)
+      // console.log('[MonkDBClient] Response Status:', response.status, response.statusText);
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('[MonkDBClient] Error Response:', errorText);
 
         let errorData: any;
         try {
           errorData = JSON.parse(errorText);
         } catch {
+          console.error('[MonkDBClient] ❌ Invalid error response format');
           throw new Error(`HTTP ${response.status}: ${response.statusText}\nResponse: ${errorText}`);
         }
 
-        throw new Error(
-          errorData.error?.message || errorData.message || `HTTP ${response.status}: ${response.statusText}`
-        );
+        const errorMessage = errorData.error?.message || errorData.message || `HTTP ${response.status}: ${response.statusText}`;
+
+        // Parse user-friendly error for console
+        if (errorMessage.includes('RelationUnknown') || (errorMessage.includes('Relation') && errorMessage.includes('unknown'))) {
+          const tableMatch = errorMessage.match(/Relation '([^']+)' unknown/i);
+          const tableName = tableMatch ? tableMatch[1] : 'table';
+          console.warn(`[MonkDBClient] ⚠️ Table Not Found: "${tableName}" does not exist. Create it first or check the name.`);
+        } else if (errorMessage.includes('ColumnUnknown') || (errorMessage.includes('Column') && errorMessage.includes('unknown'))) {
+          const columnMatch = errorMessage.match(/Column '([^']+)' unknown/i);
+          const columnName = columnMatch ? columnMatch[1] : 'column';
+          console.warn(`[MonkDBClient] ⚠️ Column Not Found: "${columnName}" does not exist. Check column name or table schema.`);
+        } else if (errorMessage.includes('SQLParseException') || errorMessage.includes('syntax error')) {
+          console.warn('[MonkDBClient] ⚠️ SQL Syntax Error: Check your query syntax.');
+        } else if (errorMessage.includes('DuplicateKey') || errorMessage.includes('duplicate key')) {
+          console.warn('[MonkDBClient] ⚠️ Duplicate Entry: This primary key or unique value already exists.');
+        } else {
+          console.warn('[MonkDBClient] ⚠️ Query Error:', errorMessage);
+        }
+
+        throw new Error(errorMessage);
       }
 
       const responseText = await response.text();
-      console.log('[MonkDBClient] Response Text:', responseText.substring(0, 200));
+      // Only log in development for debugging
+      // console.log('[MonkDBClient] Response Text:', responseText.substring(0, 200));
 
       let data: SQLResponse<T>;
       try {
         data = JSON.parse(responseText);
       } catch (parseError) {
-        console.error('[MonkDBClient] JSON Parse Error:', parseError);
+        console.warn('[MonkDBClient] ⚠️ Unable to parse server response. The server may be unavailable.');
         throw new Error(`Failed to parse response: ${responseText.substring(0, 100)}`);
       }
 

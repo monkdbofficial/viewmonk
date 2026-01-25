@@ -48,14 +48,16 @@ export default function TimeSeriesChart({
 
     // Prepare data for each series
     const seriesOptions = series.map((s, idx) => {
-      const sortedData = [...s.data].sort(
-        (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
-      );
+      const sortedData = [...s.data].sort((a, b) => {
+        const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
+        const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
+        return timeA - timeB;
+      });
 
-      const dataPoints = sortedData.map((d) => [
-        d.timestamp.getTime(),
-        d.value,
-      ]);
+      const dataPoints = sortedData.map((d) => {
+        const timestamp = d.timestamp instanceof Date ? d.timestamp : new Date(d.timestamp);
+        return [timestamp.getTime(), d.value];
+      });
 
       const color = s.color || getDefaultColor(idx);
 

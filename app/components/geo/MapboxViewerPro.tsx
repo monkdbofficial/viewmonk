@@ -468,12 +468,148 @@ export default function MapboxViewerPro({
         const pointId = matchingPoint?.id || properties.id || 'Unknown';
         const displayProps = matchingPoint?.properties || properties;
 
-        new mapboxgl.Popup({ maxWidth: '400px' })
+        const clusterPopup = new mapboxgl.Popup({
+          closeButton: false,
+          closeOnClick: false,
+          offset: 15,
+          className: 'mapbox-popup-scrollable'
+        })
           .setLngLat(coordinates)
           .setHTML(`
-            <div style="padding: 16px; min-width: 280px; max-width: 400px; font-family: system-ui, -apple-system, sans-serif;">
-              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #e5e7eb;">
-                <h3 style="font-weight: 700; font-size: 16px; color: #111827; margin: 0;">${pointId}</h3>
+            <div style="position: relative; font-family: system-ui, -apple-system, sans-serif; min-width: 280px;">
+              <button
+                onclick="this.closest('.mapboxgl-popup').remove()"
+                style="position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; border-radius: 50%; background: #fee2e2; color: #dc2626; border: none; cursor: pointer; font-size: 18px; font-weight: bold; display: flex; align-items: center; justify-content: center; transition: all 0.2s; z-index: 999; box-shadow: 0 2px 4px rgba(0,0,0,0.1);"
+                onmouseover="this.style.background='#fecaca'; this.style.transform='scale(1.1)'"
+                onmouseout="this.style.background='#fee2e2'; this.style.transform='scale(1)'"
+                title="Close"
+              >
+                ×
+              </button>
+
+              <div class="mapboxgl-popup-scrollable-content">
+                <div style="padding: 16px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; padding-right: 36px; border-bottom: 1px solid #e5e7eb;">
+                  <h3 style="font-weight: 700; font-size: 16px; color: #111827; margin: 0;">${pointId}</h3>
+                  <button
+                    onclick="navigator.clipboard.writeText('${coordinatesStr}'); this.innerHTML='✓ Copied!'; setTimeout(() => this.innerHTML='📋 Copy', 2000)"
+                    style="padding: 6px 12px; font-size: 12px; background: #dbeafe; color: #1e40af; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;"
+                    title="Copy coordinates"
+                  >
+                    📋 Copy
+                  </button>
+                </div>
+
+                ${Object.keys(displayProps).length > 0 ? `
+                  <div style="margin-bottom: 16px;">
+                    ${Object.entries(displayProps)
+                      .map(([key, value]) => {
+                        let formattedValue = value;
+                        if (typeof value === 'number') {
+                          formattedValue = value.toLocaleString();
+                        } else if (typeof value === 'string' && value.match(/^https?:\/\//)) {
+                          formattedValue = `<a href="${value}" target="_blank" style="color: #2563eb; text-decoration: underline;">${value}</a>`;
+                        }
+
+                        return `
+                          <div style="display: grid; grid-template-columns: 100px 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid #f3f4f6; align-items: start;">
+                            <span style="font-weight: 600; font-size: 13px; color: #6b7280;">${key}:</span>
+                            <span style="font-size: 13px; color: #111827; word-break: break-word;">${formattedValue}</span>
+                          </div>
+                        `;
+                      }).join('')}
+                  </div>
+                ` : ''}
+
+                <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #e5e7eb;">
+                  <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6b7280; margin-bottom: 12px;">
+                    <span>📍</span>
+                    <span style="font-family: 'Courier New', monospace; font-weight: 500;">${coordinatesStr}</span>
+                  </div>
+
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <a
+                      href="${googleMapsUrl}"
+                      target="_blank"
+                      style="padding: 8px 12px; font-size: 12px; background: #d1fae5; color: #065f46; border-radius: 6px; text-align: center; text-decoration: none; font-weight: 500; display: block;"
+                    >
+                      🗺️ Google Maps
+                    </a>
+                    <a
+                      href="${appleMapsUrl}"
+                      target="_blank"
+                      style="padding: 8px 12px; font-size: 12px; background: #f3f4f6; color: #374151; border-radius: 6px; text-align: center; text-decoration: none; font-weight: 500; display: block;"
+                    >
+                      🍎 Apple Maps
+                    </a>
+                  </div>
+                </div>
+                </div>
+              </div>
+            </div>
+          `)
+          .addTo(mapRef.current!);
+
+        clusterPopup.on('close', () => {
+          clusterPopup.remove();
+        });
+      });
+
+      // Change cursor on hover for unclustered points
+      mapRef.current.on('mouseenter', 'unclustered-point', () => {
+        if (mapRef.current) mapRef.current.getCanvas().style.cursor = 'pointer';
+      });
+
+      mapRef.current.on('mouseleave', 'unclustered-point', () => {
+        if (mapRef.current) mapRef.current.getCanvas().style.cursor = '';
+      });
+
+      // Change cursor on hover for clusters
+      mapRef.current.on('mouseenter', 'clusters', () => {
+        if (mapRef.current) mapRef.current.getCanvas().style.cursor = 'pointer';
+      });
+
+      mapRef.current.on('mouseleave', 'clusters', () => {
+        if (mapRef.current) mapRef.current.getCanvas().style.cursor = '';
+      });
+
+    } else {
+      // Add GeoJSON source without clustering for heatmap and markers
+      mapRef.current.addSource('points', {
+        type: 'geojson',
+        data: geojson,
+        cluster: false
+      });
+      // Use individual markers for few points
+      geoPoints.forEach((point) => {
+        const [lng, lat] = point.coordinates;
+
+        // Create popup with enhanced features
+        const coordinatesStr = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+        const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+        const appleMapsUrl = `https://maps.apple.com/?q=${lat},${lng}`;
+
+        const popup = new mapboxgl.Popup({
+          closeButton: false,
+          closeOnClick: false,
+          offset: 15,
+          className: 'mapbox-popup-scrollable'
+        }).setHTML(`
+          <div style="position: relative; font-family: system-ui, -apple-system, sans-serif; min-width: 280px;">
+            <button
+              onclick="this.closest('.mapboxgl-popup').remove()"
+              style="position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; border-radius: 50%; background: #fee2e2; color: #dc2626; border: none; cursor: pointer; font-size: 18px; font-weight: bold; display: flex; align-items: center; justify-content: center; transition: all 0.2s; z-index: 999; box-shadow: 0 2px 4px rgba(0,0,0,0.1);"
+              onmouseover="this.style.background='#fecaca'; this.style.transform='scale(1.1)'"
+              onmouseout="this.style.background='#fee2e2'; this.style.transform='scale(1)'"
+              title="Close"
+            >
+              ×
+            </button>
+
+            <div class="mapboxgl-popup-scrollable-content">
+              <div style="padding: 16px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; padding-right: 36px; border-bottom: 1px solid #e5e7eb;">
+                <h3 style="font-weight: 700; font-size: 16px; color: #111827; margin: 0;">${point.id}</h3>
                 <button
                   onclick="navigator.clipboard.writeText('${coordinatesStr}'); this.innerHTML='✓ Copied!'; setTimeout(() => this.innerHTML='📋 Copy', 2000)"
                   style="padding: 6px 12px; font-size: 12px; background: #dbeafe; color: #1e40af; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;"
@@ -483,10 +619,11 @@ export default function MapboxViewerPro({
                 </button>
               </div>
 
-              ${Object.keys(displayProps).length > 0 ? `
+              ${point.properties ? `
                 <div style="margin-bottom: 16px;">
-                  ${Object.entries(displayProps)
+                  ${Object.entries(point.properties)
                     .map(([key, value]) => {
+                      // Format values based on type
                       let formattedValue = value;
                       if (typeof value === 'number') {
                         formattedValue = value.toLocaleString();
@@ -527,107 +664,6 @@ export default function MapboxViewerPro({
                   </a>
                 </div>
               </div>
-            </div>
-          `)
-          .addTo(mapRef.current!);
-      });
-
-      // Change cursor on hover for unclustered points
-      mapRef.current.on('mouseenter', 'unclustered-point', () => {
-        if (mapRef.current) mapRef.current.getCanvas().style.cursor = 'pointer';
-      });
-
-      mapRef.current.on('mouseleave', 'unclustered-point', () => {
-        if (mapRef.current) mapRef.current.getCanvas().style.cursor = '';
-      });
-
-      // Change cursor on hover for clusters
-      mapRef.current.on('mouseenter', 'clusters', () => {
-        if (mapRef.current) mapRef.current.getCanvas().style.cursor = 'pointer';
-      });
-
-      mapRef.current.on('mouseleave', 'clusters', () => {
-        if (mapRef.current) mapRef.current.getCanvas().style.cursor = '';
-      });
-
-    } else {
-      // Add GeoJSON source without clustering for heatmap and markers
-      mapRef.current.addSource('points', {
-        type: 'geojson',
-        data: geojson,
-        cluster: false
-      });
-      // Use individual markers for few points
-      geoPoints.forEach((point) => {
-        const [lng, lat] = point.coordinates;
-
-        // Create popup with enhanced features
-        const coordinatesStr = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-        const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
-        const appleMapsUrl = `https://maps.apple.com/?q=${lat},${lng}`;
-
-        const popup = new mapboxgl.Popup({
-          offset: 25,
-          closeButton: true,
-          closeOnClick: false,
-          className: 'custom-popup',
-          maxWidth: '400px'
-        }).setHTML(`
-          <div style="padding: 16px; min-width: 280px; max-width: 400px; font-family: system-ui, -apple-system, sans-serif;">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #e5e7eb;">
-              <h3 style="font-weight: 700; font-size: 16px; color: #111827; margin: 0;">${point.id}</h3>
-              <button
-                onclick="navigator.clipboard.writeText('${coordinatesStr}'); this.innerHTML='✓ Copied!'; setTimeout(() => this.innerHTML='📋 Copy', 2000)"
-                style="padding: 6px 12px; font-size: 12px; background: #dbeafe; color: #1e40af; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;"
-                title="Copy coordinates"
-              >
-                📋 Copy
-              </button>
-            </div>
-
-            ${point.properties ? `
-              <div style="margin-bottom: 16px;">
-                ${Object.entries(point.properties)
-                  .map(([key, value]) => {
-                    // Format values based on type
-                    let formattedValue = value;
-                    if (typeof value === 'number') {
-                      formattedValue = value.toLocaleString();
-                    } else if (typeof value === 'string' && value.match(/^https?:\/\//)) {
-                      formattedValue = `<a href="${value}" target="_blank" style="color: #2563eb; text-decoration: underline;">${value}</a>`;
-                    }
-
-                    return `
-                      <div style="display: grid; grid-template-columns: 100px 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid #f3f4f6; align-items: start;">
-                        <span style="font-weight: 600; font-size: 13px; color: #6b7280;">${key}:</span>
-                        <span style="font-size: 13px; color: #111827; word-break: break-word;">${formattedValue}</span>
-                      </div>
-                    `;
-                  }).join('')}
-              </div>
-            ` : ''}
-
-            <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #e5e7eb;">
-              <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6b7280; margin-bottom: 12px;">
-                <span>📍</span>
-                <span style="font-family: 'Courier New', monospace; font-weight: 500;">${coordinatesStr}</span>
-              </div>
-
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                <a
-                  href="${googleMapsUrl}"
-                  target="_blank"
-                  style="padding: 8px 12px; font-size: 12px; background: #d1fae5; color: #065f46; border-radius: 6px; text-align: center; text-decoration: none; font-weight: 500; display: block;"
-                >
-                  🗺️ Google Maps
-                </a>
-                <a
-                  href="${appleMapsUrl}"
-                  target="_blank"
-                  style="padding: 8px 12px; font-size: 12px; background: #f3f4f6; color: #374151; border-radius: 6px; text-align: center; text-decoration: none; font-weight: 500; display: block;"
-                >
-                  🍎 Apple Maps
-                </a>
               </div>
             </div>
           </div>

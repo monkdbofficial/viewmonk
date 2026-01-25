@@ -107,3 +107,73 @@ html {
   background: #1f2937;
   color: #6b7280;
 }
+
+/* Mapbox GL Popup Styles - Scrollable with professional scrollbar */
+.mapboxgl-popup {
+  max-width: 400px !important;
+  z-index: 999 !important;
+}
+
+.mapboxgl-popup-content {
+  padding: 0 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2) !important;
+  overflow: visible !important;
+}
+
+.mapboxgl-popup-scrollable-content {
+  max-height: 350px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+/* Professional scrollbar styling - Ultra Thin */
+.mapboxgl-popup-scrollable-content::-webkit-scrollbar {
+  width: 2px;
+}
+
+.mapboxgl-popup-scrollable-content::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 1px;
+  margin: 4px 0;
+}
+
+.mapboxgl-popup-scrollable-content::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 1px;
+  transition: background 0.2s;
+}
+
+.mapboxgl-popup-scrollable-content::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Firefox scrollbar */
+.mapboxgl-popup-scrollable-content {
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 transparent;
+}
+
+/* Ensure popup appears above all map elements */
+.mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip,
+.mapboxgl-popup-anchor-top .mapboxgl-popup-tip,
+.mapboxgl-popup-anchor-left .mapboxgl-popup-tip,
+.mapboxgl-popup-anchor-right .mapboxgl-popup-tip {
+  z-index: 1000 !important;
+}
+
+/* Hide scrollbar but keep functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari and Opera */
+}
+
+/* Ensure enterprise panels appear above everything */
+.z-enterprise {
+  z-index: 9999 !important;
+  position: relative;
+}

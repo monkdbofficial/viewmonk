@@ -113,7 +113,7 @@ export default function Dashboard() {
     {
       label: 'Cluster Uptime',
       value: clusterHealth ? formatUptime(clusterHealth.clusterUptime) : '-',
-      change: 'Min node uptime',
+      change: 'Cluster status',
       trend: 'up',
       icon: Activity,
       color: 'orange' as const,

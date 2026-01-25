@@ -28,6 +28,7 @@ export default function DateRangePicker({
   const [showCustomRange, setShowCustomRange] = useState(false);
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
+  const [countdown, setCountdown] = useState(10);
 
   const presets: { label: string; value: TimeRangePreset; getRange: () => DateRange }[] = [
     {
@@ -106,16 +107,34 @@ export default function DateRangePicker({
 
   // Auto-update for real-time mode
   useEffect(() => {
-    if (!isRealTime || selectedPreset === 'custom') return;
+    if (!isRealTime || selectedPreset === 'custom') {
+      setCountdown(10);
+      return;
+    }
 
-    const interval = setInterval(() => {
+    // Reset countdown
+    setCountdown(10);
+
+    // Countdown timer (every second)
+    const countdownInterval = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) return 10;
+        return prev - 1;
+      });
+    }, 1000);
+
+    // Update date range every 10 seconds
+    const refreshInterval = setInterval(() => {
       const presetConfig = presets.find((p) => p.value === selectedPreset);
       if (presetConfig) {
         onChange(presetConfig.getRange());
       }
-    }, 10000); // Update every 10 seconds
+    }, 10000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(countdownInterval);
+      clearInterval(refreshInterval);
+    };
   }, [isRealTime, selectedPreset]);
 
   return (
@@ -196,21 +215,27 @@ export default function DateRangePicker({
         {onRealTimeToggle && selectedPreset !== 'custom' && (
           <button
             onClick={handleRealTimeToggle}
-            className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+            className={`relative flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition-all shadow-md hover:shadow-lg ${
               isRealTime
-                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700'
+                : 'bg-gradient-to-r from-gray-400 to-gray-500 text-white hover:from-gray-500 hover:to-gray-600'
             }`}
           >
             {isRealTime ? (
               <>
-                <Pause className="h-3.5 w-3.5" />
-                <span>Live</span>
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+                </span>
+                <span className="uppercase tracking-wide">🔴 LIVE</span>
+                <span className="ml-1 px-2 py-0.5 bg-white/20 rounded-full text-xs font-mono">
+                  {countdown}s
+                </span>
               </>
             ) : (
               <>
-                <Play className="h-3.5 w-3.5" />
-                <span>Paused</span>
+                <Play className="h-4 w-4" />
+                <span className="uppercase tracking-wide">START LIVE</span>
               </>
             )}
           </button>

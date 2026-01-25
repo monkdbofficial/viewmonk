@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import SpatialQueryBuilder from '../components/geo/SpatialQueryBuilder';
 import EnterpriseDataPanel from '../components/geo/EnterpriseDataPanel';
@@ -62,12 +62,74 @@ export default function GeospatialPage() {
   const [mapTableSelection, setMapTableSelection] = useState<TableColumnSelection | null>(null);
   const [showMapFilters, setShowMapFilters] = useState(false);
   const [mapFilters, setMapFilters] = useState<Array<{column: string, operator: string, value: string}>>([]);
+  const [isRestoringFromStorage, setIsRestoringFromStorage] = useState(false);
+
+  // Load saved table selection and filters on mount
+  useEffect(() => {
+    try {
+      // Load saved table selection
+      const savedTable = localStorage.getItem('geospatial_map_table');
+      if (savedTable) {
+        const tableSelection: TableColumnSelection = JSON.parse(savedTable);
+
+        // Validate that the saved data has all required properties
+        if (tableSelection.schema &&
+            tableSelection.table &&
+            tableSelection.columns &&
+            Array.isArray(tableSelection.columns) &&
+            tableSelection.columns.length > 0) {
+
+          setMapTableSelection(tableSelection);
+          setIsRestoringFromStorage(true);
+
+          // Load saved filters
+          const savedFilters = localStorage.getItem('geospatial_map_filters');
+          if (savedFilters) {
+            setMapFilters(JSON.parse(savedFilters));
+          }
+        } else {
+          console.warn('Invalid saved table data, clearing localStorage');
+          localStorage.removeItem('geospatial_map_table');
+          localStorage.removeItem('geospatial_map_filters');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load saved map data:', error);
+      // Clear invalid data
+      localStorage.removeItem('geospatial_map_table');
+      localStorage.removeItem('geospatial_map_filters');
+    }
+  }, []); // Run only once on mount
+
+  // Persist map table selection to localStorage
+  useEffect(() => {
+    if (mapTableSelection && mapTableSelection.columns && mapTableSelection.columns.length > 0) {
+      // Save complete selection including columns
+      localStorage.setItem('geospatial_map_table', JSON.stringify(mapTableSelection));
+    }
+  }, [mapTableSelection]);
+
+  // Persist filters to localStorage
+  useEffect(() => {
+    if (mapFilters.length > 0) {
+      localStorage.setItem('geospatial_map_filters', JSON.stringify(mapFilters));
+    } else {
+      localStorage.removeItem('geospatial_map_filters');
+    }
+  }, [mapFilters]);
 
   // Load all data from selected table on Map View
   const handleMapTableSelection = async (selection: TableColumnSelection | null) => {
     setMapTableSelection(selection);
 
     if (!selection || !activeConnection) {
+      return;
+    }
+
+    // Validate columns array exists
+    if (!selection.columns || !Array.isArray(selection.columns) || selection.columns.length === 0) {
+      console.error('Invalid selection: columns missing or empty', selection);
+      toast.error('Invalid Selection', 'Table columns data is missing. Please select the table again.');
       return;
     }
 
@@ -182,6 +244,14 @@ LIMIT 1000;`;
     await handleQueryExecute(query);
     toast.success('Table Loaded', `Loaded data from ${selection.schema}.${selection.table}`);
   };
+
+  // Auto-reload data when restoring from localStorage
+  useEffect(() => {
+    if (isRestoringFromStorage && mapTableSelection && activeConnection) {
+      handleMapTableSelection(mapTableSelection);
+      setIsRestoringFromStorage(false); // Reset flag after reload
+    }
+  }, [isRestoringFromStorage, mapTableSelection, activeConnection]);
 
   const handleQueryExecute = async (query: string) => {
     if (!activeConnection) {
@@ -631,28 +701,58 @@ WHERE within(geo_column, 'POLYGON((
           {/* Map View - Table Selection & Empty State */}
           {activeTab === 'map' && geoPoints.length === 0 && geoShapes.length === 0 && !loading && (
             <div className="flex h-full flex-col gap-4 overflow-auto p-6">
-              {/* Table Selector Card */}
-              <div className="rounded-lg border-2 border-dashed border-blue-300 bg-blue-50/50 p-6 dark:border-blue-700 dark:bg-blue-900/10">
-                <div className="mb-4 flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/30">
-                    <Map className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+              {/* Compact Hero Section */}
+              <div className="rounded-lg border border-blue-200 bg-gradient-to-r from-blue-50 via-white to-blue-50 p-6 dark:border-blue-900 dark:from-blue-950 dark:via-gray-800 dark:to-blue-950">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg">
+                    <Map className="h-8 w-8 text-white" />
                   </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                      Select a Table to Visualize on Map
-                    </h3>
+                  <div className="flex-1">
+                    <h2 className="mb-1.5 text-xl font-bold text-gray-900 dark:text-white">
+                      Geospatial Data Visualization
+                    </h2>
                     <p className="text-sm text-gray-600 dark:text-gray-400">
-                      Choose a table with geospatial columns to see all its location data on the map
+                      Visualize location data on interactive maps with filtering, clustering, and heatmap analysis
+                    </p>
+                  </div>
+                  <div className="hidden items-center gap-2 lg:flex">
+                    <span className="rounded-md bg-blue-100 px-3 py-1.5 text-xs font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                      🗺️ Maps
+                    </span>
+                    <span className="rounded-md bg-green-100 px-3 py-1.5 text-xs font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-300">
+                      🔍 Filters
+                    </span>
+                    <span className="rounded-md bg-orange-100 px-3 py-1.5 text-xs font-semibold text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
+                      🔥 Heatmap
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Table Selector Card */}
+              <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                <div className="mb-4 flex items-center gap-3">
+                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-blue-600 dark:bg-blue-500">
+                    <Database className="h-5 w-5 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-base font-bold text-gray-900 dark:text-white">
+                      Select Data Source
+                    </h3>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">
+                      Choose a table with GEO_POINT or GEO_SHAPE columns
                     </p>
                   </div>
                 </div>
 
                 {/* Table Column Selector */}
-                <TableColumnSelector
-                  onSelectionChange={handleMapTableSelection}
-                  showGeoColumnsOnly={true}
-                  compact={true}
-                />
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900">
+                  <TableColumnSelector
+                    onSelectionChange={handleMapTableSelection}
+                    showGeoColumnsOnly={true}
+                    compact={true}
+                  />
+                </div>
 
                 {/* No Geo Column Error - Dismissible */}
                 {noGeoColumnError?.show && (
@@ -693,46 +793,45 @@ WHERE within(geo_column, 'POLYGON((
                 )}
               </div>
 
-              {/* Alternative Options */}
-              <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-                <h4 className="mb-3 text-sm font-semibold text-gray-900 dark:text-white">
-                  Other Options
-                </h4>
-                <div className="space-y-2">
-                  <button
-                    onClick={() => setActiveTab('query')}
-                    className="flex w-full items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-left transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
-                  >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-100 dark:bg-purple-900/30">
-                      <Database className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+              {/* Alternative Options - Compact */}
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <button
+                  onClick={() => setActiveTab('query')}
+                  className="group flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-4 text-left transition-all hover:border-purple-300 hover:shadow-md dark:border-gray-700 dark:bg-gray-800 dark:hover:border-purple-700"
+                >
+                  <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-purple-600">
+                    <Code className="h-6 w-6 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="mb-0.5 flex items-center gap-2">
+                      <span className="text-sm font-bold text-gray-900 dark:text-white">Custom Query Builder</span>
+                      <span className="rounded bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">Advanced</span>
                     </div>
-                    <div>
-                      <div className="text-sm font-medium text-gray-900 dark:text-white">
-                        Build Custom Query
-                      </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">
-                        Use Query Builder for proximity searches, filters, and advanced spatial queries
-                      </div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400">
+                      Write SQL for proximity searches & spatial analysis
                     </div>
-                  </button>
+                  </div>
+                  <span className="flex-shrink-0 text-purple-600 transition-transform group-hover:translate-x-1 dark:text-purple-400">→</span>
+                </button>
 
-                  <button
-                    onClick={() => setActiveTab('manage')}
-                    className="flex w-full items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-left transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
-                  >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-100 dark:bg-orange-900/30">
-                      <Settings className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                <button
+                  onClick={() => setActiveTab('manage')}
+                  className="group flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-4 text-left transition-all hover:border-orange-300 hover:shadow-md dark:border-gray-700 dark:bg-gray-800 dark:hover:border-orange-700"
+                >
+                  <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-orange-500 to-orange-600">
+                    <Settings className="h-6 w-6 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="mb-0.5 flex items-center gap-2">
+                      <span className="text-sm font-bold text-gray-900 dark:text-white">Import Data</span>
+                      <span className="rounded bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">CSV/GeoJSON</span>
                     </div>
-                    <div>
-                      <div className="text-sm font-medium text-gray-900 dark:text-white">
-                        Import Data
-                      </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">
-                        Import geospatial data from CSV, GeoJSON, or other formats
-                      </div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400">
+                      Import from CSV, GeoJSON, Shapefiles & more
                     </div>
-                  </button>
-                </div>
+                  </div>
+                  <span className="flex-shrink-0 text-orange-600 transition-transform group-hover:translate-x-1 dark:text-orange-400">→</span>
+                </button>
               </div>
             </div>
           )}
@@ -1008,7 +1107,7 @@ WHERE within(geo_column, 'POLYGON((
           {activeTab === 'query' && (
             <div className="flex h-full gap-4">
               {/* Query Builder - Left Side - Dynamic Width */}
-              <div className={`flex-shrink-0 transition-all duration-300 ${mapCollapsed ? 'flex-1' : 'w-96'}`}>
+              <div className={`flex-shrink-0 transition-all duration-300 ${mapCollapsed ? 'flex-1' : 'w-[500px]'}`}>
                 <SpatialQueryBuilder
                   onQueryExecute={handleQueryExecute}
                   queryHistory={queryHistory}

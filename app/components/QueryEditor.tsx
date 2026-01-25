@@ -117,10 +117,191 @@ export default function QueryEditor() {
                               upperQuery.startsWith('UPDATE') ||
                               upperQuery.startsWith('DELETE');
 
+  // Check if query is DDL (Data Definition Language) - CREATE, ALTER, DROP, TRUNCATE
+  const isDDLQuery = upperQuery.startsWith('CREATE') ||
+                     upperQuery.startsWith('ALTER') ||
+                     upperQuery.startsWith('DROP') ||
+                     upperQuery.startsWith('TRUNCATE');
+
+  // Combined: queries that should show success panel instead of results table
+  const isNonSelectQuery = isModificationQuery || isDDLQuery;
+
+  // Helper function to convert technical errors to user-friendly messages
+  const parseErrorMessage = (rawError: string): { title: string; message: string; suggestions: string[] } => {
+    // RelationUnknown - Table doesn't exist
+    if (rawError.includes('RelationUnknown') || rawError.includes('Relation') && rawError.includes('unknown')) {
+      const tableMatch = rawError.match(/Relation '([^']+)' unknown/i) || rawError.match(/RelationUnknown\[Relation '([^']+)'/i);
+      const tableName = tableMatch ? tableMatch[1] : 'table';
+
+      return {
+        title: '❌ Table Not Found',
+        message: `The table "${tableName}" does not exist in the database.`,
+        suggestions: [
+          `Make sure you created the table first using: CREATE TABLE ${tableName} (...)`,
+          `Check if the table name is spelled correctly`,
+          `Verify the schema name (e.g., "demo.${tableName.split('.').pop()}")`,
+          `View available tables in the Schema Explorer (left sidebar)`
+        ]
+      };
+    }
+
+    // ColumnUnknown - Column doesn't exist
+    if (rawError.includes('ColumnUnknown') || rawError.includes('Column') && rawError.includes('unknown')) {
+      const columnMatch = rawError.match(/Column '([^']+)' unknown/i) || rawError.match(/ColumnUnknown\[([^\]]+)\]/i);
+      const columnName = columnMatch ? columnMatch[1] : 'column';
+
+      return {
+        title: '❌ Column Not Found',
+        message: `The column "${columnName}" does not exist in the table.`,
+        suggestions: [
+          `Check if the column name is spelled correctly`,
+          `Use "SELECT * FROM table LIMIT 1" to see available columns`,
+          `Verify column was created in the table schema`,
+          `Check the Schema Explorer for correct column names`
+        ]
+      };
+    }
+
+    // DuplicateKey - Primary key or unique constraint violation
+    if (rawError.includes('DuplicateKey') || rawError.includes('duplicate key') || rawError.includes('already exists')) {
+      return {
+        title: '❌ Duplicate Entry',
+        message: `A record with this primary key or unique value already exists.`,
+        suggestions: [
+          `Change the ID or unique field to a different value`,
+          `Check existing data: SELECT * FROM table WHERE id = your_value`,
+          `Use UPDATE instead of INSERT if you want to modify existing data`,
+          `Delete the existing record first if you want to replace it`
+        ]
+      };
+    }
+
+    // SQLParseException - Syntax error
+    if (rawError.includes('SQLParseException') || rawError.includes('syntax error') || rawError.includes('mismatched input')) {
+      const lineMatch = rawError.match(/line (\d+):(\d+)/i);
+      const location = lineMatch ? ` at line ${lineMatch[1]}, column ${lineMatch[2]}` : '';
+
+      return {
+        title: '❌ SQL Syntax Error',
+        message: `There is a syntax error in your SQL query${location}.`,
+        suggestions: [
+          `Check for missing commas, parentheses, or semicolons`,
+          `Make sure all SQL keywords are spelled correctly`,
+          `Remove any extra characters (like triple backticks from markdown code blocks)`,
+          `Verify table and column names are properly quoted if needed`,
+          `Use the SQL Templates in the sidebar for correct syntax examples`
+        ]
+      };
+    }
+
+    // ValidationException - Invalid data type or value
+    if (rawError.includes('ValidationException') || rawError.includes('invalid') || rawError.includes('cannot be cast')) {
+      return {
+        title: '❌ Invalid Data Type',
+        message: `The data you're trying to insert doesn't match the column type.`,
+        suggestions: [
+          `Check that numbers are not in quotes (use 123, not '123')`,
+          `Verify date/timestamp format: '2020-01-15' or CURRENT_TIMESTAMP`,
+          `Make sure text values are in single quotes: 'text here'`,
+          `Check column data types in the Schema Explorer`
+        ]
+      };
+    }
+
+    // NullValue - NOT NULL constraint violation
+    if (rawError.includes('NullValue') || rawError.includes('NOT NULL') || rawError.includes('null value')) {
+      const columnMatch = rawError.match(/column '([^']+)'/i);
+      const columnName = columnMatch ? columnMatch[1] : 'a required column';
+
+      return {
+        title: '❌ Missing Required Value',
+        message: `The column "${columnName}" cannot be NULL - you must provide a value.`,
+        suggestions: [
+          `Add a value for "${columnName}" in your INSERT or UPDATE statement`,
+          `Check which columns are marked as NOT NULL in the table schema`,
+          `Provide a default value or remove the NOT NULL constraint`
+        ]
+      };
+    }
+
+    // Connection errors
+    if (rawError.includes('ECONNREFUSED') || rawError.includes('connection refused') || rawError.includes('network')) {
+      return {
+        title: '❌ Database Connection Failed',
+        message: `Cannot connect to the MonkDB server.`,
+        suggestions: [
+          `Make sure MonkDB server is running on the configured host and port`,
+          `Check your connection settings in the Connections page`,
+          `Verify firewall is not blocking the connection`,
+          `Try reconnecting from the Connections page`
+        ]
+      };
+    }
+
+    // Timeout errors
+    if (rawError.includes('timeout') || rawError.includes('ETIMEDOUT')) {
+      return {
+        title: '❌ Query Timeout',
+        message: `The query took too long to execute and was cancelled.`,
+        suggestions: [
+          `Try adding a LIMIT clause to reduce the number of rows`,
+          `Add a WHERE clause to filter data more specifically`,
+          `Consider creating an index on frequently queried columns`,
+          `Break complex queries into smaller steps`
+        ]
+      };
+    }
+
+    // Permission errors
+    if (rawError.includes('permission') || rawError.includes('unauthorized') || rawError.includes('access denied')) {
+      return {
+        title: '❌ Permission Denied',
+        message: `You don't have permission to perform this operation.`,
+        suggestions: [
+          `Check your database user permissions`,
+          `Contact your database administrator for access`,
+          `Verify you're connected with the correct user account`
+        ]
+      };
+    }
+
+    // Generic fallback with original error
+    return {
+      title: '❌ Query Execution Failed',
+      message: rawError,
+      suggestions: [
+        `Check the error message above for specific details`,
+        `Review your SQL syntax and table/column names`,
+        `Use the SQL Templates for example queries`,
+        `Check the Schema Explorer to verify available tables and columns`
+      ]
+    };
+  };
+
   // Update query in active tab
   const setQuery = (newQuery: string) => {
     if (activeTab) {
-      updateTab(activeTab.id, { query: newQuery });
+      // Check if there are previous execution results BEFORE updating the query
+      const hasPreviousResults = (activeTab.results?.cols?.length > 0) || (activeTab.executionStats?.executionTime > 0);
+
+      // Check if query actually changed - compare EXACT strings (including whitespace)
+      // This ensures even typing one character triggers clearing
+      const queryChanged = activeTab.query !== newQuery;
+
+      // IMPORTANT: Clear results and stats when query changes to prevent showing old success messages
+      // This ensures "Completed" status only shows AFTER executing, not while typing
+      if (queryChanged && hasPreviousResults) {
+        // Single atomic update: change query AND clear results simultaneously
+        updateTab(activeTab.id, {
+          query: newQuery,
+          results: { cols: [], rows: [], rowcount: 0 },
+          executionStats: { executionTime: 0, returnedDocs: 0 },
+          error: null
+        });
+      } else {
+        // Just update the query text (no previous results to clear)
+        updateTab(activeTab.id, { query: newQuery });
+      }
     }
   };
 
@@ -536,61 +717,88 @@ export default function QueryEditor() {
       const upperQuery = queryToExecute.toUpperCase().trim();
       const queryType = upperQuery.split(/\s+/)[0];
 
+      // Helper function to extract table name from query
+      const extractTableName = (q: string) => {
+        const match = q.match(/(?:INTO|FROM|TABLE|UPDATE)\s+([a-zA-Z_][a-zA-Z0-9_]*\.?[a-zA-Z_][a-zA-Z0-9_]*)/i);
+        return match ? match[1] : null;
+      };
+
+      const tableName = extractTableName(queryToExecute);
+
       // DDL Operations (Data Definition Language)
       if (queryType === 'CREATE') {
         const isTable = upperQuery.includes('CREATE TABLE');
         const isIndex = upperQuery.includes('CREATE INDEX');
 
         if (isTable) {
+          const name = tableName || 'table';
+          // Count columns
+          const columnMatches = queryToExecute.match(/\([^)]*\)/);
+          const columns = columnMatches ? columnMatches[0].split(',').length : 0;
           toast.success(
-            'Table Created Successfully',
-            `Table created in ${(result.duration || duration).toFixed(2)}ms. Refresh Schema Explorer to see the new table.`,
+            `✅ Table "${name}" Created`,
+            `Created with ${columns} column${columns !== 1 ? 's' : ''} in ${(result.duration || duration).toFixed(2)}ms. Refresh Schema Explorer to see it.`,
             8000
           );
         } else if (isIndex) {
           toast.success(
-            'Index Created Successfully',
+            '✅ Index Created Successfully',
             `Index created in ${(result.duration || duration).toFixed(2)}ms`,
             6000
           );
         } else {
           toast.success(
-            'CREATE Successful',
+            '✅ CREATE Successful',
             `Object created in ${(result.duration || duration).toFixed(2)}ms. Refresh Schema Explorer to see changes.`,
             6000
           );
         }
       } else if (queryType === 'ALTER') {
+        const name = tableName || 'table';
         toast.success(
-          'Table Altered Successfully',
+          `✅ Table "${name}" Altered`,
           `Schema modified in ${(result.duration || duration).toFixed(2)}ms. Refresh Schema Explorer to see changes.`,
           8000
         );
       } else if (queryType === 'DROP') {
+        const name = tableName || 'object';
         toast.success(
-          'DROP Successful',
-          `Object dropped in ${(result.duration || duration).toFixed(2)}ms. Refresh Schema Explorer to update.`,
+          `✅ "${name}" Dropped Successfully`,
+          `Dropped in ${(result.duration || duration).toFixed(2)}ms. Refresh Schema Explorer to update.`,
           8000
         );
       } else if (queryType === 'TRUNCATE') {
+        const name = tableName || 'table';
         toast.success(
-          'Table Truncated',
+          `✅ Table "${name}" Truncated`,
           `All rows removed in ${(result.duration || duration).toFixed(2)}ms`,
           6000
         );
       }
       // DML Operations (Data Manipulation Language)
       else if (queryType === 'INSERT' || queryType === 'UPDATE' || queryType === 'DELETE') {
+        const name = tableName || 'table';
+        const rowText = result.rowcount === 1 ? 'row' : 'rows';
+
         if (result.rowcount > 0) {
+          let actionText = '';
+          if (queryType === 'INSERT') {
+            actionText = `Inserted ${result.rowcount} ${rowText} into "${name}"`;
+          } else if (queryType === 'UPDATE') {
+            actionText = `Updated ${result.rowcount} ${rowText} in "${name}"`;
+          } else if (queryType === 'DELETE') {
+            actionText = `Deleted ${result.rowcount} ${rowText} from "${name}"`;
+          }
+
           toast.success(
-            `${queryType} Successful`,
-            `Affected ${result.rowcount} row(s). Run REFRESH TABLE to see changes immediately.`,
+            `✅ ${queryType} Successful`,
+            `${actionText} in ${(result.duration || duration).toFixed(2)}ms`,
             8000
           );
         } else {
           toast.success(
-            `${queryType} Executed`,
-            `No rows affected in ${(result.duration || duration).toFixed(2)}ms`,
+            `✅ ${queryType} Executed`,
+            `No rows affected in "${name}" (${(result.duration || duration).toFixed(2)}ms)`,
             6000
           );
         }
@@ -605,10 +813,15 @@ export default function QueryEditor() {
         );
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Query execution failed';
-      setError(errorMessage);
+      const rawError = err instanceof Error ? err.message : 'Query execution failed';
+      const parsedError = parseErrorMessage(rawError);
 
-      // Add failed query to history
+      // Create user-friendly error message with suggestions
+      const userFriendlyError = `${parsedError.message}\n\n💡 Suggestions:\n${parsedError.suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
+
+      setError(userFriendlyError);
+
+      // Add failed query to history with original error
       const historyItem: QueryHistoryItem = {
         id: `${Date.now()}_${Math.random()}`,
         query: queryToExecute,
@@ -616,11 +829,12 @@ export default function QueryEditor() {
         duration: Date.now() - startTime,
         rowcount: 0,
         success: false,
-        error: errorMessage,
+        error: parsedError.message,
       };
       saveQueryHistory([historyItem, ...queryHistory]);
 
-      toast.error('Query Failed', errorMessage);
+      // Show toast with parsed error title and message
+      toast.error(parsedError.title, parsedError.message);
     } finally {
       setIsExecuting(false);
     }
@@ -1987,7 +2201,16 @@ WITH (max_num_segments = 1);`,
                     </div>
                     <div className="flex-1">
                       <h3 className="text-lg font-bold text-red-900 dark:text-red-300">
-                        Query Execution Failed
+                        {(() => {
+                          // Extract title from error message if present
+                          const lines = error.split('\n');
+                          const firstLine = lines[0];
+                          // If first line looks like a title (short and descriptive), use it
+                          if (firstLine.includes('❌') || firstLine.length < 100) {
+                            return firstLine;
+                          }
+                          return 'Query Execution Failed';
+                        })()}
                       </h3>
                       <pre className="mt-3 rounded-lg bg-red-100 p-4 font-mono text-sm text-red-800 dark:bg-red-900/30 dark:text-red-200 whitespace-pre-wrap overflow-x-auto">
 {error}</pre>
@@ -2157,31 +2380,287 @@ WITH (max_num_segments = 1);`,
                   </pre>
                 </div>
               )
-            ) : isModificationQuery && (executionStats.executionTime > 0 || results.rowcount >= 0) && !error ? (
-              <div className="flex flex-1 items-center justify-center">
-                <div className="max-w-2xl rounded-xl border-2 border-dashed border-green-300 bg-green-50/50 p-12 text-center dark:border-green-700 dark:bg-green-900/10">
-                  <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
-                    <CheckCircle2 className="h-10 w-10 text-green-600 dark:text-green-400" />
+            ) : isNonSelectQuery && executionStats.executionTime > 0 && !error && !isExecuting && results.rowcount >= 0 ? (
+              (() => {
+                const queryUpper = query.trim().toUpperCase();
+                const queryType = queryUpper.split(/\s+/)[0];
+
+                // Extract table name helper
+                const extractTableName = (q: string) => {
+                  const match = q.match(/(?:INTO|FROM|TABLE|UPDATE)\s+([a-zA-Z_][a-zA-Z0-9_]*\.?[a-zA-Z_][a-zA-Z0-9_]*)/i);
+                  return match ? match[1] : 'table';
+                };
+                const tableName = extractTableName(query);
+
+                // ============================================================
+                // CREATE TABLE - Show table structure
+                // ============================================================
+                if (queryType === 'CREATE' && queryUpper.includes('CREATE TABLE')) {
+                  const columnMatches = query.match(/\(([^)]+)\)/);
+                  if (columnMatches) {
+                    const columnList = columnMatches[1].split(',').map(col => {
+                      const parts = col.trim().split(/\s+/);
+                      return {
+                        name: parts[0],
+                        type: parts[1] || '',
+                        constraints: parts.slice(2).join(' ') || '-'
+                      };
+                    });
+
+                    return (
+                      <div className="flex flex-1 min-h-0 flex-col">
+                        <div className="border-b border-gray-200 bg-green-50 px-4 py-3 dark:border-gray-700 dark:bg-green-900/20">
+                          <div className="flex items-center gap-3">
+                            <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+                            <div>
+                              <h3 className="text-sm font-bold text-green-900 dark:text-green-300">
+                                CREATE TABLE: "{tableName}"
+                              </h3>
+                              <p className="text-xs text-green-700 dark:text-green-400">
+                                {columnList.length} columns defined • {executionStats.executionTime.toFixed(2)}ms
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex-1 min-h-0 overflow-auto">
+                          <table className="w-full border-collapse text-sm">
+                            <thead className="sticky top-0 z-10 bg-gray-100 dark:bg-gray-700">
+                              <tr>
+                                <th className="border-b-2 border-gray-300 px-4 py-2 text-left font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">#</th>
+                                <th className="border-b-2 border-gray-300 px-4 py-2 text-left font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Column Name</th>
+                                <th className="border-b-2 border-gray-300 px-4 py-2 text-left font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Data Type</th>
+                                <th className="border-b-2 border-gray-300 px-4 py-2 text-left font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Constraints</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {columnList.map((col, idx) => (
+                                <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                  <td className="border-b border-gray-200 px-4 py-2 text-gray-600 dark:border-gray-700 dark:text-gray-400">{idx + 1}</td>
+                                  <td className="border-b border-gray-200 px-4 py-2 font-mono font-semibold text-blue-600 dark:border-gray-700 dark:text-blue-400">{col.name}</td>
+                                  <td className="border-b border-gray-200 px-4 py-2 font-mono text-purple-600 dark:border-gray-700 dark:text-purple-400">{col.type}</td>
+                                  <td className="border-b border-gray-200 px-4 py-2 font-mono text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">{col.constraints}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        <div className="border-t border-gray-200 bg-blue-50 px-4 py-3 dark:border-gray-700 dark:bg-blue-900/20">
+                          <p className="text-xs font-medium text-blue-900 dark:text-blue-300">
+                            💡 Next: <code className="rounded bg-blue-100 px-2 py-0.5 font-mono text-blue-800 dark:bg-blue-900/50 dark:text-blue-200">SELECT * FROM {tableName};</code> to view data
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  }
+                }
+
+                // ============================================================
+                // INSERT - Show operation summary in table format
+                // ============================================================
+                if (queryType === 'INSERT') {
+                  const rowCount = results.rowcount || 0;
+                  return (
+                    <div className="flex flex-1 min-h-0 flex-col">
+                      <div className="border-b border-gray-200 bg-green-50 px-4 py-3 dark:border-gray-700 dark:bg-green-900/20">
+                        <div className="flex items-center gap-3">
+                          <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+                          <div>
+                            <h3 className="text-sm font-bold text-green-900 dark:text-green-300">
+                              INSERT: {rowCount} row{rowCount !== 1 ? 's' : ''} → "{tableName}"
+                            </h3>
+                            <p className="text-xs text-green-700 dark:text-green-400">
+                              {executionStats.executionTime.toFixed(2)}ms
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex-1 min-h-0 overflow-auto">
+                        <table className="w-full border-collapse text-sm">
+                          <thead className="sticky top-0 z-10 bg-gray-100 dark:bg-gray-700">
+                            <tr>
+                              <th className="border-b-2 border-gray-300 px-4 py-2 text-left font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Operation</th>
+                              <th className="border-b-2 border-gray-300 px-4 py-2 text-left font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Table</th>
+                              <th className="border-b-2 border-gray-300 px-4 py-2 text-left font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Rows Affected</th>
+                              <th className="border-b-2 border-gray-300 px-4 py-2 text-left font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                              <td className="border-b border-gray-200 px-4 py-2 font-mono font-semibold text-green-600 dark:border-gray-700 dark:text-green-400">INSERT</td>
+                              <td className="border-b border-gray-200 px-4 py-2 font-mono text-blue-600 dark:border-gray-700 dark:text-blue-400">{tableName}</td>
+                              <td className="border-b border-gray-200 px-4 py-2 font-bold text-green-600 dark:border-gray-700 dark:text-green-400">{rowCount}</td>
+                              <td className="border-b border-gray-200 px-4 py-2 text-green-600 dark:border-gray-700 dark:text-green-400">Completed</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="border-t border-gray-200 bg-blue-50 px-4 py-3 dark:border-gray-700 dark:bg-blue-900/20">
+                        <p className="text-xs font-medium text-blue-900 dark:text-blue-300">
+                          💡 Next: <code className="rounded bg-blue-100 px-2 py-0.5 font-mono text-blue-800 dark:bg-blue-900/50 dark:text-blue-200">SELECT * FROM {tableName};</code> to view inserted data
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // ============================================================
+                // UPDATE - Show operation summary in table format
+                // ============================================================
+                if (queryType === 'UPDATE') {
+                  const rowCount = results.rowcount || 0;
+                  const whereMatch = query.match(/WHERE\s+(.+?)(?:;|$)/i);
+                  const condition = whereMatch ? whereMatch[1].trim() : 'All rows';
+
+                  return (
+                    <div className="flex flex-1 min-h-0 flex-col">
+                      <div className="border-b border-gray-200 bg-green-50 px-4 py-3 dark:border-gray-700 dark:bg-green-900/20">
+                        <div className="flex items-center gap-3">
+                          <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+                          <div>
+                            <h3 className="text-sm font-bold text-orange-900 dark:text-orange-300">
+                              UPDATE: {rowCount} row{rowCount !== 1 ? 's' : ''} in "{tableName}"
+                            </h3>
+                            <p className="text-xs text-orange-700 dark:text-orange-400">
+                              {executionStats.executionTime.toFixed(2)}ms
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex-1 min-h-0 overflow-auto">
+                        <table className="w-full border-collapse text-sm">
+                          <thead className="sticky top-0 z-10 bg-gray-100 dark:bg-gray-700">
+                            <tr>
+                              <th className="border-b-2 border-gray-300 px-4 py-2 text-left font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Operation</th>
+                              <th className="border-b-2 border-gray-300 px-4 py-2 text-left font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Table</th>
+                              <th className="border-b-2 border-gray-300 px-4 py-2 text-left font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Rows Affected</th>
+                              <th className="border-b-2 border-gray-300 px-4 py-2 text-left font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Condition</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                              <td className="border-b border-gray-200 px-4 py-2 font-mono font-semibold text-orange-600 dark:border-gray-700 dark:text-orange-400">UPDATE</td>
+                              <td className="border-b border-gray-200 px-4 py-2 font-mono text-blue-600 dark:border-gray-700 dark:text-blue-400">{tableName}</td>
+                              <td className="border-b border-gray-200 px-4 py-2 font-bold text-orange-600 dark:border-gray-700 dark:text-orange-400">{rowCount}</td>
+                              <td className="border-b border-gray-200 px-4 py-2 font-mono text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">{condition.substring(0, 60)}{condition.length > 60 ? '...' : ''}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="border-t border-gray-200 bg-blue-50 px-4 py-3 dark:border-gray-700 dark:bg-blue-900/20">
+                        <p className="text-xs font-medium text-blue-900 dark:text-blue-300">
+                          💡 Next: <code className="rounded bg-blue-100 px-2 py-0.5 font-mono text-blue-800 dark:bg-blue-900/50 dark:text-blue-200">SELECT * FROM {tableName};</code> to verify updates
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // ============================================================
+                // DELETE - Show operation summary in table format
+                // ============================================================
+                if (queryType === 'DELETE') {
+                  const rowCount = results.rowcount || 0;
+                  const whereMatch = query.match(/WHERE\s+(.+?)(?:;|$)/i);
+                  const condition = whereMatch ? whereMatch[1].trim() : 'All rows';
+
+                  return (
+                    <div className="flex flex-1 min-h-0 flex-col">
+                      <div className="border-b border-gray-200 bg-red-50 px-4 py-3 dark:border-gray-700 dark:bg-red-900/20">
+                        <div className="flex items-center gap-3">
+                          <CheckCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+                          <div>
+                            <h3 className="text-sm font-bold text-red-900 dark:text-red-300">
+                              DELETE: {rowCount} row{rowCount !== 1 ? 's' : ''} from "{tableName}"
+                            </h3>
+                            <p className="text-xs text-red-700 dark:text-red-400">
+                              {executionStats.executionTime.toFixed(2)}ms
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex-1 min-h-0 overflow-auto">
+                        <table className="w-full border-collapse text-sm">
+                          <thead className="sticky top-0 z-10 bg-gray-100 dark:bg-gray-700">
+                            <tr>
+                              <th className="border-b-2 border-gray-300 px-4 py-2 text-left font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Operation</th>
+                              <th className="border-b-2 border-gray-300 px-4 py-2 text-left font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Table</th>
+                              <th className="border-b-2 border-gray-300 px-4 py-2 text-left font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Rows Deleted</th>
+                              <th className="border-b-2 border-gray-300 px-4 py-2 text-left font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Condition</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                              <td className="border-b border-gray-200 px-4 py-2 font-mono font-semibold text-red-600 dark:border-gray-700 dark:text-red-400">DELETE</td>
+                              <td className="border-b border-gray-200 px-4 py-2 font-mono text-blue-600 dark:border-gray-700 dark:text-blue-400">{tableName}</td>
+                              <td className="border-b border-gray-200 px-4 py-2 font-bold text-red-600 dark:border-gray-700 dark:text-red-400">{rowCount}</td>
+                              <td className="border-b border-gray-200 px-4 py-2 font-mono text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">{condition.substring(0, 60)}{condition.length > 60 ? '...' : ''}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="border-t border-gray-200 bg-blue-50 px-4 py-3 dark:border-gray-700 dark:bg-blue-900/20">
+                        <p className="text-xs font-medium text-blue-900 dark:text-blue-300">
+                          💡 Next: <code className="rounded bg-blue-100 px-2 py-0.5 font-mono text-blue-800 dark:bg-blue-900/50 dark:text-blue-200">SELECT COUNT(*) FROM {tableName};</code> to check remaining rows
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // ============================================================
+                // DROP/ALTER/TRUNCATE - Show simple table format
+                // ============================================================
+                return (
+                  <div className="flex flex-1 min-h-0 flex-col">
+                    <div className="border-b border-gray-200 bg-green-50 px-4 py-3 dark:border-gray-700 dark:bg-green-900/20">
+                      <div className="flex items-center gap-3">
+                        <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+                        <div>
+                          <h3 className="text-sm font-bold text-green-900 dark:text-green-300">
+                            {queryType}: "{tableName}"
+                          </h3>
+                          <p className="text-xs text-green-700 dark:text-green-400">
+                            {executionStats.executionTime.toFixed(2)}ms
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 min-h-0 overflow-auto">
+                      <table className="w-full border-collapse text-sm">
+                        <thead className="sticky top-0 z-10 bg-gray-100 dark:bg-gray-700">
+                          <tr>
+                            <th className="border-b-2 border-gray-300 px-4 py-2 text-left font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Operation</th>
+                            <th className="border-b-2 border-gray-300 px-4 py-2 text-left font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Target</th>
+                            <th className="border-b-2 border-gray-300 px-4 py-2 text-left font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                            <td className="border-b border-gray-200 px-4 py-2 font-mono font-semibold text-green-600 dark:border-gray-700 dark:text-green-400">{queryType}</td>
+                            <td className="border-b border-gray-200 px-4 py-2 font-mono text-blue-600 dark:border-gray-700 dark:text-blue-400">{tableName}</td>
+                            <td className="border-b border-gray-200 px-4 py-2 text-green-600 dark:border-gray-700 dark:text-green-400">Completed</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="border-t border-gray-200 bg-blue-50 px-4 py-3 dark:border-gray-700 dark:bg-blue-900/20">
+                      <p className="text-xs font-medium text-blue-900 dark:text-blue-300">
+                        💡 Check Schema Explorer (left sidebar) to see updated database structure
+                      </p>
+                    </div>
                   </div>
-                  <h3 className="mt-6 text-xl font-bold text-gray-900 dark:text-white">
-                    {results.rowcount > 0 ? `${results.rowcount} Row(s) Modified Successfully` : 'Query Executed Successfully'}
-                  </h3>
-                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                    Your {upperQuery.split(' ')[0]} operation completed successfully.
-                  </p>
-                  <div className="mt-6 rounded-lg bg-blue-50 p-4 dark:bg-blue-900/20">
-                    <p className="text-sm font-medium text-blue-900 dark:text-blue-300">
-                      💡 To see your changes immediately:
-                    </p>
-                    <code className="mt-2 block rounded bg-blue-100 px-3 py-2 text-sm text-blue-900 dark:bg-blue-900/40 dark:text-blue-200">
-                      REFRESH TABLE "schema"."table";
-                    </code>
-                    <p className="mt-3 text-xs text-blue-700 dark:text-blue-400">
-                      Then run a SELECT query to view the updated data
-                    </p>
-                  </div>
-                </div>
-              </div>
+                );
+              })()
             ) : (
               <div className="flex flex-1 items-center justify-center">
                 <div className="text-center max-w-md">

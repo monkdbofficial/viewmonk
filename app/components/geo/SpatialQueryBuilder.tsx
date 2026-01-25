@@ -612,30 +612,49 @@ WHERE intersects(${fieldName}, '${geometry}')`;
         </div>
       )}
 
-      {/* Query Type Selection - Compact Dropdown */}
-      <div className="border-b border-gray-200 p-4 dark:border-gray-700">
-        <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+      {/* Query Type Selection - Professional Dropdown */}
+      <div className="border-b border-gray-200 bg-gradient-to-br from-blue-50/50 to-white p-4 dark:border-gray-700 dark:from-gray-800 dark:to-gray-900">
+        <label className="mb-3 block text-sm font-semibold text-gray-900 dark:text-white">
           Query Type
         </label>
 
-        <select
-          value={queryType}
-          onChange={(e) => loadExample(e.target.value as 'distance' | 'within' | 'intersects')}
-          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm font-medium text-gray-900 shadow-sm transition-colors hover:border-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:hover:border-gray-500"
-        >
-          {queryTemplates.map((template) => {
-            const iconMap = {
-              distance: '📍',
-              within: '🗺️',
-              intersects: '🔍'
-            };
-            return (
-              <option key={template.type} value={template.type}>
-                {iconMap[template.type]} {template.name} - {template.description}
-              </option>
-            );
-          })}
-        </select>
+        <div className="relative">
+          <select
+            value={queryType}
+            onChange={(e) => loadExample(e.target.value as 'distance' | 'within' | 'intersects')}
+            className="w-full appearance-none rounded-lg border-2 border-gray-300 bg-white px-4 py-3 pr-10 text-sm font-medium text-gray-900 shadow-sm transition-all hover:border-blue-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:hover:border-blue-500"
+            style={{
+              backgroundImage: 'none'
+            }}
+          >
+            {queryTemplates.map((template) => {
+              const iconMap = {
+                distance: '📍',
+                within: '🗺️',
+                intersects: '🔍'
+              };
+              return (
+                <option key={template.type} value={template.type}>
+                  {iconMap[template.type]} {template.name} - {template.description}
+                </option>
+              );
+            })}
+          </select>
+
+          {/* Custom dropdown arrow */}
+          <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+            <svg className="h-5 w-5 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </div>
+
+        {/* Selected query type description */}
+        <div className="mt-3 rounded-md bg-blue-50 px-3 py-2 dark:bg-blue-950/30">
+          <p className="text-xs text-blue-700 dark:text-blue-300">
+            {queryTemplates.find(t => t.type === queryType)?.description}
+          </p>
+        </div>
       </div>
 
       {/* Query Parameters */}

@@ -24,7 +24,7 @@ Users can query using `psql`/`postgresql` **SQL** statements or our query HTTP A
 
 ## Prerequisites
 
-- Ensure, you have spun up an instance in cloud with specs of 16GB RAM and alteast 100GB of SSD. In our test environment, we always spin up `c5.2xlarge` of AWS EC2 instance family. We recommend you to use its equivalent in your preferred environment.
+- Ensure, you have spun up an instance in cloud with specs of 16GB RAM and at least 100GB of SSD. In our test environment, we always spin up `c5.2xlarge` of AWS EC2 instance family. We recommend you to use its equivalent in your preferred environment.
 - Please ensure docker engine and psql are installed & active in the spun up instance. For more information, please refer [Chapter-2](./documentation/02_Get_Started.md) in the documentation section.
     + If you prefer localhost, please ensure docker engine is installed and active. (for localhost, and solely for testing)
     + Also check if psql is installed in localhost. If not, please install it.
@@ -33,7 +33,7 @@ Users can query using `psql`/`postgresql` **SQL** statements or our query HTTP A
 - Replace `xx.xx.xx.xxx` in [config.ini](./documentation/config.ini) with the spun-up instance ip address. Please ensure the instance is accessible from your envionment. 
     + In your security groups or equivalents, please whitelist ports `4200`, `5432`, `HTTP`, and `HTTPS` ports mapped against your source ip address. You must be able to successfully connect & converse with the spun-up instance over these ports. If you want to login to the spun-up instance, also whitelist `SSH` port in ingress connections.
     + If it is local dev environment, please mention `127.0.0.1` or `localhost`. However, ensure the above note is implemented.
-- Run [async timeseries](./documentation/timeseries/timeseries_async_data.py) simulation seperately/in standalone mode as it is based on async live streams. You may interrupt the execution using `KeyboardInterruption`. It is not invoked from automation scripts. Run `python3 documentation/timeseries/timeseries_async_data.py` command from the root workspace.
+- Run [async timeseries](./documentation/timeseries/timeseries_async_data.py) simulation separately/in standalone mode as it is based on async live streams. You may interrupt the execution using `KeyboardInterruption`. It is not invoked from automation scripts. Run `python3 documentation/timeseries/timeseries_async_data.py` command from the root workspace.
 - [Vector simulation](./documentation/vector/vector_ops.py) might take a delay of 30s for the first run and 10-12 seconds from the second run onwards owing to the usage of sentence transformers (ST) from huggingface. ST must be loaded everytime during data embed calls. The operation would be swift if you are using Cohere, OpenAI, etc for embedding. 
 
 
