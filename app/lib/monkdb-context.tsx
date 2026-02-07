@@ -64,13 +64,23 @@ export function MonkDBProvider({ children }: { children: React.ReactNode }) {
       const stored = localStorage.getItem('monkdb_connections');
       if (stored) {
         const parsed = JSON.parse(stored);
-        const restoredConnections = parsed.map((conn: any) => ({
-          id: conn.id,
-          name: conn.name,
-          config: conn.config,
-          client: createMonkDBClient(conn.config),
-          status: 'connecting' as const,
-        }));
+        const restoredConnections = parsed.map((conn: any) => {
+          // ENTERPRISE: Ensure legacy connections without role default to superuser
+          const config = {
+            ...conn.config,
+            role: conn.config.role || 'superuser' as 'superuser'
+          };
+
+          console.log('[MonkDBContext] Restoring connection:', conn.name, 'with role:', config.role);
+
+          return {
+            id: conn.id,
+            name: conn.name,
+            config,
+            client: createMonkDBClient(config),
+            status: 'connecting' as const,
+          };
+        });
         setConnections(restoredConnections);
 
         // Test each connection to get actual status
@@ -161,6 +171,7 @@ export function MonkDBProvider({ children }: { children: React.ReactNode }) {
           username: conn.config.username,
           password: conn.config.password,
           protocol: conn.config.protocol,
+          role: conn.config.role,
         },
       }));
       localStorage.setItem('monkdb_connections', JSON.stringify(toSave));

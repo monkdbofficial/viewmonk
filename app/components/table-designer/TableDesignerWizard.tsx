@@ -7,6 +7,7 @@ import ShardingConfigStep from './ShardingConfigStep';
 import PartitionConfigStep from './PartitionConfigStep';
 import ReplicationConfigStep from './ReplicationConfigStep';
 import TableSQLPreview from './TableSQLPreview';
+import { useSchema } from '../../contexts/schema-context';
 
 export interface ColumnDefinition {
   name: string;
@@ -85,9 +86,10 @@ export default function TableDesignerWizard({
   onClose,
   onSuccess,
 }: TableDesignerWizardProps) {
+  const { activeSchema } = useSchema();
   const [currentStep, setCurrentStep] = useState(1);
   const [design, setDesign] = useState<TableDesign>({
-    schema_name: 'doc', // CrateDB default schema
+    schema_name: activeSchema || 'doc', // Use active schema from context
     table_name: '',
     columns: [],
     sharding_config: {

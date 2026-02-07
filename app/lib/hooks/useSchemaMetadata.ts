@@ -44,59 +44,111 @@ export function useSchemaMetadata() {
     error: null,
   });
 
-  // Fetch schemas
+  // Fetch schemas (filtered by user permissions)
   const fetchSchemas = useCallback(async () => {
     if (!activeConnection) return [];
 
     try {
-      const result = await activeConnection.client.query(`
-        SELECT DISTINCT table_schema
-        FROM information_schema.tables
-        WHERE table_schema NOT IN ('pg_catalog', 'information_schema', 'sys')
-        ORDER BY table_schema
-      `);
+      // Check if user is superuser
+      const currentUserResult = await activeConnection.client.query(`SELECT CURRENT_USER`);
+      const currentUser = currentUserResult.rows[0]?.[0];
 
-      return result.rows.map((row: any[]) => ({ name: row[0] }));
+      const userCheckResult = await activeConnection.client.query(`
+        SELECT superuser FROM sys.users WHERE name = ?
+      `, [currentUser]);
+      const isSuperuser = userCheckResult.rows[0]?.[0] === true;
+
+      if (isSuperuser) {
+        // Superuser: see all schemas
+        const result = await activeConnection.client.query(`
+          SELECT DISTINCT table_schema
+          FROM information_schema.tables
+          WHERE table_schema NOT IN ('pg_catalog', 'information_schema', 'sys')
+          ORDER BY table_schema
+        `);
+        return result.rows.map((row: any[]) => ({ name: row[0] }));
+      } else {
+        // Regular user: filter by privileges
+        const result = await activeConnection.client.query(`
+          SELECT DISTINCT table_schema
+          FROM information_schema.table_privileges
+          WHERE grantee = ?
+            AND table_schema NOT IN ('pg_catalog', 'information_schema', 'sys')
+          ORDER BY table_schema
+        `, [currentUser]);
+        return result.rows.map((row: any[]) => ({ name: row[0] }));
+      }
     } catch (err) {
       console.error('Failed to fetch schemas:', err);
       return [];
     }
   }, [activeConnection]);
 
-  // Fetch tables
+  // Fetch tables (filtered by user permissions)
   const fetchTables = useCallback(async () => {
     if (!activeConnection) return [];
 
     try {
-      const result = await activeConnection.client.query(`
-        SELECT table_schema, table_name
-        FROM information_schema.tables
-        WHERE table_schema NOT IN ('pg_catalog', 'information_schema', 'sys')
-          AND table_type = 'BASE TABLE'
-        ORDER BY table_schema, table_name
-      `);
+      // Check if user is superuser
+      const currentUserResult = await activeConnection.client.query(`SELECT CURRENT_USER`);
+      const currentUser = currentUserResult.rows[0]?.[0];
 
-      return result.rows.map((row: any[]) => ({
-        schema: row[0],
-        name: row[1],
-      }));
+      const userCheckResult = await activeConnection.client.query(`
+        SELECT superuser FROM sys.users WHERE name = ?
+      `, [currentUser]);
+      const isSuperuser = userCheckResult.rows[0]?.[0] === true;
+
+      if (isSuperuser) {
+        // Superuser: see all tables
+        const result = await activeConnection.client.query(`
+          SELECT table_schema, table_name
+          FROM information_schema.tables
+          WHERE table_schema NOT IN ('pg_catalog', 'information_schema', 'sys')
+            AND table_type = 'BASE TABLE'
+          ORDER BY table_schema, table_name
+        `);
+        return result.rows.map((row: any[]) => ({
+          schema: row[0],
+          name: row[1],
+        }));
+      } else {
+        // Regular user: filter by privileges
+        const result = await activeConnection.client.query(`
+          SELECT DISTINCT table_schema, table_name
+          FROM information_schema.table_privileges
+          WHERE grantee = ?
+            AND table_schema NOT IN ('pg_catalog', 'information_schema', 'sys')
+          ORDER BY table_schema, table_name
+        `, [currentUser]);
+        return result.rows.map((row: any[]) => ({
+          schema: row[0],
+          name: row[1],
+        }));
+      }
     } catch (err) {
       console.error('Failed to fetch tables:', err);
       return [];
     }
   }, [activeConnection]);
 
-  // Fetch columns
-  const fetchColumns = useCallback(async () => {
-    if (!activeConnection) return [];
+  // Fetch columns (filtered by accessible tables)
+  const fetchColumns = useCallback(async (accessibleTables: TableInfo[]) => {
+    if (!activeConnection || accessibleTables.length === 0) return [];
 
     try {
+      // Build WHERE clause to only fetch columns from accessible tables
+      const tableConditions = accessibleTables
+        .map(() => `(table_schema = ? AND table_name = ?)`)
+        .join(' OR ');
+
+      const params = accessibleTables.flatMap(t => [t.schema, t.name]);
+
       const result = await activeConnection.client.query(`
         SELECT table_schema, table_name, column_name, data_type
         FROM information_schema.columns
-        WHERE table_schema NOT IN ('pg_catalog', 'information_schema', 'sys')
+        WHERE (${tableConditions})
         ORDER BY table_schema, table_name, ordinal_position
-      `);
+      `, params);
 
       return result.rows.map((row: any[]) => ({
         schema: row[0],
@@ -126,11 +178,14 @@ export function useSchemaMetadata() {
     setMetadata(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      const [schemas, tables, columns] = await Promise.all([
+      // Fetch schemas and tables first
+      const [schemas, tables] = await Promise.all([
         fetchSchemas(),
         fetchTables(),
-        fetchColumns(),
       ]);
+
+      // Then fetch columns only for accessible tables
+      const columns = await fetchColumns(tables);
 
       setMetadata({
         schemas,

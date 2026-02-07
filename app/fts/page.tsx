@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useActiveConnection } from '../lib/monkdb-context';
 import { useToast } from '../components/ToastContext';
+import SchemaSelector from '../components/common/SchemaSelector';
 
 interface SearchResult {
   [key: string]: any;
@@ -201,6 +202,9 @@ LIMIT 50;`;
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {/* Schema Selector */}
+            <SchemaSelector />
+
             {/* Connection Status */}
             <div className="flex items-center gap-2 rounded-lg border border-green-300 bg-green-50 px-3 py-2 dark:border-green-900/50 dark:bg-green-900/20">
               <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />

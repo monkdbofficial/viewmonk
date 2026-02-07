@@ -11,6 +11,7 @@ import BlobFilters, { BlobFilters as BlobFiltersType } from './blob/BlobFilters'
 import CreateTableDialog from './blob/CreateTableDialog';
 import MigrateTableDialog from './blob/MigrateTableDialog';
 import AdvancedFeaturesDialog from './blob/AdvancedFeaturesDialog';
+import SchemaSelector from './common/SchemaSelector';
 
 function BlobStorageContent() {
   const router = useRouter();
@@ -430,6 +431,9 @@ function BlobStorageContent() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Schema Selector */}
+            <SchemaSelector />
+
             <button
               onClick={() => setShowSupportedTypesModal(true)}
               className="rounded-lg border border-gray-300 bg-white p-2 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:hover:bg-gray-700"

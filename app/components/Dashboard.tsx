@@ -5,6 +5,11 @@ import dynamic from 'next/dynamic';
 import { Database, HardDrive, Table, Activity, AlertCircle, Loader2, LayoutDashboard, CheckCircle, AlertTriangle, RefreshCw, TrendingUp } from 'lucide-react';
 import { useDatabaseStats, useClusterHealth, useNodes, useReadWriteRatio } from '../lib/monkdb-hooks';
 import { useActiveConnection } from '../lib/monkdb-context';
+import { usePermissions } from '../hooks/usePermissions';
+import { useAccessibleSchemas } from '../hooks/useAccessibleSchemas';
+import { useSchema } from '../contexts/schema-context';
+import PermissionBadge from './common/PermissionBadge';
+import SchemaSelector from './common/SchemaSelector';
 
 const PerformanceChart = dynamic(() => import('./charts/PerformanceChart'), { ssr: false });
 const CollectionDistribution = dynamic(() => import('./charts/CollectionDistribution'), { ssr: false });
@@ -13,6 +18,9 @@ const SavedViews = dynamic(() => import('./SavedViews'), { ssr: false });
 
 export default function Dashboard() {
   const activeConnection = useActiveConnection();
+  const { role } = usePermissions();
+  const { schemas, loading: schemasLoading } = useAccessibleSchemas();
+  const { activeSchema } = useSchema();
   const { data: dbStats, loading: statsLoading, error: statsError, refetch: refetchStats } = useDatabaseStats();
   const { data: clusterHealth, loading: healthLoading, error: healthError, refetch: refetchHealth } = useClusterHealth();
   const { data: nodes, loading: nodesLoading, error: nodesError, refetch: refetchNodes } = useNodes();
@@ -76,16 +84,21 @@ export default function Dashboard() {
     return `${days}d ${hours}h ${minutes}m`;
   };
 
-  // Stats configuration
+  // Stats configuration - Enterprise: Show only accessible data
+  const accessibleSchemaCount = schemas.length;
+  const isSuperuser = role === 'superuser';
+
   const stats = [
     {
-      label: 'Total Tables',
+      label: isSuperuser ? 'Total Tables' : 'Accessible Tables',
       value: dbStats ? dbStats.totalTables.toString() : '-',
-      change: `${dbStats?.totalSchemas || 0} schemas`,
+      change: isSuperuser
+        ? `${dbStats?.totalSchemas || 0} schemas`
+        : `${accessibleSchemaCount} accessible schemas`,
       trend: 'up',
       icon: Table,
       color: 'blue' as const,
-      loading: statsLoading,
+      loading: statsLoading || schemasLoading,
       error: statsError,
     },
     {
@@ -168,14 +181,25 @@ export default function Dashboard() {
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/30">
               <LayoutDashboard className="h-5 w-5 text-blue-600 dark:text-blue-400" />
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-                Dashboard
-              </h1>
+            <div className="flex-1">
+              <div className="flex items-center gap-3">
+                <h1 className="text-xl font-bold text-gray-900 dark:text-white">
+                  Dashboard
+                </h1>
+                {/* Only show badge if not superuser (reduce visual noise) */}
+                {role !== 'superuser' && <PermissionBadge role={role} size="sm" />}
+              </div>
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 Overview of {activeConnection.name} cluster
+                {!isSuperuser && ` • ${accessibleSchemaCount} accessible schema${accessibleSchemaCount !== 1 ? 's' : ''}`}
               </p>
             </div>
+            {/* Enterprise: Schema Selector */}
+            {!isSuperuser && schemas.length > 1 && (
+              <div className="ml-4">
+                <SchemaSelector />
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-3">
             {/* Last Refresh */}

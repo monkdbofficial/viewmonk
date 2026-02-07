@@ -6,6 +6,7 @@ import { ToastProvider } from "./components/ToastContext";
 import ToastContainer from "./components/ToastContainer";
 import AppLayout from "./components/AppLayout";
 import { MonkDBProvider } from "./lib/monkdb-context";
+import { SchemaProvider } from "./contexts/schema-context";
 import { QueryTabsProvider } from "./lib/query-tabs-context";
 import { NotificationProvider } from "./lib/notification-context";
 import { SavedViewsProvider } from "./lib/saved-views-context";
@@ -44,16 +45,18 @@ export default function RootLayout({
             <UserProvider>
               <NotificationProvider>
                 <MonkDBProvider>
-                  <BlobProvider>
-                    <SavedViewsProvider>
-                      <QueryTabsProvider>
-                        <ToastProvider>
-                          <AppLayout>{children}</AppLayout>
-                          <ToastContainer />
-                        </ToastProvider>
-                      </QueryTabsProvider>
-                    </SavedViewsProvider>
-                  </BlobProvider>
+                  <SchemaProvider>
+                    <BlobProvider>
+                      <SavedViewsProvider>
+                        <QueryTabsProvider>
+                          <ToastProvider>
+                            <AppLayout>{children}</AppLayout>
+                            <ToastContainer />
+                          </ToastProvider>
+                        </QueryTabsProvider>
+                      </SavedViewsProvider>
+                    </BlobProvider>
+                  </SchemaProvider>
                 </MonkDBProvider>
               </NotificationProvider>
             </UserProvider>

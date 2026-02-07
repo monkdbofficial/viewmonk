@@ -9,6 +9,7 @@ import { Map, Database, Settings, Code, AlertTriangle, CheckCircle, Copy, Check,
 import { useActiveConnection } from '../lib/monkdb-context';
 import { useToast } from '../components/ToastContext';
 import { geospatialConfig } from '../config/geospatial.config';
+import SchemaSelector from '../components/common/SchemaSelector';
 
 // Dynamically import MapboxViewerPro to avoid SSR issues
 const DynamicMapViewer = dynamic(() => import('../components/geo/MapboxViewerPro'), {
@@ -574,6 +575,9 @@ WHERE within(geo_column, 'POLYGON((
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {/* Schema Selector */}
+            <SchemaSelector />
+
             {/* Demo Queries Button */}
             <button
               onClick={() => setShowDemoQueries(true)}
