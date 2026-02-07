@@ -511,19 +511,20 @@ WHERE ${primaryKeyCol.column_name} = ?;
             ) : filteredSchemas.length > 0 ? (
               <div className="space-y-0.5">
                 {filteredSchemas.map((schema) => {
-                  const tables = schemaTableMap[schema] || [];
+                  const schemaName = schema.name; // Extract schema name from object
+                  const tables = schemaTableMap[schemaName] || [];
                   const filteredTables = filterTables(tables);
-                  const isLoading = loadingTables.has(schema);
-                  const isExpanded = expandedSchemas.has(schema);
-                  const isSystemSchema = ['information_schema', 'sys', 'pg_catalog'].includes(schema) || schema.startsWith('pg_');
+                  const isLoading = loadingTables.has(schemaName);
+                  const isExpanded = expandedSchemas.has(schemaName);
+                  const isSystemSchema = ['information_schema', 'sys', 'pg_catalog'].includes(schemaName) || schemaName.startsWith('pg_');
 
                   if (searchTerm && filteredTables.length === 0 && !isExpanded) return null;
 
                   return (
-                    <div key={schema}>
+                    <div key={schemaName}>
                       {/* Schema Node */}
                       <button
-                        onClick={() => toggleSchema(schema)}
+                        onClick={() => toggleSchema(schemaName)}
                         className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
                       >
                         {isExpanded ? (
@@ -537,7 +538,7 @@ WHERE ${primaryKeyCol.column_name} = ?;
                             : 'text-purple-600 dark:text-purple-400'
                         }`} />
                         <span className="flex-1 truncate text-left text-gray-800 dark:text-gray-200">
-                          {schema}
+                          {schemaName}
                         </span>
                         {isLoading ? (
                           <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin text-gray-400" />
@@ -554,12 +555,12 @@ WHERE ${primaryKeyCol.column_name} = ?;
                           {filteredTables.length > 0 ? (
                             filteredTables.map((table) => {
                               const isSelected =
-                                selectedTable?.schema === schema && selectedTable?.name === table.table_name;
+                                selectedTable?.schema === schemaName && selectedTable?.name === table.table_name;
 
                               return (
                                 <button
-                                  key={`${schema}.${table.table_name}`}
-                                  onClick={() => handleTableClick(schema, table.table_name)}
+                                  key={`${schemaName}.${table.table_name}`}
+                                  onClick={() => handleTableClick(schemaName, table.table_name)}
                                   className={`flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-xs transition-colors ${
                                     isSelected
                                       ? 'bg-blue-50 font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
