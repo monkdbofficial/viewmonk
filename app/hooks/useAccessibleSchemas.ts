@@ -59,13 +59,15 @@ export function useAccessibleSchemas() {
         } else {
           console.log('[useAccessibleSchemas] User is NOT superuser, filtering by privileges');
 
-          // Query accessible schemas based on table_privileges
+          // Query accessible schemas based on sys.privileges
           const result = await client.query(`
-            SELECT DISTINCT table_schema, privilege_type
-            FROM information_schema.table_privileges
+            SELECT DISTINCT ident, type
+            FROM sys.privileges
             WHERE grantee = ?
-              AND table_schema NOT IN ('information_schema', 'pg_catalog', 'sys')
-            ORDER BY table_schema
+              AND class = 'SCHEMA'
+              AND state = 'GRANT'
+              AND ident NOT IN ('information_schema', 'pg_catalog', 'sys')
+            ORDER BY ident
           `, [username]);
 
           console.log('[useAccessibleSchemas] Privilege rows:', result.rows.length);

@@ -56,26 +56,29 @@ export function useAccessibleTables(schemaName: string) {
         } else {
           console.log('[useAccessibleTables] User is NOT superuser, filtering by privileges');
 
-          // Query accessible tables based on table_privileges
+          // Query accessible tables based on sys.privileges
           const result = await client.query(`
-            SELECT DISTINCT table_name, privilege_type
-            FROM information_schema.table_privileges
+            SELECT DISTINCT ident, type
+            FROM sys.privileges
             WHERE grantee = ?
-              AND table_schema = ?
-            ORDER BY table_name
-          `, [username, schemaName]);
+              AND class = 'TABLE'
+              AND state = 'GRANT'
+              AND ident LIKE ?
+            ORDER BY ident
+          `, [username, `${schemaName}.%`]);
 
           console.log('[useAccessibleTables] Privilege rows:', result.rows.length);
 
           // Group privileges by table
           const tableMap = new Map<string, string[]>();
           result.rows.forEach(row => {
-            const table = row[0];
+            const fullTableName = row[0]; // Format: schema.table
             const privilege = row[1];
-            if (!tableMap.has(table)) {
-              tableMap.set(table, []);
+            const tableName = fullTableName.split('.')[1]; // Extract table name
+            if (!tableMap.has(tableName)) {
+              tableMap.set(tableName, []);
             }
-            tableMap.get(table)!.push(privilege);
+            tableMap.get(tableName)!.push(privilege);
           });
 
           const tableList = Array.from(tableMap.entries()).map(([name, privileges]) => ({

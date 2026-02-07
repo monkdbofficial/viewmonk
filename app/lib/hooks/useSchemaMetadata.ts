@@ -68,13 +68,15 @@ export function useSchemaMetadata() {
         `);
         return result.rows.map((row: any[]) => ({ name: row[0] }));
       } else {
-        // Regular user: filter by privileges
+        // Regular user: filter by privileges from sys.privileges
         const result = await activeConnection.client.query(`
-          SELECT DISTINCT table_schema
-          FROM information_schema.table_privileges
+          SELECT DISTINCT ident
+          FROM sys.privileges
           WHERE grantee = ?
-            AND table_schema NOT IN ('pg_catalog', 'information_schema', 'sys')
-          ORDER BY table_schema
+            AND class = 'SCHEMA'
+            AND state = 'GRANT'
+            AND ident NOT IN ('pg_catalog', 'information_schema', 'sys')
+          ORDER BY ident
         `, [currentUser]);
         return result.rows.map((row: any[]) => ({ name: row[0] }));
       }
@@ -112,18 +114,28 @@ export function useSchemaMetadata() {
           name: row[1],
         }));
       } else {
-        // Regular user: filter by privileges
+        // Regular user: filter by privileges from sys.privileges
         const result = await activeConnection.client.query(`
-          SELECT DISTINCT table_schema, table_name
-          FROM information_schema.table_privileges
+          SELECT DISTINCT ident
+          FROM sys.privileges
           WHERE grantee = ?
-            AND table_schema NOT IN ('pg_catalog', 'information_schema', 'sys')
-          ORDER BY table_schema, table_name
+            AND class = 'TABLE'
+            AND state = 'GRANT'
+          ORDER BY ident
         `, [currentUser]);
-        return result.rows.map((row: any[]) => ({
-          schema: row[0],
-          name: row[1],
-        }));
+
+        // Parse schema.table format
+        return result.rows
+          .map((row: any[]) => {
+            const fullTableName = row[0];
+            const parts = fullTableName.split('.');
+            if (parts.length === 2) {
+              return { schema: parts[0], name: parts[1] };
+            }
+            return null;
+          })
+          .filter((table): table is TableInfo => table !== null &&
+            !['pg_catalog', 'information_schema', 'sys'].includes(table.schema));
       }
     } catch (err) {
       console.error('Failed to fetch tables:', err);
