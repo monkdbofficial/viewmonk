@@ -11,7 +11,12 @@ import {
   RefreshCw,
   AlertCircle,
   Download,
-  Upload
+  Upload,
+  Search,
+  ChevronDown,
+  FileJson,
+  FileText,
+  FileSpreadsheet
 } from 'lucide-react';
 import { useActiveConnection } from '../../lib/monkdb-context';
 import { useToast } from '../ToastContext';
@@ -57,8 +62,15 @@ export default function DataGrid({ schema, table, onClose }: DataGridProps) {
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(50);
   const [totalRows, setTotalRows] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchColumn, setSearchColumn] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchColumns();
@@ -68,7 +80,22 @@ export default function DataGrid({ schema, table, onClose }: DataGridProps) {
     if (columns.length > 0) {
       fetchData();
     }
-  }, [columns.length, page, pageSize]);
+  }, [columns.length, page, pageSize, searchTerm, searchColumn]);
+
+  // Close export menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showExportMenu) {
+        const target = event.target as HTMLElement;
+        if (!target.closest('.export-menu-container')) {
+          setShowExportMenu(false);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showExportMenu]);
 
   const fetchColumns = async () => {
     if (!activeConnection) return;
@@ -117,16 +144,37 @@ export default function DataGrid({ schema, table, onClose }: DataGridProps) {
 
     setLoading(true);
     try {
-      // Get total count
+      // Build WHERE clause for search
+      let whereClause = '';
+      let queryParams: any[] = [];
+
+      if (searchTerm && searchColumn) {
+        // Search in specific column
+        whereClause = ` WHERE CAST(${searchColumn} AS TEXT) LIKE ?`;
+        queryParams = [`%${searchTerm}%`];
+        setIsSearching(true);
+      } else if (searchTerm && !searchColumn) {
+        // Search across all columns
+        const searchConditions = columns.map(col => `CAST(${col.name} AS TEXT) LIKE ?`).join(' OR ');
+        whereClause = ` WHERE ${searchConditions}`;
+        queryParams = columns.map(() => `%${searchTerm}%`);
+        setIsSearching(true);
+      } else {
+        setIsSearching(false);
+      }
+
+      // Get total count with search
       const countResult = await activeConnection.client.query(
-        `SELECT COUNT(*) FROM ${schema}.${table}`
+        `SELECT COUNT(*) FROM ${schema}.${table}${whereClause}`,
+        queryParams
       );
       setTotalRows(countResult.rows[0][0]);
 
-      // Get data for current page
+      // Get data for current page with search
       const offset = page * pageSize;
       const result = await activeConnection.client.query(
-        `SELECT * FROM ${schema}.${table} LIMIT ${pageSize} OFFSET ${offset}`
+        `SELECT * FROM ${schema}.${table}${whereClause} LIMIT ${pageSize} OFFSET ${offset}`,
+        queryParams
       );
 
       setRows(result.rows);
@@ -280,6 +328,258 @@ export default function DataGrid({ schema, table, onClose }: DataGridProps) {
     fetchData();
   };
 
+  const handleSearch = () => {
+    setPage(0); // Reset to first page when searching
+    fetchData();
+  };
+
+  const handleClearSearch = () => {
+    setSearchTerm('');
+    setSearchColumn('');
+    setPage(0);
+  };
+
+  const exportToCSV = () => {
+    try {
+      // Create CSV header
+      const headers = columns.map(col => col.name).join(',');
+
+      // Create CSV rows
+      const csvRows = rows.map(row => {
+        return row.map(cell => {
+          // Handle null values
+          if (cell === null) return '';
+          // Escape quotes and wrap in quotes if contains comma, quote, or newline
+          const cellStr = String(cell);
+          if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+            return `"${cellStr.replace(/"/g, '""')}"`;
+          }
+          return cellStr;
+        }).join(',');
+      }).join('\n');
+
+      const csv = `${headers}\n${csvRows}`;
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${schema}_${table}_${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+
+      success('Export Successful', `Exported ${rows.length} rows to CSV`);
+      setShowExportMenu(false);
+    } catch (err: any) {
+      showError('Export Failed', err.message);
+    }
+  };
+
+  const exportToJSON = () => {
+    try {
+      // Convert rows to objects
+      const data = rows.map(row => {
+        const obj: Record<string, any> = {};
+        columns.forEach((col, idx) => {
+          obj[col.name] = row[idx];
+        });
+        return obj;
+      });
+
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${schema}_${table}_${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+
+      success('Export Successful', `Exported ${rows.length} rows to JSON`);
+      setShowExportMenu(false);
+    } catch (err: any) {
+      showError('Export Failed', err.message);
+    }
+  };
+
+  const exportToSQL = () => {
+    try {
+      const columnNames = columns.map(col => col.name).join(', ');
+
+      const sqlStatements = rows.map(row => {
+        const values = row.map(cell => {
+          if (cell === null) return 'NULL';
+          if (typeof cell === 'number') return cell;
+          if (typeof cell === 'boolean') return cell ? 'TRUE' : 'FALSE';
+          // Escape single quotes
+          return `'${String(cell).replace(/'/g, "''")}'`;
+        }).join(', ');
+
+        return `INSERT INTO ${schema}.${table} (${columnNames}) VALUES (${values});`;
+      }).join('\n');
+
+      const blob = new Blob([sqlStatements], { type: 'text/plain' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${schema}_${table}_${new Date().toISOString().slice(0, 10)}.sql`;
+      link.click();
+
+      success('Export Successful', `Exported ${rows.length} rows to SQL`);
+      setShowExportMenu(false);
+    } catch (err: any) {
+      showError('Export Failed', err.message);
+    }
+  };
+
+  const downloadCSVTemplate = () => {
+    try {
+      // Create CSV header with column names
+      const headers = columns.map(col => col.name).join(',');
+
+      // Create sample rows with column types and constraints
+      const sampleRow1 = columns.map(col => {
+        if (col.isPrimaryKey) return `<primary_key>`;
+        if (col.type.toLowerCase().includes('int')) return `<number>`;
+        if (col.type.toLowerCase().includes('bool')) return `<true/false>`;
+        if (col.type.toLowerCase().includes('date') || col.type.toLowerCase().includes('timestamp')) return `<date>`;
+        return `<text>`;
+      }).join(',');
+
+      const sampleRow2 = columns.map(col => {
+        if (col.isPrimaryKey) return `1`;
+        if (col.type.toLowerCase().includes('int')) return `100`;
+        if (col.type.toLowerCase().includes('bool')) return `true`;
+        if (col.type.toLowerCase().includes('date')) return `2024-01-01`;
+        if (col.type.toLowerCase().includes('timestamp')) return `2024-01-01 12:00:00`;
+        return `sample value`;
+      }).join(',');
+
+      const csv = `${headers}\n${sampleRow1}\n${sampleRow2}`;
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${schema}_${table}_template.csv`;
+      link.click();
+
+      success('Template Downloaded', 'CSV template downloaded successfully');
+    } catch (err: any) {
+      showError('Download Failed', err.message);
+    }
+  };
+
+  const downloadJSONTemplate = () => {
+    try {
+      // Create sample objects with column information
+      const template = [
+        columns.reduce((obj, col) => {
+          if (col.isPrimaryKey) {
+            obj[col.name] = '<primary_key>';
+          } else if (col.type.toLowerCase().includes('int')) {
+            obj[col.name] = '<number>';
+          } else if (col.type.toLowerCase().includes('bool')) {
+            obj[col.name] = '<true/false>';
+          } else if (col.type.toLowerCase().includes('date') || col.type.toLowerCase().includes('timestamp')) {
+            obj[col.name] = '<date>';
+          } else {
+            obj[col.name] = '<text>';
+          }
+          return obj;
+        }, {} as Record<string, any>),
+        columns.reduce((obj, col) => {
+          if (col.isPrimaryKey) {
+            obj[col.name] = 1;
+          } else if (col.type.toLowerCase().includes('int')) {
+            obj[col.name] = 100;
+          } else if (col.type.toLowerCase().includes('bool')) {
+            obj[col.name] = true;
+          } else if (col.type.toLowerCase().includes('date')) {
+            obj[col.name] = '2024-01-01';
+          } else if (col.type.toLowerCase().includes('timestamp')) {
+            obj[col.name] = '2024-01-01T12:00:00Z';
+          } else {
+            obj[col.name] = 'sample value';
+          }
+          return obj;
+        }, {} as Record<string, any>)
+      ];
+
+      const json = JSON.stringify(template, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${schema}_${table}_template.json`;
+      link.click();
+
+      success('Template Downloaded', 'JSON template downloaded successfully');
+    } catch (err: any) {
+      showError('Download Failed', err.message);
+    }
+  };
+
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !activeConnection) return;
+
+    setImporting(true);
+    try {
+      const fileContent = await file.text();
+      const fileExtension = file.name.split('.').pop()?.toLowerCase();
+
+      let importedData: Record<string, any>[] = [];
+
+      if (fileExtension === 'json') {
+        importedData = JSON.parse(fileContent);
+      } else if (fileExtension === 'csv') {
+        // Parse CSV
+        const lines = fileContent.split('\n').filter(line => line.trim());
+        const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+
+        importedData = lines.slice(1).map(line => {
+          const values = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+          const obj: Record<string, any> = {};
+          headers.forEach((header, idx) => {
+            obj[header] = values[idx] === '' ? null : values[idx];
+          });
+          return obj;
+        });
+      } else {
+        throw new Error('Unsupported file format. Please use CSV or JSON.');
+      }
+
+      // Validate columns
+      const fileColumns = Object.keys(importedData[0] || {});
+      const tableColumns = columns.map(col => col.name);
+      const missingColumns = fileColumns.filter(col => !tableColumns.includes(col));
+
+      if (missingColumns.length > 0) {
+        showError('Import Failed', `Unknown columns: ${missingColumns.join(', ')}`);
+        setImporting(false);
+        return;
+      }
+
+      // Insert data
+      let insertedCount = 0;
+      for (const row of importedData) {
+        const columnNames = Object.keys(row);
+        const values = Object.values(row);
+        const placeholders = values.map(() => '?').join(', ');
+
+        await activeConnection.client.query(
+          `INSERT INTO ${schema}.${table} (${columnNames.join(', ')}) VALUES (${placeholders})`,
+          values
+        );
+        insertedCount++;
+      }
+
+      success('Import Successful', `Imported ${insertedCount} rows`);
+      setShowImportDialog(false);
+      fetchData(); // Refresh data
+    } catch (err: any) {
+      console.error('Import failed:', err);
+      showError('Import Failed', err.message);
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
   const formatCellValue = (value: any, column: Column): string => {
     if (value === null) return 'NULL';
     if (value === undefined) return '';
@@ -307,16 +607,17 @@ export default function DataGrid({ schema, table, onClose }: DataGridProps) {
   return (
     <div className="flex h-full flex-col bg-white dark:bg-gray-800">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-700">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Data Editor
-          </h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            {schema}.{table} • {totalRows} rows
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+      <div className="border-b border-gray-200 p-4 dark:border-gray-700">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Data Editor
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {schema}.{table} • {totalRows} rows {isSearching && <span className="text-blue-600 dark:text-blue-400">(filtered)</span>}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
           {hasChanges && (
             <>
               <span className="text-sm text-orange-600 dark:text-orange-400">
@@ -354,6 +655,56 @@ export default function DataGrid({ schema, table, onClose }: DataGridProps) {
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
+
+          {/* Export Dropdown */}
+          <div className="relative export-menu-container">
+            <button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              className="flex items-center gap-2 rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-100 dark:border-green-700 dark:bg-green-900/20 dark:text-green-300 dark:hover:bg-green-900/30"
+            >
+              <Download className="h-4 w-4" />
+              Export
+              <ChevronDown className="h-3 w-3" />
+            </button>
+
+            {showExportMenu && (
+              <div className="absolute right-0 top-full mt-1 z-10 w-48 rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                <div className="p-1">
+                  <button
+                    onClick={exportToCSV}
+                    className="flex w-full items-center gap-3 rounded px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                  >
+                    <FileText className="h-4 w-4 text-blue-600" />
+                    Export as CSV
+                  </button>
+                  <button
+                    onClick={exportToJSON}
+                    className="flex w-full items-center gap-3 rounded px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                  >
+                    <FileJson className="h-4 w-4 text-orange-600" />
+                    Export as JSON
+                  </button>
+                  <button
+                    onClick={exportToSQL}
+                    className="flex w-full items-center gap-3 rounded px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                  >
+                    <FileSpreadsheet className="h-4 w-4 text-green-600" />
+                    Export as SQL
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Import Button */}
+          <button
+            onClick={() => setShowImportDialog(true)}
+            className="flex items-center gap-2 rounded-lg border border-purple-300 bg-purple-50 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:bg-purple-900/20 dark:text-purple-300 dark:hover:bg-purple-900/30"
+          >
+            <Upload className="h-4 w-4" />
+            Import
+          </button>
+
           {onClose && (
             <button
               onClick={onClose}
@@ -361,6 +712,62 @@ export default function DataGrid({ schema, table, onClose }: DataGridProps) {
             >
               <X className="h-5 w-5 text-gray-500" />
             </button>
+          )}
+          </div>
+        </div>
+
+        {/* Search Bar */}
+        <div className="flex items-center gap-3 rounded-lg border border-gray-300 bg-gray-50 p-3 dark:border-gray-600 dark:bg-gray-900/50">
+          <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <Search className="h-4 w-4 text-gray-500" />
+            <span className="font-medium">Search:</span>
+          </div>
+
+          {/* Column Selector */}
+          <select
+            value={searchColumn}
+            onChange={(e) => setSearchColumn(e.target.value)}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+          >
+            <option value="">All Columns</option>
+            {columns.map((col) => (
+              <option key={col.name} value={col.name}>
+                {col.name}
+              </option>
+            ))}
+          </select>
+
+          {/* Search Input */}
+          <div className="flex-1 relative">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSearch();
+              }}
+              placeholder="Enter search term..."
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 pr-20 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+            />
+            {searchTerm && (
+              <button
+                onClick={handleClearSearch}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-600 dark:hover:text-gray-300"
+                title="Clear search"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Search Info */}
+          {isSearching && (
+            <div className="flex items-center gap-2 rounded-lg bg-blue-100 px-3 py-1.5 dark:bg-blue-900/30">
+              <AlertCircle className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                {totalRows} result{totalRows !== 1 ? 's' : ''} found
+              </span>
+            </div>
           )}
         </div>
       </div>
@@ -537,6 +944,163 @@ export default function DataGrid({ schema, table, onClose }: DataGridProps) {
           </select>
         </div>
       </div>
+
+      {/* Import Dialog */}
+      {showImportDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-lg bg-white dark:bg-gray-800 shadow-xl">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-700">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-100 dark:bg-purple-900/30">
+                  <Upload className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Import Data
+                  </h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Import data into {schema}.{table}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowImportDialog(false)}
+                className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                <X className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-4 space-y-4">
+              {/* Supported Formats */}
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400 mt-0.5" />
+                  <div className="text-xs text-blue-800 dark:text-blue-200">
+                    <p className="font-medium mb-1">Supported Formats:</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      <li><strong>CSV</strong> - Comma-separated values with header row</li>
+                      <li><strong>JSON</strong> - Array of objects with column names as keys</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Download Template Section */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                  Download Template
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={downloadCSVTemplate}
+                    disabled={importing}
+                    className="flex items-center justify-center gap-2 rounded-lg border-2 border-blue-300 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/30"
+                  >
+                    <FileText className="h-5 w-5" />
+                    <div className="text-left">
+                      <div className="font-semibold">CSV Template</div>
+                      <div className="text-xs text-blue-600 dark:text-blue-400">
+                        {columns.length} columns
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={downloadJSONTemplate}
+                    disabled={importing}
+                    className="flex items-center justify-center gap-2 rounded-lg border-2 border-orange-300 bg-orange-50 px-4 py-3 text-sm font-medium text-orange-700 hover:bg-orange-100 disabled:opacity-50 disabled:cursor-not-allowed dark:border-orange-700 dark:bg-orange-900/20 dark:text-orange-300 dark:hover:bg-orange-900/30"
+                  >
+                    <FileJson className="h-5 w-5" />
+                    <div className="text-left">
+                      <div className="font-semibold">JSON Template</div>
+                      <div className="text-xs text-orange-600 dark:text-orange-400">
+                        {columns.length} fields
+                      </div>
+                    </div>
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  Templates include all table columns with sample data and type hints
+                </p>
+              </div>
+
+              {/* Divider */}
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300 dark:border-gray-600"></div>
+                </div>
+                <div className="relative flex justify-center text-xs">
+                  <span className="bg-white px-2 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                    OR UPLOAD YOUR FILE
+                  </span>
+                </div>
+              </div>
+
+              {/* File Upload */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Select File
+                </label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv,.json"
+                  onChange={handleImportFile}
+                  disabled={importing}
+                  className="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 dark:text-gray-400 focus:outline-none dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 dark:file:bg-purple-900/30 dark:file:text-purple-300"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Column names in the file must match table column names
+                </p>
+              </div>
+
+              {/* Progress Indicator */}
+              {importing && (
+                <div className="flex items-center gap-3 rounded-lg border border-purple-200 bg-purple-50 p-3 dark:border-purple-800 dark:bg-purple-900/20">
+                  <RefreshCw className="h-5 w-5 animate-spin text-purple-600 dark:text-purple-400" />
+                  <div>
+                    <p className="text-sm font-medium text-purple-900 dark:text-purple-300">
+                      Importing data...
+                    </p>
+                    <p className="text-xs text-purple-700 dark:text-purple-400">
+                      Please wait while we process your file
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Warning */}
+              <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 dark:border-orange-800 dark:bg-orange-900/20">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-5 w-5 flex-shrink-0 text-orange-600 dark:text-orange-400 mt-0.5" />
+                  <div className="text-xs text-orange-800 dark:text-orange-200">
+                    <p className="font-medium mb-1">Important:</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      <li>Data will be inserted as new rows</li>
+                      <li>Primary key conflicts may cause errors</li>
+                      <li>Large files may take time to process</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 border-t border-gray-200 p-4 dark:border-gray-700">
+              <button
+                onClick={() => setShowImportDialog(false)}
+                disabled={importing}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

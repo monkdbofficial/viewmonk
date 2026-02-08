@@ -1,7 +1,7 @@
 /**
  * useAccessibleTables Hook
  * Returns only tables in a schema that the current user has access to
- * Enterprise-grade: Filters by information_schema.table_privileges
+ * Enterprise-grade: Filters by sys.privileges (MonkDB/CrateDB)
  */
 
 import { useState, useEffect } from 'react';

@@ -514,13 +514,13 @@ export class MonkDBClient {
 
       SELECT
         'PRIVILEGE' AS node_type,
-        privilege_type AS name,
+        type AS name,
         grantee AS detail_1,
-        NULL AS detail_2,
+        state AS detail_2,
         NULL AS detail_3
-      FROM information_schema.table_privileges
-      WHERE table_schema = ?
-        AND table_name = ?
+      FROM sys.privileges
+      WHERE class = 'TABLE'
+        AND ident = ? || '.' || ?
 
       UNION ALL
 

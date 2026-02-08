@@ -58,20 +58,19 @@ export default function CreateUserDialog({ onClose, onSuccess }: CreateUserDialo
     setCreating(true);
 
     try {
-      // Build CREATE USER statement
-      let sql = `CREATE USER ${username}`;
-
+      // Create user with password (if provided) - CrateDB/MonkDB syntax
       if (password) {
-        sql += ` WITH (password = '${password.replace(/'/g, "''")}'`;
-        if (isSuperuser) {
-          sql += `, superuser = true`;
-        }
-        sql += `)`;
-      } else if (isSuperuser) {
-        sql += ` WITH (superuser = true)`;
+        await activeConnection.client.query(
+          `CREATE USER ${username} WITH (password = '${password.replace(/'/g, "''")}')`
+        );
+      } else {
+        await activeConnection.client.query(`CREATE USER ${username}`);
       }
 
-      await activeConnection.client.query(sql);
+      // Grant superuser status using AL (Admin Level) privilege
+      if (isSuperuser) {
+        await activeConnection.client.query(`GRANT AL TO ${username}`);
+      }
 
       toast.success('User created', `User "${username}" has been created successfully`);
       onSuccess();

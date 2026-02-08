@@ -15,6 +15,7 @@ interface SchemaStats {
 export default function CollectionDistribution() {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstanceRef = useRef<echarts.ECharts | null>(null);
+  const chartInitializedRef = useRef(false);
   const activeConnection = useActiveConnection();
   const { data: schemas } = useSchemas();
   const [schemaData, setSchemaData] = useState<SchemaStats[]>([]);
@@ -80,14 +81,15 @@ export default function CollectionDistribution() {
     return () => clearInterval(interval);
   }, [activeConnection, schemas]);
 
-  // Initialize chart when div becomes available (after loading completes)
+  // Initialize chart once when component mounts
   useEffect(() => {
-    if (!chartRef.current || chartInstanceRef.current) return;
+    if (!chartRef.current || chartInitializedRef.current) return;
 
     console.log('CollectionDistribution: Initializing chart instance');
     chartInstanceRef.current = echarts.init(chartRef.current, undefined, {
       renderer: 'canvas',
     });
+    chartInitializedRef.current = true;
 
     const handleResize = () => chartInstanceRef.current?.resize();
     window.addEventListener('resize', handleResize);
@@ -96,11 +98,16 @@ export default function CollectionDistribution() {
     return () => {
       window.removeEventListener('resize', handleResize);
       if (chartInstanceRef.current) {
-        chartInstanceRef.current.dispose();
+        try {
+          chartInstanceRef.current.dispose();
+        } catch (e) {
+          console.error('Error disposing chart:', e);
+        }
         chartInstanceRef.current = null;
+        chartInitializedRef.current = false;
       }
     };
-  }, [loading, error]); // Run when these change so chart initializes after loading
+  }, []); // Run once on mount
 
   // Update chart data whenever it changes
   useEffect(() => {
@@ -214,77 +221,75 @@ export default function CollectionDistribution() {
     chartInstanceRef.current.setOption(option, { notMerge: false });
   }, [schemaData]);
 
-  // Loading Skeleton
-  if (loading) {
-    return (
-      <div className="flex h-[300px] w-full items-center justify-center gap-4">
-        <div className="flex flex-col gap-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-2 animate-pulse">
-              <div className="h-3 w-3 rounded-full bg-gray-300 dark:bg-gray-600" />
-              <div className="h-3 w-24 rounded bg-gray-200 dark:bg-gray-700" />
-            </div>
-          ))}
-        </div>
-        <div className="relative h-48 w-48">
-          <div className="absolute inset-0 animate-spin rounded-full border-8 border-gray-200 border-t-blue-500 dark:border-gray-700 dark:border-t-blue-400" />
-        </div>
-        <div className="absolute bottom-4 flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-          <RefreshCw className="h-4 w-4 animate-spin" />
-          <span>Loading schema distribution...</span>
-        </div>
-      </div>
-    );
-  }
+  return (
+    <div className="relative h-[300px] w-full">
+      <div ref={chartRef} className="h-full w-full" />
 
-  // Error State
-  if (error) {
-    return (
-      <div className="flex h-[300px] w-full flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-red-300 bg-red-50/50 dark:border-red-800 dark:bg-red-900/10">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
-          <AlertCircle className="h-7 w-7 text-red-600 dark:text-red-400" />
+      {/* Loading Overlay */}
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center gap-4 bg-white dark:bg-gray-800">
+          <div className="flex flex-col gap-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-2 animate-pulse">
+                <div className="h-3 w-3 rounded-full bg-gray-300 dark:bg-gray-600" />
+                <div className="h-3 w-24 rounded bg-gray-200 dark:bg-gray-700" />
+              </div>
+            ))}
+          </div>
+          <div className="relative h-48 w-48">
+            <div className="absolute inset-0 animate-spin rounded-full border-8 border-gray-200 border-t-blue-500 dark:border-gray-700 dark:border-t-blue-400" />
+          </div>
+          <div className="absolute bottom-4 flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+            <RefreshCw className="h-4 w-4 animate-spin" />
+            <span>Loading schema distribution...</span>
+          </div>
         </div>
-        <div className="text-center">
-          <h3 className="text-sm font-semibold text-red-900 dark:text-red-300">
-            Failed to Load Data
-          </h3>
-          <p className="mt-1 max-w-sm text-xs text-red-700 dark:text-red-400">{error}</p>
-        </div>
-        <button
-          onClick={fetchSchemaStats}
-          className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Retry
-        </button>
-      </div>
-    );
-  }
+      )}
 
-  // Empty State
-  if (schemaData.length === 0) {
-    return (
-      <div className="flex h-[300px] w-full flex-col items-center justify-center gap-3">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700">
-          <PieChart className="h-7 w-7 text-gray-400 dark:text-gray-500" />
+      {/* Error Overlay */}
+      {!loading && error && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-white dark:bg-gray-800">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
+            <AlertCircle className="h-7 w-7 text-red-600 dark:text-red-400" />
+          </div>
+          <div className="text-center">
+            <h3 className="text-sm font-semibold text-red-900 dark:text-red-300">
+              Failed to Load Data
+            </h3>
+            <p className="mt-1 max-w-sm text-xs text-red-700 dark:text-red-400">{error}</p>
+          </div>
+          <button
+            onClick={fetchSchemaStats}
+            className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Retry
+          </button>
         </div>
-        <div className="text-center">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-            No Schema Data Available
-          </h3>
-          <p className="mt-1 max-w-sm text-xs text-gray-600 dark:text-gray-400">
-            Create tables and insert data to see schema distribution
-          </p>
-        </div>
-        <div className="mt-2 flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 dark:border-blue-800 dark:bg-blue-900/20">
-          <Database className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-          <span className="text-xs font-medium text-blue-900 dark:text-blue-300">
-            Distribution will appear here
-          </span>
-        </div>
-      </div>
-    );
-  }
+      )}
 
-  return <div ref={chartRef} className="h-[300px] w-full" />;
+      {/* Empty State Overlay */}
+      {!loading && !error && schemaData.length === 0 && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white/95 dark:bg-gray-800/95">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700">
+            <PieChart className="h-7 w-7 text-gray-400 dark:text-gray-500" />
+          </div>
+          <div className="text-center">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+              No Schema Data Available
+            </h3>
+            <p className="mt-1 max-w-sm text-xs text-gray-600 dark:text-gray-400">
+              Create tables and insert data to see schema distribution
+            </p>
+          </div>
+          <div className="mt-2 flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 dark:border-blue-800 dark:bg-blue-900/20">
+            <Database className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <span className="text-xs font-medium text-blue-900 dark:text-blue-300">
+              Distribution will appear here
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

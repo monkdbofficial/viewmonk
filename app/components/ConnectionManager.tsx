@@ -79,10 +79,10 @@ export default function ConnectionManager() {
             } else {
               console.log('[ConnectionManager] User is NOT superuser, checking MonkDB privileges (DQL/DML/DDL/AL)...');
 
-              // Check MonkDB privilege types: DQL, DML, DDL, AL
+              // Check MonkDB privilege types using sys.privileges table
               const privCheck = await tempClient.query(`
-                SELECT DISTINCT privilege_type
-                FROM information_schema.table_privileges
+                SELECT DISTINCT type
+                FROM sys.privileges
                 WHERE grantee = ?
               `, [connectionData.username]);
 

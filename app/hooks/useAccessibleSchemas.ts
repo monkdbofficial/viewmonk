@@ -1,7 +1,7 @@
 /**
  * useAccessibleSchemas Hook
  * Returns only schemas the current user has access to
- * Enterprise-grade: Filters by information_schema.table_privileges
+ * Enterprise-grade: Filters by sys.privileges (MonkDB/CrateDB)
  */
 
 import { useState, useEffect } from 'react';

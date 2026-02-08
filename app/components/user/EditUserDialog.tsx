@@ -54,21 +54,27 @@ export default function EditUserDialog({ user, onClose, onSuccess }: EditUserDia
     setSaving(true);
 
     try {
-      const updates: string[] = [];
+      let hasChanges = false;
 
-      // Update password if provided
+      // Update password if provided - use CrateDB/MonkDB syntax
       if (newPassword) {
-        updates.push(`password = '${newPassword.replace(/'/g, "''")}'`);
+        await activeConnection.client.query(
+          `ALTER USER ${user.name} WITH (password = '${newPassword.replace(/'/g, "''")}')`
+        );
+        hasChanges = true;
       }
 
-      // Update superuser status if changed
+      // Update superuser status if changed - use AL (Admin Level) privilege
       if (isSuperuser !== user.superuser) {
-        updates.push(`superuser = ${isSuperuser}`);
+        if (isSuperuser) {
+          await activeConnection.client.query(`GRANT AL TO ${user.name}`);
+        } else {
+          await activeConnection.client.query(`REVOKE AL FROM ${user.name}`);
+        }
+        hasChanges = true;
       }
 
-      if (updates.length > 0) {
-        const sql = `ALTER USER ${user.name} SET (${updates.join(', ')})`;
-        await activeConnection.client.query(sql);
+      if (hasChanges) {
         toast.success('User updated', `User "${user.name}" has been updated successfully`);
         onSuccess();
       } else {

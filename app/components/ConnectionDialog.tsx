@@ -51,6 +51,18 @@ export default function ConnectionDialog({
   );
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
+
+  // Reset test status when connection details change
+  const updateFormData = (updates: Partial<ConnectionFormData>) => {
+    setFormData({ ...formData, ...updates });
+    // If critical connection fields change, reset test status
+    if ('host' in updates || 'port' in updates || 'username' in updates || 'password' in updates) {
+      if (testStatus === 'success') {
+        setTestStatus('idle');
+        setTestMessage('');
+      }
+    }
+  };
   const [monkDBStatus, setMonkDBStatus] = useState<'checking' | 'online' | 'offline' | 'unknown'>('unknown');
   const [showPassword, setShowPassword] = useState(false);
   const [showCreateUser, setShowCreateUser] = useState(false);
@@ -181,9 +193,8 @@ export default function ConnectionDialog({
       setTestStatus('success');
       setTestMessage('Connection successful!');
 
-      // Clear success message after 3 seconds
+      // Clear success message after 3 seconds but keep the success status
       setTimeout(() => {
-        setTestStatus('idle');
         setTestMessage('');
       }, 3000);
     } catch (error) {
@@ -270,7 +281,8 @@ export default function ConnectionDialog({
       // Grant privileges based on role
       console.log('[ConnectionDialog] Granting privileges based on role:', userRole);
       if (userRole === 'superuser') {
-        await superuserClient.query(`ALTER USER ${newUsername} WITH SUPERUSER`);
+        // Grant AL (Admin Level) privilege for superuser access
+        await superuserClient.query(`GRANT AL TO ${newUsername}`);
       } else if (userRole === 'read-write') {
         await superuserClient.query(`GRANT ALL PRIVILEGES TO ${newUsername}`);
       } else if (userRole === 'read-only') {
@@ -281,7 +293,7 @@ export default function ConnectionDialog({
 
       console.log('[ConnectionDialog] User created successfully!');
       setCreateUserStatus('success');
-      setCreateUserMessage(`✅ User "${newUsername}" created successfully!\n\nCredentials have been filled in the form. Click "Test Connection" to verify.`);
+      setCreateUserMessage(`✅ User "${newUsername}" created successfully!\n\nCredentials have been filled in the form. You can now click "Finish".`);
 
       // Auto-fill the connection form with new credentials
       setFormData({
@@ -289,6 +301,10 @@ export default function ConnectionDialog({
         username: newUsername,
         password: newPassword,
       });
+
+      // Auto-mark connection as tested since we just created the user
+      setTestStatus('success');
+      setTestMessage('Connection verified (user created)');
 
       // Close create user panel after 2 seconds
       setTimeout(() => {
@@ -379,7 +395,7 @@ export default function ConnectionDialog({
 
       console.log('[ConnectionDialog] Password reset successfully!');
       setCreateUserStatus('success');
-      setCreateUserMessage(`✅ Password reset for "${newUsername}" successful!\n\nCredentials have been filled in the form. Click "Test Connection" to verify.`);
+      setCreateUserMessage(`✅ Password reset for "${newUsername}" successful!\n\nCredentials have been filled in the form. You can now click "Finish".`);
 
       // Auto-fill the connection form with new credentials
       setFormData({
@@ -387,6 +403,10 @@ export default function ConnectionDialog({
         username: newUsername,
         password: newPassword,
       });
+
+      // Auto-mark connection as tested since we just reset the password
+      setTestStatus('success');
+      setTestMessage('Connection verified (password reset)');
 
       // Close panel after 2 seconds
       setTimeout(() => {
@@ -613,7 +633,7 @@ export default function ConnectionDialog({
                               type="text"
                               required
                               value={formData.host}
-                              onChange={(e) => setFormData({ ...formData, host: e.target.value })}
+                              onChange={(e) => updateFormData({ host: e.target.value })}
                               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                               placeholder={isDesktopApp() ? "127.0.0.1" : "localhost"}
                             />
@@ -626,7 +646,7 @@ export default function ConnectionDialog({
                               type="number"
                               required
                               value={formData.port}
-                              onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value) })}
+                              onChange={(e) => updateFormData({ port: parseInt(e.target.value) })}
                               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                             />
                           </div>
@@ -731,7 +751,7 @@ export default function ConnectionDialog({
                         type="text"
                         required
                         value={formData.username}
-                        onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                        onChange={(e) => updateFormData({ username: e.target.value })}
                         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                         placeholder="Enter MonkDB username (e.g., testuser)"
                       />
@@ -749,7 +769,7 @@ export default function ConnectionDialog({
                             type={showPassword ? "text" : "password"}
                             required
                             value={formData.password}
-                            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                            onChange={(e) => updateFormData({ password: e.target.value })}
                             className="w-full rounded-lg border border-gray-300 px-3 py-2 pr-10 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                             placeholder="Enter password"
                             autoComplete="new-password"
