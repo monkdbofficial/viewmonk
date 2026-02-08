@@ -43,6 +43,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
   const [showMinimap, setShowMinimap] = useState(true);
   const [edgeRoutes, setEdgeRoutes] = useState<Map<string, { points: { x: number; y: number }[] }>>(new Map());
   const [hoveredRelationship, setHoveredRelationship] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Filter tables - MUST be defined before useEffect that uses it
   // Use useMemo to prevent unnecessary re-renders
@@ -165,7 +166,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
 
             // Bend points
             if (section.bendPoints) {
-              section.bendPoints.forEach(bp => {
+              section.bendPoints.forEach((bp: any) => {
                 points.push({ x: bp.x + 50, y: bp.y + 50 });
               });
             }
@@ -309,10 +310,10 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
         table.columns.forEach((col, colIdx) => {
           if (!col.isForeignKey || !col.references) return;
 
-          const targetTable = filteredTables.find(t => t.name === col.references.table);
+          const targetTable = filteredTables.find(t => t.name === col.references!.table);
           if (!targetTable) return;
 
-          const targetPos = positions.get(col.references.table);
+          const targetPos = positions.get(col.references!.table);
           if (!targetPos) return;
 
           // Find PK row index in target table
@@ -398,6 +399,174 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
     } catch (error) {
       console.error('Export failed:', error);
       alert(`Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  // Export diagram as PNG
+  const handleExportPNG = () => {
+    try {
+      // Calculate diagram bounds
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+      filteredTables.forEach(table => {
+        const pos = positions.get(table.name);
+        if (!pos) return;
+        const tableHeight = 48 + table.columns.length * 32 + 30;
+        minX = Math.min(minX, pos.x);
+        minY = Math.min(minY, pos.y);
+        maxX = Math.max(maxX, pos.x + 280);
+        maxY = Math.max(maxY, pos.y + tableHeight);
+      });
+
+      const padding = 50;
+      const width = maxX - minX + padding * 2;
+      const height = maxY - minY + padding * 2;
+
+      // Create SVG content with standard colors
+      let svgContent = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${minX - padding} ${minY - padding} ${width} ${height}">
+  <defs>
+    <linearGradient id="headerGrad-png" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2563eb;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect x="${minX - padding}" y="${minY - padding}" width="${width}" height="${height}" fill="#0a0a0a"/>
+  <g id="tables">`;
+
+      filteredTables.forEach(table => {
+        const pos = positions.get(table.name);
+        if (!pos) return;
+
+        const tableHeight = 48 + table.columns.length * 32 + 30;
+
+        svgContent += `  <g transform="translate(${pos.x}, ${pos.y})">
+    <rect width="280" height="${tableHeight}" rx="12" fill="#1e293b" stroke="#374151" stroke-width="2"/>
+    <rect width="280" height="48" rx="12" fill="url(#headerGrad-png)"/>
+    <text x="140" y="30" text-anchor="middle" fill="white" font-size="14" font-weight="bold">${table.name}</text>
+`;
+
+        table.columns.forEach((col, idx) => {
+          const y = 48 + idx * 32;
+          const isEven = idx % 2 === 0;
+          svgContent += `    <rect y="${y}" width="280" height="32" fill="${isEven ? '#1f2937' : '#111827'}" opacity="0.8"/>\n`;
+          const icon = col.isPrimaryKey ? '🔑' : col.isForeignKey ? '🔗' : '●';
+          const color = col.isPrimaryKey ? '#facc15' : col.isForeignKey ? '#22d3ee' : '#f3f4f6';
+          svgContent += `    <text x="10" y="${y + 20}" fill="${color}" font-size="11" font-weight="600">${icon} ${col.name}</text>\n`;
+          svgContent += `    <text x="270" y="${y + 20}" text-anchor="end" fill="#9ca3af" font-size="10" font-family="monospace">${col.type.toLowerCase()}</text>\n`;
+          if (col.isForeignKey) {
+            svgContent += `    <circle cx="275" cy="${y + 16}" r="3" fill="#3b82f6" stroke="white" stroke-width="2"/>\n`;
+          }
+          if (col.isPrimaryKey) {
+            svgContent += `    <rect x="60" y="${y + 12}" width="18" height="12" rx="2" fill="#facc15" opacity="0.2"/>\n`;
+            svgContent += `    <text x="69" y="${y + 20}" text-anchor="middle" fill="#facc15" font-size="8" font-weight="bold">PK</text>\n`;
+          }
+          if (col.isForeignKey) {
+            svgContent += `    <rect x="82" y="${y + 12}" width="16" height="12" rx="2" fill="#3b82f6" opacity="0.2"/>\n`;
+            svgContent += `    <text x="90" y="${y + 20}" text-anchor="middle" fill="#3b82f6" font-size="8" font-weight="bold">FK</text>\n`;
+          }
+        });
+
+        const pkCount = table.columns.filter(c => c.isPrimaryKey).length;
+        const fkCount = table.columns.filter(c => c.isForeignKey).length;
+        const reqCount = table.columns.filter(c => !c.nullable).length;
+        const footerY = 48 + table.columns.length * 32;
+
+        svgContent += `    <rect y="${footerY}" width="280" height="30" fill="#111827" opacity="0.6"/>
+    <text x="10" y="${footerY + 18}" fill="#facc15" font-size="10">🔑 ${pkCount} PK</text>
+    <text x="70" y="${footerY + 18}" fill="#3b82f6" font-size="10">🔗 ${fkCount} FK</text>
+    <text x="130" y="${footerY + 18}" fill="#ef4444" font-size="10">★ ${reqCount} Req</text>
+    <text x="270" y="${footerY + 18}" text-anchor="end" fill="#6b7280" font-size="10">${table.columns.length} cols</text>
+  </g>\n`;
+      });
+
+      svgContent += `  </g>\n  <g id="connections">\n`;
+
+      filteredTables.forEach(table => {
+        const sourcePos = positions.get(table.name);
+        if (!sourcePos) return;
+
+        table.columns.forEach((col, colIdx) => {
+          if (!col.isForeignKey || !col.references) return;
+
+          const targetTable = filteredTables.find(t => t.name === col.references!.table);
+          if (!targetTable) return;
+
+          const targetPos = positions.get(col.references!.table);
+          if (!targetPos) return;
+
+          const pkIdx = targetTable.columns.findIndex(c => c.isPrimaryKey);
+          const headerH = 48;
+          const rowH = 32;
+          const borderW = 2;
+
+          const x1 = sourcePos.x + 280;
+          const x2 = targetPos.x;
+          const y1 = sourcePos.y + borderW + headerH + (colIdx * rowH) + (rowH / 2);
+          const y2 = pkIdx >= 0 ? targetPos.y + borderW + headerH + (pkIdx * rowH) + (rowH / 2) : targetPos.y + 100;
+
+          const dx = x2 - x1;
+          const cx1 = x1 + dx * 0.5;
+          const cy1 = y1;
+          const cx2 = x2 - dx * 0.5;
+          const cy2 = y2;
+
+          svgContent += `    <path d="M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}" stroke="#3b82f6" stroke-width="2.5" fill="none" opacity="0.8"/>\n`;
+          svgContent += `    <polygon points="${x2},${y2} ${x2+8},${y2-4} ${x2+8},${y2+4}" fill="#3b82f6" opacity="0.8"/>\n`;
+        });
+      });
+
+      svgContent += `  </g>\n</svg>`;
+
+      // Convert SVG to PNG using canvas
+      const canvas = document.createElement('canvas');
+      canvas.width = width * 2;
+      canvas.height = height * 2;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Failed to get canvas context');
+
+      const img = new Image();
+      img.onload = () => {
+        ctx.fillStyle = '#0a0a0a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            alert('Failed to generate PNG');
+            return;
+          }
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `er-diagram-${new Date().getTime()}.png`;
+          link.click();
+          URL.revokeObjectURL(url);
+        }, 'image/png');
+      };
+
+      img.onerror = () => {
+        alert('Failed to load SVG image');
+      };
+
+      const svgBlob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
+      const svgUrl = URL.createObjectURL(svgBlob);
+      img.src = svgUrl;
+
+    } catch (error) {
+      console.error('PNG export failed:', error);
+      alert(`PNG export failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  // Toggle fullscreen mode
+  const handleToggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      containerRef.current?.parentElement?.requestFullscreen();
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen();
+      setIsFullscreen(false);
     }
   };
 
@@ -511,13 +680,30 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
             </span>
           </div>
 
-          {/* Premium Export Button */}
+          {/* Fullscreen Button */}
+          <button
+            onClick={handleToggleFullscreen}
+            className="flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800/50 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:border-gray-600 hover:bg-gray-700/70 active:scale-95"
+          >
+            <Maximize className="h-4 w-4" />
+            {isFullscreen ? 'Exit' : 'Fullscreen'}
+          </button>
+
+          {/* Export Buttons */}
+          <button
+            onClick={handleExportPNG}
+            className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-600 to-green-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-500 hover:to-green-400 active:scale-95"
+          >
+            <Download className="h-4 w-4" />
+            PNG
+          </button>
+
           <button
             onClick={handleExport}
             className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-orange-600 to-orange-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-orange-500/30 transition-all hover:from-orange-500 hover:to-orange-400 active:scale-95"
           >
             <Download className="h-4 w-4" />
-            Export SVG
+            SVG
           </button>
         </div>
       </div>
