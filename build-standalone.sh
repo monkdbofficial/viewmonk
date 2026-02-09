@@ -59,7 +59,6 @@ envFiles.forEach(file => {
 });
 
 console.log('📋 Loaded environment variables from .env files');
-console.log('🔑 NEXT_PUBLIC_MAPBOX_TOKEN:', process.env.NEXT_PUBLIC_MAPBOX_TOKEN ? 'SET ✓' : 'NOT SET ✗');
 
 const dev = false;
 const hostname = '0.0.0.0';
@@ -142,24 +141,7 @@ cat > dist-standalone/README.md << 'EOF'
 
 ## Quick Start
 
-### 1. Configure Environment (IMPORTANT!)
-
-Create a `.env.local` file in this directory with your configuration:
-
-```bash
-# Copy the example and edit it
-cp .env.example .env.local
-```
-
-Edit `.env.local` and add your Mapbox token:
-```
-NEXT_PUBLIC_MAPBOX_TOKEN=pk.YOUR_MAPBOX_TOKEN_HERE
-```
-
-**Get your free Mapbox token at:** https://account.mapbox.com/
-(Free tier includes 50,000 map loads per month)
-
-### 2. Start the Application
+### 1. Start the Application
 
 **On Linux/Mac:**
 ```bash
@@ -176,18 +158,15 @@ start.bat
 PORT=8080 ./start.sh
 ```
 
-### 3. Access the Application
+### 2. Access the Application
 
 Open your browser at: **http://localhost:3000**
 
-## Environment Variables
+## Optional Configuration
 
-All supported environment variables in `.env.local`:
+You can create a `.env.local` file for custom settings:
 
 ```bash
-# Mapbox Access Token (Required for Geospatial features)
-NEXT_PUBLIC_MAPBOX_TOKEN=pk.YOUR_TOKEN_HERE
-
 # Default MonkDB Connection Settings
 NEXT_PUBLIC_DEFAULT_MONKDB_HOST=localhost
 NEXT_PUBLIC_DEFAULT_MONKDB_PORT=4200
@@ -200,18 +179,14 @@ PORT=3000
 
 - ✅ Query Editor with Monaco
 - ✅ Real-time Dashboard & Metrics
-- ✅ Geospatial Mapping (requires Mapbox token)
+- ✅ Geospatial Mapping (powered by Leaflet & OpenStreetMap - no API keys needed!)
 - ✅ Vector Search Operations
 - ✅ Full-Text Search
 - ✅ User Management
 - ✅ Schema Browser & Designer
+- ✅ ER Diagram Visualization
 
 ## Troubleshooting
-
-### Map not loading?
-- Check that you added `NEXT_PUBLIC_MAPBOX_TOKEN` in `.env.local`
-- Restart the server after adding the token
-- Check the console for errors
 
 ### Port already in use?
 ```bash
@@ -236,18 +211,13 @@ cat > dist-standalone/.env.example << 'EOF'
 # MonkDB Workbench - Environment Configuration
 # ============================================
 #
-# INSTRUCTIONS:
+# INSTRUCTIONS (OPTIONAL):
 # 1. Copy this file: cp .env.example .env.local
 # 2. Edit .env.local with your values
 # 3. Restart the server
 #
-
-# ============================================
-# Mapbox Access Token (REQUIRED for maps)
-# ============================================
-# Get your free token at: https://account.mapbox.com/
-# Free tier: 50,000 map loads/month
-NEXT_PUBLIC_MAPBOX_TOKEN=pk.YOUR_MAPBOX_TOKEN_HERE
+# Note: All settings are optional. The app works out of the box!
+#
 
 # ============================================
 # MonkDB Default Connection

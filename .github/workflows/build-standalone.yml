@@ -194,9 +194,11 @@ jobs:
 
             - ✅ Complete Next.js application with all dependencies
             - ✅ Ready-to-run server (no build step required)
+            - ✅ Zero configuration - works out of the box!
             - ✅ Cross-platform support (Windows, macOS, Linux)
             - ✅ Simple start scripts for each platform
             - ✅ Production-optimized build
+            - ✅ No API keys needed - uses Leaflet & OpenStreetMap
 
             ### 📥 Download Options
 
@@ -233,7 +235,9 @@ jobs:
 
             4. **Open browser** at http://localhost:3000
 
-            #### Custom Port
+            That's it! No configuration needed. The application works out of the box with Leaflet maps (OpenStreetMap) - no API keys required!
+
+            #### Custom Port (Optional)
 
             ```bash
             # Linux/macOS

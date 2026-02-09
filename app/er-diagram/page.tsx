@@ -200,17 +200,17 @@ export default function ERDiagramPage() {
   }
 
   return (
-    <div className="flex h-full flex-col bg-gray-950">
+    <div className="flex h-full flex-col bg-white dark:bg-gray-950">
       {/* Minimal Header */}
-      <div className="border-b border-gray-800 bg-gray-900 px-6 py-3">
+      <div className="border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-6 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Database className="h-7 w-7 text-blue-500" />
             <div>
-              <h1 className="text-xl font-bold text-white">
+              <h1 className="text-xl font-bold text-gray-900 dark:text-white">
                 ER Diagram
               </h1>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-gray-600 dark:text-gray-400">
                 Visual database schema explorer
               </p>
             </div>
@@ -221,7 +221,7 @@ export default function ERDiagramPage() {
             <select
               value={selectedSchema}
               onChange={(e) => setSelectedSchema(e.target.value)}
-              className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             >
               {schemas.map(schema => (
                 <option key={schema.name} value={schema.name}>
@@ -234,7 +234,7 @@ export default function ERDiagramPage() {
             <button
               onClick={fetchSchemaMetadata}
               disabled={loading}
-              className="flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               Refresh
@@ -246,18 +246,18 @@ export default function ERDiagramPage() {
       {/* Canvas */}
       <div className="flex-1 overflow-hidden">
         {loading && tables.length === 0 ? (
-          <div className="flex h-full items-center justify-center bg-gray-950">
+          <div className="flex h-full items-center justify-center bg-white dark:bg-gray-950">
             <div className="text-center">
               <RefreshCw className="mx-auto h-12 w-12 animate-spin text-blue-500" />
-              <p className="mt-4 text-gray-400">Loading schema...</p>
+              <p className="mt-4 text-gray-600 dark:text-gray-400">Loading schema...</p>
             </div>
           </div>
         ) : tables.length === 0 ? (
-          <div className="flex h-full items-center justify-center bg-gray-950">
+          <div className="flex h-full items-center justify-center bg-white dark:bg-gray-950">
             <div className="text-center">
-              <Database className="mx-auto h-16 w-16 text-gray-600" />
-              <p className="mt-4 text-lg text-gray-400">No tables found</p>
-              <p className="text-sm text-gray-500">
+              <Database className="mx-auto h-16 w-16 text-gray-400 dark:text-gray-600" />
+              <p className="mt-4 text-lg text-gray-700 dark:text-gray-400">No tables found</p>
+              <p className="text-sm text-gray-500 dark:text-gray-500">
                 Select a different schema or create some tables
               </p>
             </div>

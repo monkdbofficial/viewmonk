@@ -11,14 +11,14 @@ import { useToast } from '../components/ToastContext';
 import { geospatialConfig } from '../config/geospatial.config';
 import SchemaSelector from '../components/common/SchemaSelector';
 
-// Dynamically import MapboxViewerPro to avoid SSR issues
-const DynamicMapViewer = dynamic(() => import('../components/geo/MapboxViewerPro'), {
+// Dynamically import LeafletMapViewer to avoid SSR issues
+const DynamicMapViewer = dynamic(() => import('../components/geo/LeafletMapViewer'), {
   ssr: false,
   loading: () => (
     <div className="flex h-full items-center justify-center rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
       <div className="text-center">
         <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600 dark:border-gray-700 dark:border-t-blue-400"></div>
-        <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">Loading Mapbox Pro...</p>
+        <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">Loading Map...</p>
       </div>
     </div>
   ),
