@@ -14,7 +14,30 @@
 
 ---
 
-## Quick Start
+## 📦 Download Standalone Build
+
+**Want to run without installing dependencies?** Download the standalone version!
+
+### Latest Release: [v1.0.0](https://github.com/suryakant-monkdb/workbanch-web/releases/latest)
+
+**Choose your version:**
+
+| Version | Size | When to Use | Download |
+|---------|------|-------------|----------|
+| **LITE** ⚡ | ~10MB | Fast download, auto-installs on first run | [📥 Download](https://github.com/suryakant-monkdb/workbanch-web/releases/download/standalone-v1.0.0/monkdb-workbench-standalone-lite.zip) |
+| **FULL** 📦 | ~377MB | Offline use, no internet needed after download | [📥 Download](https://github.com/suryakant-monkdb/workbanch-web/releases/download/standalone-v1.0.0/monkdb-workbench-standalone-full.zip) |
+
+### Quick Start (Standalone):
+1. Download and extract the ZIP file
+2. Run `./start.sh` (Mac/Linux) or `start.bat` (Windows)
+3. Open http://localhost:3000
+4. **That's it!** No configuration needed!
+
+> **Note:** Requires Node.js 18+ ([Download here](https://nodejs.org/))
+
+---
+
+## Quick Start (Development)
 
 **Get started in 3 minutes:**
 
