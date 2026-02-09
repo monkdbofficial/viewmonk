@@ -116,14 +116,12 @@ jobs:
             monkdb-workbench-standalone-full.tar.gz
             monkdb-workbench-standalone-full.tar.gz.sha256
 
-  # Create GitHub Release when a tag is pushed
-  create-release:
-    name: Create GitHub Release
+  # Upload to Cloudflare R2 when a tag is pushed
+  upload-to-r2:
+    name: Upload to Cloudflare R2
     needs: build-standalone
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/standalone-v')
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout code
@@ -159,6 +157,88 @@ jobs:
           name: monkdb-workbench-standalone-full-tar
           path: release-files
 
+      - name: Configure AWS CLI for R2
+        run: |
+          pip install awscli
+          aws configure set aws_access_key_id ${{ secrets.R2_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          aws configure set default.region auto
+
+      - name: Upload files to Cloudflare R2
+        run: |
+          echo "📦 Uploading standalone builds to R2..."
+
+          # Upload LITE version
+          aws s3 cp release-files/monkdb-workbench-standalone-lite.zip \
+            s3://${{ secrets.R2_BUCKET_NAME }}/releases/v${{ steps.version.outputs.version }}/monkdb-workbench-standalone-lite.zip \
+            --endpoint-url ${{ secrets.R2_ENDPOINT }} \
+            --acl public-read
+
+          aws s3 cp release-files/monkdb-workbench-standalone-lite.zip.sha256 \
+            s3://${{ secrets.R2_BUCKET_NAME }}/releases/v${{ steps.version.outputs.version }}/monkdb-workbench-standalone-lite.zip.sha256 \
+            --endpoint-url ${{ secrets.R2_ENDPOINT }} \
+            --acl public-read
+
+          aws s3 cp release-files/monkdb-workbench-standalone-lite.tar.gz \
+            s3://${{ secrets.R2_BUCKET_NAME }}/releases/v${{ steps.version.outputs.version }}/monkdb-workbench-standalone-lite.tar.gz \
+            --endpoint-url ${{ secrets.R2_ENDPOINT }} \
+            --acl public-read
+
+          aws s3 cp release-files/monkdb-workbench-standalone-lite.tar.gz.sha256 \
+            s3://${{ secrets.R2_BUCKET_NAME }}/releases/v${{ steps.version.outputs.version }}/monkdb-workbench-standalone-lite.tar.gz.sha256 \
+            --endpoint-url ${{ secrets.R2_ENDPOINT }} \
+            --acl public-read
+
+          # Upload FULL version
+          aws s3 cp release-files/monkdb-workbench-standalone-full.zip \
+            s3://${{ secrets.R2_BUCKET_NAME }}/releases/v${{ steps.version.outputs.version }}/monkdb-workbench-standalone-full.zip \
+            --endpoint-url ${{ secrets.R2_ENDPOINT }} \
+            --acl public-read
+
+          aws s3 cp release-files/monkdb-workbench-standalone-full.zip.sha256 \
+            s3://${{ secrets.R2_BUCKET_NAME }}/releases/v${{ steps.version.outputs.version }}/monkdb-workbench-standalone-full.zip.sha256 \
+            --endpoint-url ${{ secrets.R2_ENDPOINT }} \
+            --acl public-read
+
+          aws s3 cp release-files/monkdb-workbench-standalone-full.tar.gz \
+            s3://${{ secrets.R2_BUCKET_NAME }}/releases/v${{ steps.version.outputs.version }}/monkdb-workbench-standalone-full.tar.gz \
+            --endpoint-url ${{ secrets.R2_ENDPOINT }} \
+            --acl public-read
+
+          aws s3 cp release-files/monkdb-workbench-standalone-full.tar.gz.sha256 \
+            s3://${{ secrets.R2_BUCKET_NAME }}/releases/v${{ steps.version.outputs.version }}/monkdb-workbench-standalone-full.tar.gz.sha256 \
+            --endpoint-url ${{ secrets.R2_ENDPOINT }} \
+            --acl public-read
+
+          echo "✅ All files uploaded successfully!"
+
+      - name: Upload latest version (without version folder)
+        run: |
+          echo "📦 Uploading as 'latest' version..."
+
+          # Copy files to /latest/ folder for easy access
+          aws s3 cp release-files/monkdb-workbench-standalone-lite.zip \
+            s3://${{ secrets.R2_BUCKET_NAME }}/releases/latest/monkdb-workbench-standalone-lite.zip \
+            --endpoint-url ${{ secrets.R2_ENDPOINT }} \
+            --acl public-read
+
+          aws s3 cp release-files/monkdb-workbench-standalone-lite.tar.gz \
+            s3://${{ secrets.R2_BUCKET_NAME }}/releases/latest/monkdb-workbench-standalone-lite.tar.gz \
+            --endpoint-url ${{ secrets.R2_ENDPOINT }} \
+            --acl public-read
+
+          aws s3 cp release-files/monkdb-workbench-standalone-full.zip \
+            s3://${{ secrets.R2_BUCKET_NAME }}/releases/latest/monkdb-workbench-standalone-full.zip \
+            --endpoint-url ${{ secrets.R2_ENDPOINT }} \
+            --acl public-read
+
+          aws s3 cp release-files/monkdb-workbench-standalone-full.tar.gz \
+            s3://${{ secrets.R2_BUCKET_NAME }}/releases/latest/monkdb-workbench-standalone-full.tar.gz \
+            --endpoint-url ${{ secrets.R2_ENDPOINT }} \
+            --acl public-read
+
+          echo "✅ Latest version updated!"
+
       - name: Generate changelog
         id: changelog
         run: |
@@ -179,116 +259,114 @@ jobs:
             echo "EOF"
           } >> $GITHUB_OUTPUT
 
-      - name: Create GitHub Release in Public Repo
-        uses: softprops/action-gh-release@v1
-        with:
-          repository: suryakant-monkdb/monkdb-view-releases
-          tag_name: standalone-v${{ steps.version.outputs.version }}
-          name: MonkDB Workbench Standalone v${{ steps.version.outputs.version }}
-          token: ${{ secrets.RELEASES_REPO_TOKEN }}
-          body: |
-            ## MonkDB Workbench Standalone v${{ steps.version.outputs.version }}
+      - name: Update public repository README
+        run: |
+          cat > README.md << 'README'
+          # MonkDB Workbench - Downloads
 
-            ### 📦 Standalone Web Package
+          ## 📥 Latest Release
 
-            This is a standalone, portable build of MonkDB Workbench that can be run on any system with Node.js installed.
+          ### LITE Version (~5MB) - Recommended ⭐
 
+          Perfect for most users. Auto-installs dependencies on first run (requires internet connection).
 
-            ### 🎯 What's Included
+          | Platform | Download Link |
+          |----------|---------------|
+          | **Windows/macOS** | [monkdb-workbench-standalone-lite.zip](${{ secrets.R2_PUBLIC_URL }}/releases/latest/monkdb-workbench-standalone-lite.zip) |
+          | **Linux** | [monkdb-workbench-standalone-lite.tar.gz](${{ secrets.R2_PUBLIC_URL }}/releases/latest/monkdb-workbench-standalone-lite.tar.gz) |
 
-            - ✅ Complete Next.js application with all dependencies
-            - ✅ Ready-to-run server (no build step required)
-            - ✅ Zero configuration - works out of the box!
-            - ✅ Cross-platform support (Windows, macOS, Linux)
-            - ✅ Simple start scripts for each platform
-            - ✅ Production-optimized build
-            - ✅ No API keys needed - uses Leaflet & OpenStreetMap
+          ### FULL Version (~366MB) - Offline Ready
 
-            ### 📥 Download Options
+          Includes all dependencies pre-installed. No internet needed after download.
 
-            **Choose the version that fits your needs:**
+          | Platform | Download Link |
+          |----------|---------------|
+          | **Windows/macOS** | [monkdb-workbench-standalone-full.zip](${{ secrets.R2_PUBLIC_URL }}/releases/latest/monkdb-workbench-standalone-full.zip) |
+          | **Linux** | [monkdb-workbench-standalone-full.tar.gz](${{ secrets.R2_PUBLIC_URL }}/releases/latest/monkdb-workbench-standalone-full.tar.gz) |
 
-            #### LITE Version (~5MB) - Recommended
-            - **monkdb-workbench-standalone-lite.zip** - Windows/macOS users
-            - **monkdb-workbench-standalone-lite.tar.gz** - Linux users
-            - Smaller download, faster transfer
-            - Auto-installs dependencies on first run (requires internet)
-            - Perfect for: Sharing via email, slow connections
+          ---
 
-            #### FULL Version (~366MB) - Ready to Run
-            - **monkdb-workbench-standalone-full.zip** - Windows/macOS users
-            - **monkdb-workbench-standalone-full.tar.gz** - Linux users
-            - Includes all node_modules pre-installed
-            - No internet needed after download
-            - Perfect for: Offline environments, air-gapped systems
+          ## 🚀 Quick Start
 
-            ### 🚀 Quick Start
+          ### Requirements
+          - Node.js 18+ ([Download here](https://nodejs.org/))
+          - Port 3000 available (or set custom PORT)
 
-            #### Requirements
-            - Node.js 18+ installed ([Download here](https://nodejs.org/))
-            - Port 3000 available (or set custom PORT)
+          ### Installation
 
-            #### Installation Steps
+          1. **Download** the archive for your platform from the table above
+          2. **Extract** the downloaded file
+          3. **Navigate** to the extracted folder
+          4. **Run the application**:
+             - **Linux/macOS**: `./start.sh`
+             - **Windows**: Double-click `start.bat` or run `node server.js`
+          5. **Open** your browser at http://localhost:3000
 
-            1. **Download and extract** the archive for your platform
-            2. **Navigate** to the extracted folder
-            3. **Run the application**:
+          That's it! No configuration needed. The application works out of the box.
 
-               - **Linux/macOS**: `./start.sh`
-               - **Windows**: Double-click `start.bat` or run `node server.js`
+          ### Custom Port (Optional)
 
-            4. **Open browser** at http://localhost:3000
+          ```bash
+          # Linux/macOS
+          PORT=8080 ./start.sh
 
-            That's it! No configuration needed. The application works out of the box with Leaflet maps (OpenStreetMap) - no API keys required!
+          # Windows
+          set PORT=8080 && node server.js
+          ```
 
-            #### Custom Port (Optional)
+          ---
 
-            ```bash
-            # Linux/macOS
-            PORT=8080 ./start.sh
+          ## ✨ Features
 
-            # Windows
-            set PORT=8080 && node server.js
-            ```
+          - ✅ **Zero configuration** - works out of the box
+          - ✅ **No API keys needed** - uses Leaflet & OpenStreetMap
+          - ✅ **Cross-platform** - Windows, macOS, Linux
+          - ✅ **Geospatial mapping** with interactive maps
+          - ✅ **ER diagrams** for database visualization
+          - ✅ **Production-optimized** Next.js build
+          - ✅ **Simple start scripts** for each platform
 
-            ### 📋 What's Changed
+          ---
 
-            ${{ steps.changelog.outputs.changelog }}
+          ## 📖 Documentation
 
-            ### 🔐 Checksums
+          See the included `README.md` in the downloaded package for detailed instructions.
 
-            SHA256 checksums are included for verification:
-            - `monkdb-workbench-standalone.zip.sha256`
-            - `monkdb-workbench-standalone.tar.gz.sha256`
+          ---
 
-            To verify:
-            ```bash
-            # Linux/macOS
-            sha256sum -c monkdb-workbench-standalone.tar.gz.sha256
+          ## 🔗 Links
 
-            # Windows (PowerShell)
-            Get-FileHash monkdb-workbench-standalone.zip -Algorithm SHA256
-            ```
+          - **Source Code**: [Private Repository - Not Public]
+          - **Latest Version**: v${{ steps.version.outputs.version }}
+          - **Powered by**: [Cloudflare R2](https://www.cloudflare.com/products/r2/)
 
-            ### 📖 Documentation
+          ---
 
-            See the included `README.md` in the package for detailed instructions.
+          ## 📋 Changelog
 
-            ---
+          ${{ steps.changelog.outputs.changelog }}
 
-            **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.version.outputs.version }}
-          draft: false
-          prerelease: false
-          files: |
-            release-files/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          README
+
+          # Push README to public repo
+          git clone https://${{ secrets.RELEASES_REPO_TOKEN }}@github.com/suryakant-monkdb/monkdb-view-releases.git public-repo
+          cd public-repo
+          mv ../README.md .
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add README.md
+          git commit -m "Update downloads for v${{ steps.version.outputs.version }}" || echo "No changes"
+          git push
 
       - name: Comment on success
         run: |
-          echo "✅ Release created successfully in public repository!"
-          echo "📦 Public download page:"
-          echo "🔗 https://github.com/suryakant-monkdb/monkdb-view-releases/releases/tag/standalone-v${{ steps.version.outputs.version }}"
+          echo "✅ Files uploaded successfully to Cloudflare R2!"
           echo ""
-          echo "✨ Users can download without GitHub account!"
-          echo "📋 No source code - only standalone builds"
+          echo "📦 Download Links:"
+          echo "🔗 LITE ZIP: ${{ secrets.R2_PUBLIC_URL }}/releases/latest/monkdb-workbench-standalone-lite.zip"
+          echo "🔗 LITE TAR: ${{ secrets.R2_PUBLIC_URL }}/releases/latest/monkdb-workbench-standalone-lite.tar.gz"
+          echo "🔗 FULL ZIP: ${{ secrets.R2_PUBLIC_URL }}/releases/latest/monkdb-workbench-standalone-full.zip"
+          echo "🔗 FULL TAR: ${{ secrets.R2_PUBLIC_URL }}/releases/latest/monkdb-workbench-standalone-full.tar.gz"
+          echo ""
+          echo "✨ No GitHub account needed to download!"
+          echo "🎯 NO source code - only standalone builds!"
