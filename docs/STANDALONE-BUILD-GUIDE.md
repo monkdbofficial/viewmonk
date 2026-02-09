@@ -7,6 +7,8 @@ This guide explains how to use the GitHub Actions workflow to automatically buil
 The `build-standalone.yml` workflow automatically:
 - ✅ Builds the Next.js application
 - ✅ Creates a standalone package with all dependencies
+- ✅ **Zero configuration needed** - uses Leaflet & OpenStreetMap (no API keys!)
+- ✅ Generates both LITE (~5MB) and FULL (~366MB) versions
 - ✅ Generates ZIP and TAR.GZ archives
 - ✅ Calculates SHA256 checksums for verification
 - ✅ Creates GitHub releases (when tagged)
@@ -127,6 +129,7 @@ Once someone receives your standalone package:
 ### Requirements
 - Node.js 18+ ([Download](https://nodejs.org/))
 - Port 3000 available (or set custom PORT)
+- **That's it!** No API keys, no configuration needed!
 
 ### Installation
 1. Extract the ZIP/TAR.GZ file
@@ -136,7 +139,9 @@ Once someone receives your standalone package:
    - **Windows**: Double-click `start.bat`
 4. Open browser at http://localhost:3000
 
-### Custom Port
+The app works immediately with built-in Leaflet maps powered by OpenStreetMap - no setup required!
+
+### Custom Port (Optional)
 ```bash
 # Linux/macOS
 PORT=8080 ./start.sh

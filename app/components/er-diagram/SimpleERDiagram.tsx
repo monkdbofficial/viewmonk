@@ -608,9 +608,9 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
   };
 
   return (
-    <div className="flex h-full flex-col bg-gray-950">
+    <div className="flex h-full flex-col bg-white dark:bg-gray-950">
       {/* Enhanced Toolbar with Premium Styling */}
-      <div className="flex items-center justify-between border-b border-gray-800 bg-gradient-to-r from-gray-900 via-gray-900 to-gray-800 px-6 py-3.5 shadow-xl">
+      <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 bg-gradient-to-r from-gray-50 via-gray-100 to-gray-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800 px-6 py-3.5 shadow-xl">
         <div className="flex items-center gap-3">
           {/* Premium Search Bar */}
           <div className="relative group">
@@ -620,19 +620,19 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
               placeholder="Search tables..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-64 rounded-lg border border-gray-700 bg-gray-800/50 py-2.5 pl-10 pr-4 text-sm text-white placeholder-gray-500 backdrop-blur-sm transition-all focus:border-blue-500 focus:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-64 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800/50 py-2.5 pl-10 pr-4 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 backdrop-blur-sm transition-all focus:border-blue-500 focus:bg-gray-50 dark:focus:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
 
           {/* Enhanced Zoom Controls */}
-          <div className="flex items-center gap-1 rounded-lg border border-gray-700 bg-gray-800/50 backdrop-blur-sm">
-            <button onClick={handleZoomOut} className="p-2.5 text-gray-400 transition-all hover:bg-gray-700/50 hover:text-white active:scale-95">
+          <div className="flex items-center gap-1 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800/50 backdrop-blur-sm">
+            <button onClick={handleZoomOut} className="p-2.5 text-gray-500 dark:text-gray-400 transition-all hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-900 dark:hover:text-white active:scale-95">
               <ZoomOut className="h-4 w-4" />
             </button>
-            <span className="min-w-[65px] text-center text-sm font-bold text-white">
+            <span className="min-w-[65px] text-center text-sm font-bold text-gray-900 dark:text-white">
               {Math.round(scale * 100)}%
             </span>
-            <button onClick={handleZoomIn} className="p-2.5 text-gray-400 transition-all hover:bg-gray-700/50 hover:text-white active:scale-95">
+            <button onClick={handleZoomIn} className="p-2.5 text-gray-500 dark:text-gray-400 transition-all hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-900 dark:hover:text-white active:scale-95">
               <ZoomIn className="h-4 w-4" />
             </button>
           </div>
@@ -640,7 +640,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
           {/* Enhanced Reset Button */}
           <button
             onClick={handleResetView}
-            className="flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800/50 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:border-gray-600 hover:bg-gray-700/70 active:scale-95"
+            className="flex items-center gap-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800/50 px-4 py-2.5 text-sm font-semibold text-gray-900 dark:text-white backdrop-blur-sm transition-all hover:border-gray-400 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/70 active:scale-95"
           >
             <Maximize2 className="h-4 w-4" />
             Reset View
@@ -652,7 +652,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
             className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all active:scale-95 ${
               showRelationships
                 ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/30'
-                : 'border border-gray-700 bg-gray-800/50 text-gray-300 backdrop-blur-sm hover:border-gray-600 hover:text-white'
+                : 'border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 backdrop-blur-sm hover:border-gray-400 dark:hover:border-gray-600 hover:text-gray-900 dark:hover:text-white'
             }`}
           >
             {showRelationships ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
@@ -664,7 +664,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
             className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all active:scale-95 ${
               showMinimap
                 ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/30'
-                : 'border border-gray-700 bg-gray-800/50 text-gray-300 backdrop-blur-sm hover:border-gray-600 hover:text-white'
+                : 'border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 backdrop-blur-sm hover:border-gray-400 dark:hover:border-gray-600 hover:text-gray-900 dark:hover:text-white'
             }`}
           >
             <Grid3x3 className="h-4 w-4" />
@@ -674,16 +674,16 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
 
         <div className="flex items-center gap-3">
           {/* Enhanced Table Count Badge */}
-          <div className="rounded-lg border border-gray-700 bg-gradient-to-br from-gray-800 to-gray-800/50 px-5 py-2.5 shadow-lg backdrop-blur-sm">
-            <span className="text-sm font-bold text-white">
-              {filteredTables.length} <span className="font-normal text-gray-400">Tables</span>
+          <div className="rounded-lg border border-gray-300 dark:border-gray-700 bg-gradient-to-br from-gray-100 to-gray-100/50 dark:from-gray-800 dark:to-gray-800/50 px-5 py-2.5 shadow-lg backdrop-blur-sm">
+            <span className="text-sm font-bold text-gray-900 dark:text-white">
+              {filteredTables.length} <span className="font-normal text-gray-600 dark:text-gray-400">Tables</span>
             </span>
           </div>
 
           {/* Fullscreen Button */}
           <button
             onClick={handleToggleFullscreen}
-            className="flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800/50 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:border-gray-600 hover:bg-gray-700/70 active:scale-95"
+            className="flex items-center gap-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800/50 px-4 py-2.5 text-sm font-semibold text-gray-900 dark:text-white backdrop-blur-sm transition-all hover:border-gray-400 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/70 active:scale-95"
           >
             <Maximize className="h-4 w-4" />
             {isFullscreen ? 'Exit' : 'Fullscreen'}
@@ -711,7 +711,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
       {/* Enhanced Canvas with Grid Background */}
       <div
         ref={containerRef}
-        className="relative flex-1 overflow-hidden bg-gray-950"
+        className="relative flex-1 overflow-hidden bg-gray-50 dark:bg-gray-950"
         onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -721,8 +721,8 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
           userSelect: 'none',
           WebkitUserSelect: 'none',
           backgroundImage: `
-            linear-gradient(rgba(59, 130, 246, 0.03) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px)
+            linear-gradient(rgba(59, 130, 246, 0.08) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(59, 130, 246, 0.08) 1px, transparent 1px)
           `,
           backgroundSize: '50px 50px',
           backgroundPosition: `${translate.x}px ${translate.y}px`
@@ -963,10 +963,10 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
             return (
               <div
                 key={table.name}
-                className={`absolute rounded-xl border-2 shadow-2xl transition-all duration-300 ${
+                className={`absolute rounded-xl border-2 shadow-2xl transition-all duration-300 bg-white dark:bg-gradient-to-br dark:from-slate-800 dark:to-slate-900 ${
                   selectedTable === table.name
                     ? 'border-blue-400 shadow-blue-500/50 scale-105 z-50'
-                    : 'border-gray-700 hover:border-blue-500/50 hover:shadow-blue-500/20 hover:scale-[1.02]'
+                    : 'border-gray-300 dark:border-gray-700 hover:border-blue-500/50 hover:shadow-blue-500/20 hover:scale-[1.02]'
                 } ${
                   dragging?.table === table.name
                     ? 'cursor-grabbing shadow-blue-600/60 ring-2 ring-blue-400/50'
@@ -976,7 +976,6 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                   left: pos.x,
                   top: pos.y,
                   width: 280,
-                  background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
                   willChange: dragging?.table === table.name ? 'transform' : 'auto',
                   userSelect: 'none',
                   WebkitUserSelect: 'none'
@@ -1006,7 +1005,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                 </div>
 
                 {/* Compact Columns */}
-                <div className="max-h-80 overflow-y-auto scrollbar-thin scrollbar-track-gray-900 scrollbar-thumb-gray-700">
+                <div className="max-h-80 overflow-y-auto scrollbar-thin scrollbar-track-gray-200 dark:scrollbar-track-gray-900 scrollbar-thumb-gray-400 dark:scrollbar-thumb-gray-700">
                   {table.columns.map((col, idx) => {
                     const isLast = idx === table.columns.length - 1;
                     const relationshipKey = col.isForeignKey && col.references
@@ -1017,10 +1016,10 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                     return (
                       <div
                         key={col.name}
-                        className={`group relative flex items-center justify-between border-b border-gray-800/50 px-2.5 transition-all ${
-                          isRelationshipHovered ? 'bg-blue-500/20' : 'hover:bg-gray-700/30'
+                        className={`group relative flex items-center justify-between border-b border-gray-200 dark:border-gray-800/50 px-2.5 transition-all ${
+                          isRelationshipHovered ? 'bg-blue-500/20' : 'hover:bg-gray-100 dark:hover:bg-gray-700/30'
                         } ${
-                          idx % 2 === 0 ? 'bg-gray-800/40' : 'bg-gray-900/40'
+                          idx % 2 === 0 ? 'bg-gray-50 dark:bg-gray-800/40' : 'bg-white dark:bg-gray-900/40'
                         } ${isLast ? 'border-b-0' : ''}`}
                         style={{ height: '32px' }}
                       >
@@ -1043,10 +1042,10 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                           {/* Icon */}
                           <div className={`flex h-5 w-5 items-center justify-center rounded ${
                             col.isPrimaryKey
-                              ? 'bg-yellow-500/20 text-yellow-400'
+                              ? 'bg-yellow-500/20 text-yellow-500 dark:text-yellow-400'
                               : col.isForeignKey
-                              ? 'bg-blue-500/20 text-blue-400'
-                              : 'bg-gray-600/20 text-gray-400'
+                              ? 'bg-blue-500/20 text-blue-500 dark:text-blue-400'
+                              : 'bg-gray-400/20 dark:bg-gray-600/20 text-gray-600 dark:text-gray-400'
                           }`}>
                             <span className="text-[10px]">
                               {col.isPrimaryKey ? '🔑' : col.isForeignKey ? '🔗' : '●'}
@@ -1057,23 +1056,23 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                           <div className="flex flex-col min-w-0 flex-1">
                             <div className="flex items-center gap-1">
                               <span className={`text-xs font-semibold truncate ${
-                                col.isPrimaryKey ? 'text-yellow-400' : col.isForeignKey ? 'text-cyan-400' : 'text-gray-100'
+                                col.isPrimaryKey ? 'text-yellow-600 dark:text-yellow-400' : col.isForeignKey ? 'text-cyan-600 dark:text-cyan-400' : 'text-gray-700 dark:text-gray-100'
                               }`}>
                                 {col.name}
                               </span>
                               {col.isPrimaryKey && (
-                                <span className="rounded bg-yellow-500/20 px-1 py-0.5 text-[8px] font-bold text-yellow-400">PK</span>
+                                <span className="rounded bg-yellow-500/20 px-1 py-0.5 text-[8px] font-bold text-yellow-600 dark:text-yellow-400">PK</span>
                               )}
                               {col.isForeignKey && (
-                                <span className="rounded bg-blue-500/20 px-1 py-0.5 text-[8px] font-bold text-blue-400">FK</span>
+                                <span className="rounded bg-blue-500/20 px-1 py-0.5 text-[8px] font-bold text-blue-600 dark:text-blue-400">FK</span>
                               )}
                               {!col.nullable && (
-                                <span className="text-red-400 text-[10px]">*</span>
+                                <span className="text-red-500 dark:text-red-400 text-[10px]">*</span>
                               )}
                             </div>
                             {/* FK reference */}
                             {col.isForeignKey && col.references && (
-                              <span className="text-[9px] text-cyan-400/70 truncate">
+                              <span className="text-[9px] text-cyan-600 dark:text-cyan-400/70 truncate">
                                 → {col.references.table}.{col.references.column}
                               </span>
                             )}
@@ -1081,7 +1080,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                         </div>
 
                         {/* Type */}
-                        <span className="rounded bg-gray-700/50 px-2 py-0.5 text-[10px] font-mono font-semibold text-gray-300 ml-1">
+                        <span className="rounded bg-gray-200 dark:bg-gray-700/50 px-2 py-0.5 text-[10px] font-mono font-semibold text-gray-700 dark:text-gray-300 ml-1">
                           {col.type.toLowerCase()}
                         </span>
                       </div>
@@ -1090,15 +1089,15 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                 </div>
 
                 {/* Compact Stats Bar */}
-                <div className="flex items-center justify-between rounded-b-lg border-t border-gray-700/50 bg-gray-900/60 px-2.5 py-1.5">
+                <div className="flex items-center justify-between rounded-b-lg border-t border-gray-200 dark:border-gray-700/50 bg-gray-100 dark:bg-gray-900/60 px-2.5 py-1.5">
                   <div className="flex items-center gap-2 text-[10px]">
-                    <span className="text-yellow-400">🔑 {table.columns.filter(c => c.isPrimaryKey).length} PK</span>
-                    <span className="text-gray-600">•</span>
-                    <span className="text-blue-400">🔗 {table.columns.filter(c => c.isForeignKey).length} FK</span>
-                    <span className="text-gray-600">•</span>
-                    <span className="text-red-400">★ {table.columns.filter(c => !c.nullable).length} Req</span>
+                    <span className="text-yellow-600 dark:text-yellow-400">🔑 {table.columns.filter(c => c.isPrimaryKey).length} PK</span>
+                    <span className="text-gray-400 dark:text-gray-600">•</span>
+                    <span className="text-blue-600 dark:text-blue-400">🔗 {table.columns.filter(c => c.isForeignKey).length} FK</span>
+                    <span className="text-gray-400 dark:text-gray-600">•</span>
+                    <span className="text-red-600 dark:text-red-400">★ {table.columns.filter(c => !c.nullable).length} Req</span>
                   </div>
-                  <span className="text-[10px] font-semibold text-gray-500">
+                  <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-500">
                     {table.columns.length} cols
                   </span>
                 </div>
@@ -1109,8 +1108,8 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
 
         {/* Enhanced Minimap */}
         {showMinimap && (
-          <div className="absolute bottom-6 right-6 rounded-xl border border-gray-700/50 bg-gradient-to-br from-gray-800/95 to-gray-900/95 p-3 shadow-2xl backdrop-blur-xl">
-            <div className="relative h-36 w-36 rounded-lg bg-gray-950/80 p-1 ring-1 ring-gray-700/50">
+          <div className="absolute bottom-6 right-6 rounded-xl border border-gray-300 dark:border-gray-700/50 bg-gradient-to-br from-white to-gray-50 dark:from-gray-800/95 dark:to-gray-900/95 p-3 shadow-2xl backdrop-blur-xl">
+            <div className="relative h-36 w-36 rounded-lg bg-gray-100 dark:bg-gray-950/80 p-1 ring-1 ring-gray-300 dark:ring-gray-700/50">
               {tables.map(table => {
                 const pos = positions.get(table.name);
                 if (!pos) return null;
@@ -1123,7 +1122,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                       top: pos.y * 0.05,
                       width: 20,
                       height: 15,
-                      backgroundColor: selectedTable === table.name ? '#3b82f6' : '#4b5563',
+                      backgroundColor: selectedTable === table.name ? '#3b82f6' : '#9ca3af',
                       boxShadow: selectedTable === table.name ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none'
                     }}
                   />
@@ -1132,7 +1131,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
             </div>
             <div className="mt-2 flex items-center justify-center gap-2">
               <div className="h-1.5 w-1.5 rounded-full bg-blue-500"></div>
-              <p className="text-center text-xs font-bold tracking-wider text-gray-300">OVERVIEW</p>
+              <p className="text-center text-xs font-bold tracking-wider text-gray-700 dark:text-gray-300">OVERVIEW</p>
               <div className="h-1.5 w-1.5 rounded-full bg-blue-500"></div>
             </div>
           </div>
