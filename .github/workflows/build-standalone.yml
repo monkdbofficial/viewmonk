@@ -241,17 +241,17 @@ jobs:
 
       - name: Upload download page
         run: |
-          echo "📄 Uploading download page..."
+          echo "📄 Uploading ViewMonk download page..."
 
-          # Upload as index.html in releases root
+          # Upload as index.html in downloads root
           aws s3 cp download-page.html \
-            s3://${{ secrets.R2_BUCKET_NAME }}/releases/index.html \
+            s3://${{ secrets.R2_BUCKET_NAME }}/downloads/index.html \
             --endpoint-url ${{ secrets.R2_ENDPOINT }} \
             --acl public-read \
             --content-type text/html
 
           echo "✅ Download page uploaded!"
-          echo "🌐 Access at: ${{ secrets.R2_PUBLIC_URL }}/releases/index.html"
+          echo "🌐 Access at: ${{ secrets.R2_PUBLIC_URL }}/downloads/"
 
       - name: Generate changelog
         id: changelog
