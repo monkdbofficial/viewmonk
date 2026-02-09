@@ -82,7 +82,7 @@ export default function CreateFTSIndexDialog({
   const [testQuery, setTestQuery] = useState('');
   const [testResults, setTestResults] = useState<string[]>([]);
 
-  const { tables } = useAccessibleTables(schema || undefined);
+  const { tables } = useAccessibleTables(schema);
 
   // Fetch columns when table is selected
   useEffect(() => {
