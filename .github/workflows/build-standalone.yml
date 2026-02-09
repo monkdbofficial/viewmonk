@@ -280,8 +280,29 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Remove source code assets from release
+        run: |
+          echo "🗑️  Removing source code files from release..."
+
+          # Get release ID
+          RELEASE_ID=$(gh api repos/${{ github.repository }}/releases/tags/standalone-v${{ steps.version.outputs.version }} --jq '.id')
+
+          # Get all assets
+          ASSETS=$(gh api repos/${{ github.repository }}/releases/${RELEASE_ID}/assets --jq '.[] | select(.name | contains("Source code")) | .id')
+
+          # Delete source code assets
+          for ASSET_ID in $ASSETS; do
+            echo "Deleting asset ID: $ASSET_ID"
+            gh api -X DELETE repos/${{ github.repository }}/releases/assets/${ASSET_ID}
+          done
+
+          echo "✅ Source code files removed! Release contains only standalone builds."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Comment on success
         run: |
           echo "✅ Release created successfully!"
           echo "📦 Download the standalone package from the release page"
           echo "🔗 https://github.com/${{ github.repository }}/releases/tag/standalone-v${{ steps.version.outputs.version }}"
+          echo "📋 Release contains ONLY standalone builds (source code removed)"
