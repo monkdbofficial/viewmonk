@@ -10,10 +10,10 @@ import '@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import { geospatialConfig } from '@/app/config/geospatial.config';
 import { Layers, Ruler, Search, Navigation, Mountain, Building, Download, Sun, Moon, Maximize2, Home, Info } from 'lucide-react';
-import { getRuntimeEnv } from '@/app/lib/runtime-env';
+import { loadRuntimeEnv } from '@/app/lib/runtime-env';
 
-// Load Mapbox token from runtime environment (supports .env files in standalone builds)
-mapboxgl.accessToken = getRuntimeEnv('NEXT_PUBLIC_MAPBOX_TOKEN') || process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+// Set initial token from build-time env
+mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
 
 interface GeoPoint {
   id: string;
@@ -62,10 +62,23 @@ export default function MapboxViewerPro({
   const [currentStyle, setCurrentStyle] = useState(geospatialConfig.map.mapbox.defaultStyle);
   const [showLayerControl, setShowLayerControl] = useState(false);
   const [mapStats, setMapStats] = useState({ points: 0, shapes: 0, area: 0, distance: 0 });
+  const [envLoaded, setEnvLoaded] = useState(false);
 
-  // Initialize map
+  // Load runtime environment variables first
   useEffect(() => {
-    if (!mapContainerRef.current) return;
+    loadRuntimeEnv().then((env) => {
+      const token = env['NEXT_PUBLIC_MAPBOX_TOKEN'];
+      if (token && token !== mapboxgl.accessToken) {
+        mapboxgl.accessToken = token;
+        console.log('✅ Loaded Mapbox token from runtime environment');
+      }
+      setEnvLoaded(true);
+    });
+  }, []);
+
+  // Initialize map (only after env is loaded)
+  useEffect(() => {
+    if (!mapContainerRef.current || !envLoaded) return;
 
     const map = new mapboxgl.Map({
       container: mapContainerRef.current,
@@ -224,7 +237,7 @@ export default function MapboxViewerPro({
     return () => {
       map.remove();
     };
-  }, []);
+  }, [envLoaded]);
 
   // Toggle 3D buildings
   const toggle3DBuildings = () => {
