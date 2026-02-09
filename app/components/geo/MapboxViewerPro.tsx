@@ -10,8 +10,10 @@ import '@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import { geospatialConfig } from '@/app/config/geospatial.config';
 import { Layers, Ruler, Search, Navigation, Mountain, Building, Download, Sun, Moon, Maximize2, Home, Info } from 'lucide-react';
+import { getRuntimeEnv } from '@/app/lib/runtime-env';
 
-mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+// Load Mapbox token from runtime environment (supports .env files in standalone builds)
+mapboxgl.accessToken = getRuntimeEnv('NEXT_PUBLIC_MAPBOX_TOKEN') || process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
 
 interface GeoPoint {
   id: string;

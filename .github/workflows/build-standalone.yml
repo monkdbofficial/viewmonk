@@ -35,6 +35,11 @@ jobs:
           chmod +x build-standalone.sh
           ./build-standalone.sh
 
+      - name: Display build size
+        run: |
+          du -sh dist-standalone
+          echo "Build size without node_modules: $(du -sh dist-standalone | cut -f1)"
+
       - name: Create version file
         run: |
           VERSION="${GITHUB_REF#refs/tags/standalone-v}"
