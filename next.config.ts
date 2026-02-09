@@ -11,6 +11,8 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  // Turbopack-compatible configuration
+  turbopack: {},
 };
 
 export default nextConfig;

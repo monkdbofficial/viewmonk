@@ -2,11 +2,12 @@
 
 import { useState } from 'react';
 import { X, ChevronLeft, ChevronRight, Check } from 'lucide-react';
-import ColumnDefinitionStep from './ColumnDefinitionStep';
-import ShardingConfigStep from './ShardingConfigStep';
+import EnhancedColumnDefinitionStep from './EnhancedColumnDefinitionStep';
+import EnhancedShardingConfigStep from './EnhancedShardingConfigStep';
 import PartitionConfigStep from './PartitionConfigStep';
 import ReplicationConfigStep from './ReplicationConfigStep';
-import TableSQLPreview from './TableSQLPreview';
+import EnhancedTableSQLPreview from './EnhancedTableSQLPreview';
+import { useSchema } from '../../contexts/schema-context';
 
 export interface ColumnDefinition {
   name: string;
@@ -14,6 +15,11 @@ export interface ColumnDefinition {
   constraints: string[];
   default_value?: string;
   description?: string;
+  generated_expression?: string;
+  index_method?: 'PLAIN' | 'FULLTEXT' | 'OFF';
+  index_analyzer?: string;
+  check_expression?: string;
+  storage_options?: Record<string, any>;
 }
 
 export interface ShardingConfig {
@@ -85,9 +91,10 @@ export default function TableDesignerWizard({
   onClose,
   onSuccess,
 }: TableDesignerWizardProps) {
+  const { activeSchema } = useSchema();
   const [currentStep, setCurrentStep] = useState(1);
   const [design, setDesign] = useState<TableDesign>({
-    schema_name: 'doc', // CrateDB default schema
+    schema_name: activeSchema || 'doc', // Use active schema from context
     table_name: '',
     columns: [],
     sharding_config: {
@@ -288,10 +295,10 @@ export default function TableDesignerWizard({
         {/* Step Content */}
         <div className="flex-1 overflow-y-auto p-6">
           {currentStep === 1 && (
-            <ColumnDefinitionStep design={design} setDesign={setDesign} />
+            <EnhancedColumnDefinitionStep design={design} setDesign={setDesign} />
           )}
           {currentStep === 2 && (
-            <ShardingConfigStep design={design} setDesign={setDesign} />
+            <EnhancedShardingConfigStep design={design} setDesign={setDesign} />
           )}
           {currentStep === 3 && (
             <PartitionConfigStep design={design} setDesign={setDesign} />
@@ -300,7 +307,7 @@ export default function TableDesignerWizard({
             <ReplicationConfigStep design={design} setDesign={setDesign} />
           )}
           {currentStep === 5 && (
-            <TableSQLPreview
+            <EnhancedTableSQLPreview
               design={design}
               connectionId={connectionId}
               onSuccess={onSuccess}

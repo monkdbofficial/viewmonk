@@ -6,6 +6,9 @@ import { useToast } from './ToastContext';
 import { useActiveConnection } from '../lib/monkdb-context';
 import { useQueryTabs } from '../lib/query-tabs-context';
 import { useSavedViews } from '../lib/saved-views-context';
+import { useSchema } from '../contexts/schema-context';
+import SchemaSelector from './common/SchemaSelector';
+import TransactionManager from './TransactionManager';
 import MonacoSQLEditor, { SchemaMetadata } from './MonacoSQLEditor';
 import DroppableMonacoEditor from './DroppableMonacoEditor';
 import SchemaExplorer from './SchemaExplorer';
@@ -70,6 +73,7 @@ export default function QueryEditor() {
   const queryTabs = useQueryTabs();
   const { activeTab, updateTab, createTab, closeTab, switchTab, tabs, renameTab } = queryTabs;
   const { addRecentQuery } = useSavedViews();
+  const { activeSchema } = useSchema();
 
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [isExecuting, setIsExecuting] = useState(false);
@@ -1812,10 +1816,27 @@ WITH (max_num_segments = 1);`,
                 SQL Editor
               </h3>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                {activeConnection.name}
+                {activeConnection.name} • Schema: {activeSchema || 'doc'}
               </p>
             </div>
           </div>
+
+          <div className="h-8 w-px bg-gray-300 dark:bg-gray-600" />
+
+          {/* Enterprise: Schema Selector */}
+          <SchemaSelector />
+
+          <div className="h-8 w-px bg-gray-300 dark:bg-gray-600" />
+
+          {/* Enterprise: Transaction Manager */}
+          <TransactionManager
+            onExecute={async (sql: string) => {
+              if (!activeConnection) return;
+              await activeConnection.client.query(sql);
+              toast.success('Transaction Command', `Executed: ${sql}`);
+            }}
+            isExecuting={isExecuting}
+          />
 
           <div className="h-8 w-px bg-gray-300 dark:bg-gray-600" />
 

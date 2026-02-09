@@ -151,4 +151,4 @@ Finally, run our powershell script.
 
 ## Note
 
-MonkDB like every software has certain limitations. They have been listed in the [limitations](../monkdb-documentation/documentation/Limitations.md) document.
+MonkDB like every software has certain limitations. They have been listed in the [limitations](./documentation/Limitations.md) document.

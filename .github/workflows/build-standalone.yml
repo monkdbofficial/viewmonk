@@ -1,0 +1,225 @@
+name: Build Standalone Package
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    tags:
+      - 'standalone-v*'  # e.g., standalone-v1.0.0
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build-standalone:
+    name: Build Standalone Web Package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run standalone build script
+        run: |
+          chmod +x build-standalone.sh
+          ./build-standalone.sh
+
+      - name: Create version file
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/standalone-v}"
+          if [[ "$VERSION" == "$GITHUB_REF" ]]; then
+            VERSION="${GITHUB_SHA:0:7}"
+          fi
+          echo "$VERSION" > dist-standalone/VERSION.txt
+          echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> dist-standalone/VERSION.txt
+          echo "BUILD_REF=$GITHUB_REF" >> dist-standalone/VERSION.txt
+
+      - name: Create zip archive
+        run: |
+          cd dist-standalone
+          zip -r ../monkdb-workbench-standalone.zip .
+          cd ..
+
+          # Also create a tar.gz for Linux users
+          tar -czf monkdb-workbench-standalone.tar.gz -C dist-standalone .
+
+      - name: Calculate checksums
+        run: |
+          sha256sum monkdb-workbench-standalone.zip > monkdb-workbench-standalone.zip.sha256
+          sha256sum monkdb-workbench-standalone.tar.gz > monkdb-workbench-standalone.tar.gz.sha256
+
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: monkdb-workbench-standalone-zip
+          path: |
+            monkdb-workbench-standalone.zip
+            monkdb-workbench-standalone.zip.sha256
+
+      - name: Upload TAR.GZ artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: monkdb-workbench-standalone-tar
+          path: |
+            monkdb-workbench-standalone.tar.gz
+            monkdb-workbench-standalone.tar.gz.sha256
+
+      - name: Upload build directory (for inspection)
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-standalone
+          path: dist-standalone/
+
+  # Create GitHub Release when a tag is pushed
+  create-release:
+    name: Create GitHub Release
+    needs: build-standalone
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/standalone-v')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/standalone-v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Download ZIP artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: monkdb-workbench-standalone-zip
+          path: release-files
+
+      - name: Download TAR.GZ artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: monkdb-workbench-standalone-tar
+          path: release-files
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null | grep "^standalone-v" || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            CHANGELOG=$(git log $PREV_TAG..HEAD --pretty=format:"- %s" --no-merges)
+          else
+            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges -n 20)
+          fi
+
+          # Save to file
+          echo "$CHANGELOG" > CHANGELOG.md
+
+          # Set output
+          {
+            echo "changelog<<EOF"
+            echo "$CHANGELOG"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: MonkDB Workbench Standalone v${{ steps.version.outputs.version }}
+          body: |
+            ## MonkDB Workbench Standalone v${{ steps.version.outputs.version }}
+
+            ### 📦 Standalone Web Package
+
+            This is a standalone, portable build of MonkDB Workbench that can be run on any system with Node.js installed.
+
+            ### 🎯 What's Included
+
+            - ✅ Complete Next.js application with all dependencies
+            - ✅ Ready-to-run server (no build step required)
+            - ✅ Cross-platform support (Windows, macOS, Linux)
+            - ✅ Simple start scripts for each platform
+            - ✅ Production-optimized build
+
+            ### 📥 Download Options
+
+            - **monkdb-workbench-standalone.zip** - Windows/macOS users
+            - **monkdb-workbench-standalone.tar.gz** - Linux users
+
+            Both archives contain the same files.
+
+            ### 🚀 Quick Start
+
+            #### Requirements
+            - Node.js 18+ installed ([Download here](https://nodejs.org/))
+            - Port 3000 available (or set custom PORT)
+
+            #### Installation Steps
+
+            1. **Download and extract** the archive for your platform
+            2. **Navigate** to the extracted folder
+            3. **Run the application**:
+
+               - **Linux/macOS**: `./start.sh`
+               - **Windows**: Double-click `start.bat` or run `node server.js`
+
+            4. **Open browser** at http://localhost:3000
+
+            #### Custom Port
+
+            ```bash
+            # Linux/macOS
+            PORT=8080 ./start.sh
+
+            # Windows
+            set PORT=8080 && node server.js
+            ```
+
+            ### 📋 What's Changed
+
+            ${{ steps.changelog.outputs.changelog }}
+
+            ### 🔐 Checksums
+
+            SHA256 checksums are included for verification:
+            - `monkdb-workbench-standalone.zip.sha256`
+            - `monkdb-workbench-standalone.tar.gz.sha256`
+
+            To verify:
+            ```bash
+            # Linux/macOS
+            sha256sum -c monkdb-workbench-standalone.tar.gz.sha256
+
+            # Windows (PowerShell)
+            Get-FileHash monkdb-workbench-standalone.zip -Algorithm SHA256
+            ```
+
+            ### 📖 Documentation
+
+            See the included `README.md` in the package for detailed instructions.
+
+            ---
+
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            release-files/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Comment on success
+        run: |
+          echo "✅ Release created successfully!"
+          echo "📦 Download the standalone package from the release page"
+          echo "🔗 https://github.com/${{ github.repository }}/releases/tag/standalone-v${{ steps.version.outputs.version }}"

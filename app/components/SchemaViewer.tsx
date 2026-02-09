@@ -31,9 +31,14 @@ import {
   Trash2,
   Download,
 } from 'lucide-react';
-import { useSchemas, useTables, useTableColumns } from '../lib/monkdb-hooks';
+import { useTables, useTableColumns } from '../lib/monkdb-hooks';
 import { useActiveConnection } from '../lib/monkdb-context';
 import { useToast } from './ToastContext';
+import { usePermissions } from '../hooks/usePermissions';
+import { useAccessibleSchemas } from '../hooks/useAccessibleSchemas';
+import { useSchema } from '../contexts/schema-context';
+import PermissionBadge from './common/PermissionBadge';
+import SchemaSelector from './common/SchemaSelector';
 import type { ColumnMetadata } from '../lib/monkdb-client';
 import dynamic from 'next/dynamic';
 
@@ -60,7 +65,9 @@ type FilterType = 'all' | 'user' | 'system';
 export default function SchemaViewer() {
   const activeConnection = useActiveConnection();
   const toast = useToast();
-  const { data: schemas, loading: schemasLoading, error: schemasError, refetch: refetchSchemas } = useSchemas();
+  const { canWrite, canDelete, canCreate, role } = usePermissions();
+  const { schemas, loading: schemasLoading, error: schemasError } = useAccessibleSchemas();
+  const { activeSchema } = useSchema();
   const [expandedSchemas, setExpandedSchemas] = useState<Set<string>>(new Set());
   const [selectedTable, setSelectedTable] = useState<SelectedTable | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -377,15 +384,15 @@ WHERE ${primaryKeyCol.column_name} = ?;
     return ddl;
   };
 
-  const filterSchemas = (schemaList: string[]) => {
+  const filterSchemas = (schemaList: any[]) => {
     if (filterType === 'all') return schemaList;
 
     const systemSchemas = ['information_schema', 'sys', 'pg_catalog'];
 
     if (filterType === 'system') {
-      return schemaList.filter(s => systemSchemas.includes(s) || s.startsWith('pg_'));
+      return schemaList.filter(s => systemSchemas.includes(s.name) || s.name.startsWith('pg_'));
     } else {
-      return schemaList.filter(s => !systemSchemas.includes(s) && !s.startsWith('pg_'));
+      return schemaList.filter(s => !systemSchemas.includes(s.name) && !s.name.startsWith('pg_'));
     }
   };
 
@@ -429,22 +436,15 @@ WHERE ${primaryKeyCol.column_name} = ?;
         <div className="flex h-full flex-col rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
           {/* Header */}
           <div className="border-b border-gray-200 p-4 dark:border-gray-700">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Database className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                  Schema Explorer
-                </h2>
-              </div>
-              <button
-                onClick={() => refetchSchemas()}
-                className="rounded p-1 hover:bg-gray-100 dark:hover:bg-gray-700"
-                title="Refresh schemas"
-              >
-                <RefreshCw className="h-4 w-4 text-gray-500" />
-              </button>
+            <div className="flex items-center gap-2 mb-3">
+              <Database className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              <h2 className="text-sm font-bold text-gray-900 dark:text-white">
+                Schema Explorer
+              </h2>
             </div>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {/* Enterprise: Schema Selector - shows only accessible schemas */}
+            <SchemaSelector />
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
               {activeConnection.name}
             </p>
           </div>
@@ -511,19 +511,20 @@ WHERE ${primaryKeyCol.column_name} = ?;
             ) : filteredSchemas.length > 0 ? (
               <div className="space-y-0.5">
                 {filteredSchemas.map((schema) => {
-                  const tables = schemaTableMap[schema] || [];
+                  const schemaName = schema.name; // Extract schema name from object
+                  const tables = schemaTableMap[schemaName] || [];
                   const filteredTables = filterTables(tables);
-                  const isLoading = loadingTables.has(schema);
-                  const isExpanded = expandedSchemas.has(schema);
-                  const isSystemSchema = ['information_schema', 'sys', 'pg_catalog'].includes(schema) || schema.startsWith('pg_');
+                  const isLoading = loadingTables.has(schemaName);
+                  const isExpanded = expandedSchemas.has(schemaName);
+                  const isSystemSchema = ['information_schema', 'sys', 'pg_catalog'].includes(schemaName) || schemaName.startsWith('pg_');
 
                   if (searchTerm && filteredTables.length === 0 && !isExpanded) return null;
 
                   return (
-                    <div key={schema}>
+                    <div key={schemaName}>
                       {/* Schema Node */}
                       <button
-                        onClick={() => toggleSchema(schema)}
+                        onClick={() => toggleSchema(schemaName)}
                         className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
                       >
                         {isExpanded ? (
@@ -537,7 +538,7 @@ WHERE ${primaryKeyCol.column_name} = ?;
                             : 'text-purple-600 dark:text-purple-400'
                         }`} />
                         <span className="flex-1 truncate text-left text-gray-800 dark:text-gray-200">
-                          {schema}
+                          {schemaName}
                         </span>
                         {isLoading ? (
                           <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin text-gray-400" />
@@ -554,12 +555,12 @@ WHERE ${primaryKeyCol.column_name} = ?;
                           {filteredTables.length > 0 ? (
                             filteredTables.map((table) => {
                               const isSelected =
-                                selectedTable?.schema === schema && selectedTable?.name === table.table_name;
+                                selectedTable?.schema === schemaName && selectedTable?.name === table.table_name;
 
                               return (
                                 <button
-                                  key={`${schema}.${table.table_name}`}
-                                  onClick={() => handleTableClick(schema, table.table_name)}
+                                  key={`${schemaName}.${table.table_name}`}
+                                  onClick={() => handleTableClick(schemaName, table.table_name)}
                                   className={`flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-xs transition-colors ${
                                     isSelected
                                       ? 'bg-blue-50 font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
@@ -615,12 +616,23 @@ WHERE ${primaryKeyCol.column_name} = ?;
             <div className="border-b border-gray-200 p-4 dark:border-gray-700">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-3">
                     <Table className="h-5 w-5 text-green-600 dark:text-green-400" />
                     <h2 className="text-lg font-bold text-gray-900 dark:text-white">
                       {selectedTable.schema}<span className="text-gray-400">.</span>{selectedTable.name}
                     </h2>
+                    {/* Only show badge if not superuser (reduce noise) */}
+                    {role !== 'superuser' && <PermissionBadge role={role} size="sm" />}
                   </div>
+
+                  {/* Read-Only Warning - Only show if EXPLICITLY read-only */}
+                  {role === 'read-only' && (
+                    <div className="mt-2 rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 dark:border-yellow-800 dark:bg-yellow-900/20">
+                      <p className="text-xs text-yellow-800 dark:text-yellow-300">
+                        👁️ <strong>Read-Only Mode:</strong> You can view data but cannot modify it. Contact your administrator for write access.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Stats Row */}
                   <div className="mt-3 flex flex-wrap items-center gap-4">
@@ -684,30 +696,36 @@ WHERE ${primaryKeyCol.column_name} = ?;
                     <Code2 className="h-4 w-4" />
                     <span>SELECT</span>
                   </button>
-                  <button
-                    onClick={generateInsertQuery}
-                    className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600"
-                    title="Generate INSERT query (Create)"
-                  >
-                    <Plus className="h-4 w-4" />
-                    <span>INSERT</span>
-                  </button>
-                  <button
-                    onClick={generateUpdateQuery}
-                    className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-600"
-                    title="Generate UPDATE query (Update)"
-                  >
-                    <Edit className="h-4 w-4" />
-                    <span>UPDATE</span>
-                  </button>
-                  <button
-                    onClick={generateDeleteQuery}
-                    className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600"
-                    title="Generate DELETE query (Delete)"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    <span>DELETE</span>
-                  </button>
+                  {canWrite && (
+                    <button
+                      onClick={generateInsertQuery}
+                      className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600"
+                      title="Generate INSERT query (Create)"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span>INSERT</span>
+                    </button>
+                  )}
+                  {canWrite && (
+                    <button
+                      onClick={generateUpdateQuery}
+                      className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-600"
+                      title="Generate UPDATE query (Update)"
+                    >
+                      <Edit className="h-4 w-4" />
+                      <span>UPDATE</span>
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button
+                      onClick={generateDeleteQuery}
+                      className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600"
+                      title="Generate DELETE query (Delete)"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span>DELETE</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -773,28 +791,32 @@ WHERE ${primaryKeyCol.column_name} = ?;
                   <Search className="h-4 w-4" />
                   Query
                 </button>
-                <button
-                  onClick={() => setViewType('insert-form')}
-                  className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors ${
-                    viewType === 'insert-form'
-                      ? 'border-b-2 border-green-600 text-green-600 dark:text-green-400'
-                      : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
-                  }`}
-                >
-                  <Plus className="h-4 w-4" />
-                  Insert
-                </button>
-                <button
-                  onClick={() => setViewType('update-form')}
-                  className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors ${
-                    viewType === 'update-form'
-                      ? 'border-b-2 border-amber-600 text-amber-600 dark:text-amber-400'
-                      : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
-                  }`}
-                >
-                  <Edit className="h-4 w-4" />
-                  Update
-                </button>
+                {canWrite && (
+                  <button
+                    onClick={() => setViewType('insert-form')}
+                    className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors ${
+                      viewType === 'insert-form'
+                        ? 'border-b-2 border-green-600 text-green-600 dark:text-green-400'
+                        : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+                    }`}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Insert
+                  </button>
+                )}
+                {canWrite && (
+                  <button
+                    onClick={() => setViewType('update-form')}
+                    className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors ${
+                      viewType === 'update-form'
+                        ? 'border-b-2 border-amber-600 text-amber-600 dark:text-amber-400'
+                        : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+                    }`}
+                  >
+                    <Edit className="h-4 w-4" />
+                    Update
+                  </button>
+                )}
               </div>
             </div>
 

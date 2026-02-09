@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Plus, Trash2, ChevronDown, Search, X, PlusCircle } from 'lucide-react';
 import { TableDesign, ColumnDefinition } from './TableDesignerWizard';
-import { useSchemas } from '../../lib/monkdb-hooks';
+import { useAccessibleSchemas } from '../../hooks/useAccessibleSchemas';
 
 interface ColumnDefinitionStepProps {
   design: TableDesign;
@@ -38,7 +38,7 @@ const CONSTRAINTS = [
 ];
 
 export default function ColumnDefinitionStep({ design, setDesign }: ColumnDefinitionStepProps) {
-  const { data: schemas, loading: schemasLoading } = useSchemas();
+  const { schemas, loading: schemasLoading } = useAccessibleSchemas();
   const [schemaDropdownOpen, setSchemaDropdownOpen] = useState(false);
   const [schemaSearchTerm, setSchemaSearchTerm] = useState('');
   const [showNewSchemaInput, setShowNewSchemaInput] = useState(false);
@@ -60,7 +60,7 @@ export default function ColumnDefinitionStep({ design, setDesign }: ColumnDefini
 
   // Filter schemas based on search
   const filteredSchemas = (schemas || []).filter((schema) =>
-    schema.toLowerCase().includes(schemaSearchTerm.toLowerCase())
+    schema.name.toLowerCase().includes(schemaSearchTerm.toLowerCase())
   );
 
   const handleSchemaSelect = (schema: string) => {
@@ -185,10 +185,10 @@ export default function ColumnDefinitionStep({ design, setDesign }: ColumnDefini
                   <div className="py-1">
                     {filteredSchemas.map((schema) => (
                       <button
-                        key={schema}
-                        onClick={() => handleSchemaSelect(schema)}
+                        key={schema.name}
+                        onClick={() => handleSchemaSelect(schema.name)}
                         className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20 ${
-                          design.schema_name === schema
+                          design.schema_name === schema.name
                             ? 'bg-blue-50 font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
                             : 'text-gray-700 dark:text-gray-300'
                         }`}
@@ -196,8 +196,8 @@ export default function ColumnDefinitionStep({ design, setDesign }: ColumnDefini
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                         </svg>
-                        <span>{schema}</span>
-                        {design.schema_name === schema && (
+                        <span>{schema.name}</span>
+                        {design.schema_name === schema.name && (
                           <svg className="ml-auto h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                           </svg>

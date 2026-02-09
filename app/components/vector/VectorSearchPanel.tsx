@@ -1,346 +1,376 @@
 'use client';
 
 import { useState } from 'react';
-import { Search, Loader2, AlertCircle, X } from 'lucide-react';
+import { Search, Loader2, Download, Copy, Check, FileCode } from 'lucide-react';
+import { VectorCollection } from '@/app/hooks/useVectorCollections';
 import { useMonkDBClient } from '@/app/lib/monkdb-context';
-import SearchableSelect from '../common/SearchableSelect';
-import { useSchemaMetadata } from '@/app/lib/hooks/useSchemaMetadata';
+import { useToast } from '@/app/components/ToastContext';
+import PythonScriptGenerator from './PythonScriptGenerator';
+import EmbeddingHelper from './EmbeddingHelper';
 
-interface VectorSearchResult {
+interface VectorSearchPanelProps {
+  collection: VectorCollection | null;
+  onAddToHistory: (query: {
+    collection: string;
+    query: string;
+    resultCount: number;
+    executionTime: number;
+  }) => void;
+}
+
+interface SearchResult {
   id: string;
   content: string;
   score: number;
   [key: string]: any;
 }
 
-export default function VectorSearchPanel() {
+export default function VectorSearchPanel({
+  collection,
+  onAddToHistory,
+}: VectorSearchPanelProps) {
   const client = useMonkDBClient();
-  const { tables, columns, loading: schemaLoading } = useSchemaMetadata();
+  const toast = useToast();
 
-  const [tableName, setTableName] = useState('');
-  const [embeddingColumn, setEmbeddingColumn] = useState('');
-  const [queryVector, setQueryVector] = useState('');
-  const [kValue, setKValue] = useState(10);
-  const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<VectorSearchResult[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [queryTime, setQueryTime] = useState<number | null>(null);
+  const [searchMode, setSearchMode] = useState<'python' | 'manual' | 'api'>('python');
+  const [showEmbeddingHelper, setShowEmbeddingHelper] = useState(false);
+  const [manualVector, setManualVector] = useState('');
+  const [searchType, setSearchType] = useState<'knn' | 'similarity'>('knn');
+  const [topK, setTopK] = useState(5);
+  const [searching, setSearching] = useState(false);
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [executionTime, setExecutionTime] = useState<number>(0);
+  const [copied, setCopied] = useState(false);
 
-  // Get table names with vector columns
-  const tableNames = [...new Set(
-    columns
-      .filter(col => col.type.toUpperCase().includes('FLOAT_VECTOR'))
-      .map(col => `${col.schema}.${col.table}`)
-  )];
+  const handleManualSearch = async () => {
+    if (!client || !collection || !manualVector.trim()) return;
 
-  // Get vector columns for selected table
-  const vectorColumns = tableName
-    ? columns
-        .filter(col => {
-          const fullTableName = `${col.schema}.${col.table}`;
-          return fullTableName === tableName && col.type.toUpperCase().includes('FLOAT_VECTOR');
-        })
-        .map(col => col.name)
-    : [];
-
-  const handleSearch = async () => {
-    if (!client) {
-      setError('No active database connection');
-      return;
-    }
-
-    if (!tableName.trim()) {
-      setError('Please enter a table name');
-      return;
-    }
-
-    if (!queryVector.trim()) {
-      setError('Please enter a query vector');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setResults([]);
-    setQueryTime(null);
+    setSearching(true);
+    const startTime = Date.now();
 
     try {
-      // Validate block-level format only (starts with [, {, or ()
-      const trimmedVector = queryVector.trim();
-      if (!trimmedVector.match(/^[\[\{\(].*[\]\}\)]$/)) {
+      // Parse manual vector input
+      const vectorStr = manualVector.trim().replace(/^\[|\]$/g, '');
+      const vector = vectorStr.split(',').map((v) => parseFloat(v.trim()));
+
+      if (vector.length !== collection.dimension) {
         throw new Error(
-          'Vector must be in block-level format. Examples:\n' +
-          '• JSON array: [0.1, 0.2, 0.3]\n' +
-          '• Object notation: {vec: [0.1, 0.2]}\n' +
-          '• Parentheses: ([0.1, 0.2, 0.3])'
+          `Vector dimension mismatch. Expected ${collection.dimension}, got ${vector.length}`
         );
       }
 
-      // Parse query vector
-      let vectorArray: number[];
-      try {
-        if (trimmedVector.startsWith('[')) {
-          vectorArray = JSON.parse(trimmedVector);
-        } else if (trimmedVector.startsWith('{')) {
-          const obj = JSON.parse(trimmedVector);
-          // Try to extract vector from object
-          vectorArray = obj.vec || obj.vector || obj.embedding || Object.values(obj)[0];
-        } else {
-          // Handle parentheses - strip and parse inner content
-          const inner = trimmedVector.slice(1, -1);
-          vectorArray = JSON.parse(inner);
-        }
-      } catch (e) {
-        throw new Error('Invalid vector format. Could not parse as valid JSON structure.');
+      if (vector.some((v) => isNaN(v))) {
+        throw new Error('Invalid vector format. All values must be numbers');
       }
 
-      if (!Array.isArray(vectorArray) || vectorArray.some(isNaN)) {
-        throw new Error('Vector must be an array of numbers');
+      // Execute search query
+      let query: string;
+      if (searchType === 'knn') {
+        query = `
+          SELECT *, _score
+          FROM "${collection.schema}"."${collection.table}"
+          WHERE knn_match(${collection.columnName}, $1, $2)
+          ORDER BY _score DESC
+        `;
+      } else {
+        query = `
+          SELECT *, vector_similarity(${collection.columnName}, $1) AS _score
+          FROM "${collection.schema}"."${collection.table}"
+          ORDER BY _score DESC
+          LIMIT $2
+        `;
       }
 
-      const startTime = performance.now();
+      const result = await client.query(query, [vector, topK]);
 
-      // Execute KNN search query
-      // Note: Syntax may vary based on MonkDB's vector search implementation
-      const query = `
-        SELECT *, _score
-        FROM ${tableName}
-        WHERE knn_match(${embeddingColumn}, ?, ?)
-        ORDER BY _score DESC
-      `;
+      const endTime = Date.now();
+      const duration = endTime - startTime;
 
-      const response = await client.query(query, [vectorArray, kValue]);
+      setResults(
+        result.rows.map((row: any) => ({
+          ...row,
+          score: parseFloat(row._score || 0),
+        }))
+      );
+      setExecutionTime(duration);
 
-      const endTime = performance.now();
-      setQueryTime(endTime - startTime);
-
-      // Transform results
-      const transformedResults: VectorSearchResult[] = response.rows.map((row) => {
-        const result: any = {};
-        response.cols.forEach((col, idx) => {
-          result[col] = row[idx];
-        });
-        return {
-          id: result.id || result._id || `result_${Math.random()}`,
-          content: result.content || result.text || JSON.stringify(result),
-          score: result._score || 0,
-          ...result,
-        };
+      onAddToHistory({
+        collection: `${collection.schema}.${collection.table}`,
+        query: `Manual vector (${collection.dimension}D)`,
+        resultCount: result.rows.length,
+        executionTime: duration,
       });
 
-      setResults(transformedResults);
+      toast.success('Search Complete', `Found ${result.rows.length} results in ${duration}ms`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Search failed');
-      console.error('Vector search error:', err);
+      const message = err instanceof Error ? err.message : 'Search failed';
+      toast.error('Search Failed', message);
     } finally {
-      setLoading(false);
+      setSearching(false);
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && e.ctrlKey) {
-      handleSearch();
-    }
+  const handleSearch = () => {
+    handleManualSearch();
   };
+
+  const exportToJSON = () => {
+    const data = JSON.stringify(results, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `vector-search-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Search Complete', 'Results exported to JSON');
+  };
+
+  const exportToCSV = () => {
+    if (results.length === 0) return;
+
+    const headers = ['id', 'content', 'score'];
+    const rows = results.map((r) => [
+      r.id,
+      `"${r.content?.toString().replace(/"/g, '""') || ''}"`,
+      r.score,
+    ]);
+
+    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `vector-search-${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Search Complete', 'Results exported to CSV');
+  };
+
+  const copyResults = () => {
+    const text = results
+      .map((r) => `${r.id}: ${r.content} (score: ${r.score.toFixed(4)})`)
+      .join('\n');
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    toast.success('Search Complete', 'Results copied to clipboard');
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (!collection) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <Search className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Select a collection to start searching
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Search Configuration */}
-      <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
-        <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
-          KNN Vector Search
-        </h3>
+    <div className="space-y-4">
+      {/* Search Mode Tabs */}
+      <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
+        <button
+          onClick={() => setSearchMode('python')}
+          className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${
+            searchMode === 'python'
+              ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
+          }`}
+        >
+          <FileCode className="w-4 h-4" />
+          Python Script
+        </button>
+        <button
+          onClick={() => setSearchMode('manual')}
+          className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+            searchMode === 'manual'
+              ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
+          }`}
+        >
+          Manual Search
+        </button>
+        <button
+          onClick={() => setSearchMode('api')}
+          className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+            searchMode === 'api'
+              ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
+          }`}
+        >
+          API Examples
+        </button>
+      </div>
 
+      {/* Python Script Mode (Official MonkDB Workflow) */}
+      {searchMode === 'python' && (
         <div className="space-y-4">
-          {/* Table Name */}
-          <SearchableSelect
-            label="Table Name"
-            value={tableName}
-            onChange={(value) => {
-              setTableName(value);
-              setEmbeddingColumn(''); // Reset column when table changes
-            }}
-            options={tableNames}
-            placeholder="Select table with vector columns..."
-            loading={schemaLoading}
-            onClear={() => {
-              setTableName('');
-              setEmbeddingColumn('');
-            }}
-          />
+          <PythonScriptGenerator collection={collection} />
+        </div>
+      )}
 
-          {/* Embedding Column */}
-          <SearchableSelect
-            label="Embedding Column Name"
-            value={embeddingColumn}
-            onChange={setEmbeddingColumn}
-            options={vectorColumns}
-            placeholder={tableName ? 'Select vector column...' : 'Select a table first'}
-            disabled={!tableName || vectorColumns.length === 0}
-            loading={schemaLoading}
-            onClear={() => setEmbeddingColumn('')}
-          />
-
-          {/* Query Vector */}
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Query Vector
-            </label>
-            <textarea
-              value={queryVector}
-              onChange={(e) => setQueryVector(e.target.value)}
-              placeholder="Enter vector in block-level format: [0.1, 0.2, 0.3, ...] or {vec: [0.1, 0.2]}"
-              rows={3}
-              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 font-mono text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-500"
-              onKeyDown={handleKeyPress}
-            />
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Block-level format only (must start with [, {"{" }, or ()  •  Ctrl+Enter to search
-            </p>
+      {/* Manual Search Mode - For pasting pre-computed embeddings */}
+      {searchMode === 'manual' && (
+        <div className="space-y-3">
+          {/* Info Banner */}
+          <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-700 rounded-lg p-3">
+            <div className="text-xs text-blue-800 dark:text-blue-200">
+              <p className="font-semibold mb-1">Paste Pre-computed Embeddings</p>
+              <p>
+                After generating embeddings using the Python script or external APIs, paste the vector array below to search.
+              </p>
+            </div>
           </div>
 
-          {/* K Value Input */}
           <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Top K Results
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Vector Array ({collection.dimension} dimensions)
             </label>
-            <input
-              type="number"
-              min="1"
-              max="1000"
-              value={kValue}
-              onChange={(e) => setKValue(parseInt(e.target.value) || 1)}
-              placeholder="10"
-              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-500"
+            <textarea
+              value={manualVector}
+              onChange={(e) => setManualVector(e.target.value)}
+              placeholder={`[0.1, 0.2, 0.3, ... ${collection.dimension} numbers total]`}
+              className="w-full h-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              disabled={searching}
             />
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Number of nearest neighbors to return (1-1000)
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Expected format: JSON array of {collection.dimension} numbers
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* API Examples Mode - External embedding generation */}
+      {searchMode === 'api' && (
+        <div className="space-y-4">
+          <EmbeddingHelper />
+        </div>
+      )}
+
+      {/* Search Options - Only show in Manual mode */}
+      {searchMode === 'manual' && (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Search Type
+              </label>
+              <select
+                value={searchType}
+                onChange={(e) => setSearchType(e.target.value as 'knn' | 'similarity')}
+                disabled={searching}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="knn">KNN Match</option>
+                <option value="similarity">Vector Similarity</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Top K
+              </label>
+              <input
+                type="number"
+                value={topK}
+                onChange={(e) => setTopK(parseInt(e.target.value) || 5)}
+                min="1"
+                max="100"
+                disabled={searching}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
           </div>
 
           {/* Search Button */}
           <button
             onClick={handleSearch}
-            disabled={loading || !client}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
+            disabled={searching || !manualVector.trim()}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {loading ? (
+            {searching ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" />
                 Searching...
               </>
             ) : (
               <>
-                <Search className="h-4 w-4" />
-                Search Vectors
+                <Search className="w-4 h-4" />
+                Search
               </>
             )}
           </button>
-        </div>
-      </div>
-
-      {/* Error Display */}
-      {error && (
-        <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900/50 dark:bg-red-900/20">
-          <AlertCircle className="h-5 w-5 flex-shrink-0 text-red-600 dark:text-red-400" />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-red-800 dark:text-red-300">Error</p>
-            <p className="mt-1 text-sm text-red-700 dark:text-red-400">{error}</p>
-          </div>
-          <button
-            onClick={() => setError(null)}
-            className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        </>
       )}
 
       {/* Results */}
       {results.length > 0 && (
-        <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Search Results
-            </h3>
-            <div className="flex items-center gap-4 text-sm">
-              <span className="text-gray-500 dark:text-gray-400">
-                {results.length} results
-              </span>
-              {queryTime !== null && (
-                <span className="rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                  {queryTime.toFixed(2)}ms
-                </span>
-              )}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Results ({results.length}) • {executionTime}ms
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={copyResults}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                title="Copy to clipboard"
+              >
+                {copied ? (
+                  <Check className="w-4 h-4 text-green-600" />
+                ) : (
+                  <Copy className="w-4 h-4 text-gray-500" />
+                )}
+              </button>
+              <button
+                onClick={exportToCSV}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                title="Export to CSV"
+              >
+                <Download className="w-4 h-4 text-gray-500" />
+              </button>
+              <button
+                onClick={exportToJSON}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                title="Export to JSON"
+              >
+                <Download className="w-4 h-4 text-gray-500" />
+              </button>
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="border-b border-gray-200 dark:border-gray-700">
-                <tr>
-                  <th className="pb-3 text-left text-sm font-semibold text-gray-900 dark:text-white">
-                    Rank
-                  </th>
-                  <th className="pb-3 text-left text-sm font-semibold text-gray-900 dark:text-white">
-                    Score
-                  </th>
-                  <th className="pb-3 text-left text-sm font-semibold text-gray-900 dark:text-white">
-                    ID
-                  </th>
-                  <th className="pb-3 text-left text-sm font-semibold text-gray-900 dark:text-white">
-                    Content
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {results.map((result, idx) => (
-                  <tr
-                    key={result.id}
-                    className="hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                  >
-                    <td className="py-3 text-sm font-medium text-gray-900 dark:text-white">
-                      #{idx + 1}
-                    </td>
-                    <td className="py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="h-2 w-24 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
-                          <div
-                            className="h-full bg-blue-500"
-                            style={{ width: `${Math.min(result.score * 100, 100)}%` }}
-                          />
-                        </div>
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                          {result.score.toFixed(4)}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-3 text-sm text-gray-700 dark:text-gray-300">
-                      {result.id}
-                    </td>
-                    <td className="py-3 text-sm text-gray-700 dark:text-gray-300">
-                      <div className="max-w-md truncate" title={result.content}>
-                        {result.content}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg max-h-[500px] overflow-y-auto">
+            {results.map((result, idx) => (
+              <div
+                key={idx}
+                className="p-4 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+              >
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <span className="text-xs font-mono text-gray-600 dark:text-gray-400">
+                    {result.id}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full w-20 overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-green-500 to-blue-500"
+                        style={{ width: `${result.score * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 min-w-[3rem] text-right">
+                      {(result.score * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+                <p className="text-sm text-gray-900 dark:text-gray-100">
+                  {result.content}
+                </p>
+              </div>
+            ))}
           </div>
-        </div>
-      )}
-
-      {/* Empty State */}
-      {!loading && !error && results.length === 0 && (
-        <div className="rounded-lg border-2 border-dashed border-gray-300 bg-gray-50/50 p-12 text-center dark:border-gray-700 dark:bg-gray-800/50">
-          <Search className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-4 text-lg font-medium text-gray-900 dark:text-white">
-            No Results Yet
-          </h3>
-          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-            Configure your search parameters and click "Search Vectors" to find similar items.
-          </p>
         </div>
       )}
     </div>

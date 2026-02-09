@@ -53,6 +53,7 @@ import DataQualityMonitor, { DataQualityMetric } from '../components/timeseries/
 import FavoritesPanel, { Favorite } from '../components/timeseries/FavoritesPanel';
 import AdvancedAggregationPanel from '../components/timeseries/AdvancedAggregationPanel';
 import DataImportPanel, { TableColumn, ImportRecord } from '../components/timeseries/DataImportPanel';
+import SchemaSelector from '../components/common/SchemaSelector';
 import { subHours } from 'date-fns';
 
 // Types
@@ -1967,6 +1968,9 @@ LIMIT ${viz.limit}`;
 
             {/* Enterprise Toolbar - Compact Icon-Only */}
             <div className="flex items-center gap-1.5">
+              {/* Schema Selector */}
+              <SchemaSelector />
+
               {/* Primary Actions */}
               <div className="flex items-center gap-1.5">
                 <button

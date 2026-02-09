@@ -14,6 +14,7 @@ interface QueryStats {
 export default function PerformanceChart() {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstanceRef = useRef<echarts.ECharts | null>(null);
+  const chartInitializedRef = useRef(false);
   const activeConnection = useActiveConnection();
   const [stats, setStats] = useState<QueryStats[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,14 +107,15 @@ export default function PerformanceChart() {
     return () => clearInterval(interval);
   }, [activeConnection]);
 
-  // Initialize chart when div becomes available (after loading completes)
+  // Initialize chart once when component mounts
   useEffect(() => {
-    if (!chartRef.current || chartInstanceRef.current) return;
+    if (!chartRef.current || chartInitializedRef.current) return;
 
     console.log('PerformanceChart: Initializing chart instance');
     chartInstanceRef.current = echarts.init(chartRef.current, undefined, {
       renderer: 'canvas',
     });
+    chartInitializedRef.current = true;
 
     const handleResize = () => chartInstanceRef.current?.resize();
     window.addEventListener('resize', handleResize);
@@ -122,11 +124,16 @@ export default function PerformanceChart() {
     return () => {
       window.removeEventListener('resize', handleResize);
       if (chartInstanceRef.current) {
-        chartInstanceRef.current.dispose();
+        try {
+          chartInstanceRef.current.dispose();
+        } catch (e) {
+          console.error('Error disposing chart:', e);
+        }
         chartInstanceRef.current = null;
+        chartInitializedRef.current = false;
       }
     };
-  }, [loading, error, hasData]); // Run when these change so chart initializes after loading
+  }, []); // Run once on mount
 
   // Update chart data whenever it changes
   useEffect(() => {
@@ -296,60 +303,57 @@ export default function PerformanceChart() {
     chartInstanceRef.current.setOption(option, { notMerge: false });
   }, [stats]);
 
-  // Loading Skeleton
-  if (loading) {
-    return (
-      <div className="flex h-[300px] w-full animate-pulse flex-col gap-3">
-        <div className="flex h-full flex-col gap-2">
-          <div className="flex items-end justify-between gap-1">
-            {Array.from({ length: 24 }).map((_, i) => (
-              <div
-                key={i}
-                className="flex-1 rounded-sm bg-gray-200 dark:bg-gray-700"
-                style={{ height: `${Math.random() * 200 + 50}px` }}
-              />
-            ))}
+  return (
+    <div className="relative h-[300px] w-full">
+      <div ref={chartRef} className="h-full w-full" />
+
+      {/* Loading Overlay */}
+      {loading && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white dark:bg-gray-800">
+          <div className="flex h-full w-full animate-pulse flex-col gap-2 p-4">
+            <div className="flex items-end justify-between gap-1">
+              {Array.from({ length: 24 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="flex-1 rounded-sm bg-gray-200 dark:bg-gray-700"
+                  style={{ height: `${Math.random() * 200 + 50}px` }}
+                />
+              ))}
+            </div>
+          </div>
+          <div className="absolute bottom-4 flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+            <RefreshCw className="h-4 w-4 animate-spin" />
+            <span>Loading performance metrics...</span>
           </div>
         </div>
-        <div className="flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-          <RefreshCw className="h-4 w-4 animate-spin" />
-          <span>Loading performance metrics...</span>
-        </div>
-      </div>
-    );
-  }
+      )}
 
-  // Error State
-  if (error) {
-    return (
-      <div className="flex h-[300px] w-full flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-red-300 bg-red-50/50 dark:border-red-800 dark:bg-red-900/10">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
-          <AlertCircle className="h-7 w-7 text-red-600 dark:text-red-400" />
+      {/* Error Overlay */}
+      {!loading && error && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-white dark:bg-gray-800">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
+            <AlertCircle className="h-7 w-7 text-red-600 dark:text-red-400" />
+          </div>
+          <div className="text-center">
+            <h3 className="text-sm font-semibold text-red-900 dark:text-red-300">
+              Failed to Load Data
+            </h3>
+            <p className="mt-1 max-w-sm text-xs text-red-700 dark:text-red-400">
+              {error}
+            </p>
+          </div>
+          <button
+            onClick={fetchStats}
+            className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Retry
+          </button>
         </div>
-        <div className="text-center">
-          <h3 className="text-sm font-semibold text-red-900 dark:text-red-300">
-            Failed to Load Data
-          </h3>
-          <p className="mt-1 max-w-sm text-xs text-red-700 dark:text-red-400">
-            {error}
-          </p>
-        </div>
-        <button
-          onClick={fetchStats}
-          className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Retry
-        </button>
-      </div>
-    );
-  }
+      )}
 
-  // Empty State
-  if (!hasData) {
-    return (
-      <div className="relative h-[300px] w-full">
-        <div ref={chartRef} className="h-full w-full" />
+      {/* Empty State Overlay */}
+      {!loading && !error && !hasData && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white/95 dark:bg-gray-800/95">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700">
             <Activity className="h-7 w-7 text-gray-400 dark:text-gray-500" />
@@ -369,9 +373,7 @@ export default function PerformanceChart() {
             </span>
           </div>
         </div>
-      </div>
-    );
-  }
-
-  return <div ref={chartRef} className="h-[300px] w-full" />;
+      )}
+    </div>
+  );
 }

@@ -15,6 +15,7 @@ export interface MonkDBConfig {
   username?: string;
   password?: string;
   timeout?: number;
+  role?: 'read-only' | 'read-write' | 'superuser';
 }
 
 export interface SQLRequest {
@@ -85,6 +86,7 @@ export class MonkDBClient {
       username: config.username || '',
       password: config.password || '',
       timeout: config.timeout || 30000,
+      role: config.role || 'read-only',
     };
 
     // Desktop app: use direct connections (no CORS issues in Tauri)
@@ -225,7 +227,30 @@ export class MonkDBClient {
         data = JSON.parse(responseText);
       } catch (parseError) {
         console.warn('[MonkDBClient] ⚠️ Unable to parse server response. The server may be unavailable.');
-        throw new Error(`Failed to parse response: ${responseText.substring(0, 100)}`);
+        console.warn('[MonkDBClient] Response text:', responseText.substring(0, 200));
+
+        // Check if this is an authentication error (catch all variations)
+        const lowerText = responseText.toLowerCase();
+        if (lowerText.includes('authentication') ||
+            lowerText.includes('password') ||
+            lowerText.includes('auth') ||
+            lowerText.includes('trust') ||
+            lowerText.includes('credentials') ||
+            lowerText.includes('unauthorized') ||
+            lowerText.includes('access denied')) {
+
+          const authError = new Error('Authentication failed - Invalid username or password. Please check your credentials or create a new user.');
+          (authError as any).category = 'auth';
+          (authError as any).isAuthError = true;
+          throw authError;
+        }
+
+        // Check if this is a connection refused error
+        if (lowerText.includes('connection') || lowerText.includes('refused') || lowerText.includes('timeout')) {
+          throw new Error('Cannot connect to MonkDB. Make sure MonkDB is running on the specified host and port.');
+        }
+
+        throw new Error(`Server returned invalid response: ${responseText.substring(0, 150)}`);
       }
 
       // ENTERPRISE: Preserve full error structure for better error handling
@@ -324,7 +349,9 @@ export class MonkDBClient {
    */
   async getClusterUptime(): Promise<number> {
     const result = await this.query<any>("SELECT min(os['uptime']) AS cluster_uptime_seconds FROM sys.nodes");
-    return result.rows[0]?.[0] || 0;
+    const uptimeMs = result.rows[0]?.[0] || 0;
+    // Convert from milliseconds to seconds
+    return Math.floor(uptimeMs / 1000);
   }
 
   /**
@@ -487,13 +514,13 @@ export class MonkDBClient {
 
       SELECT
         'PRIVILEGE' AS node_type,
-        privilege_type AS name,
+        type AS name,
         grantee AS detail_1,
-        NULL AS detail_2,
+        state AS detail_2,
         NULL AS detail_3
-      FROM information_schema.table_privileges
-      WHERE table_schema = ?
-        AND table_name = ?
+      FROM sys.privileges
+      WHERE class = 'TABLE'
+        AND ident = ? || '.' || ?
 
       UNION ALL
 
@@ -617,8 +644,8 @@ export function createMonkDBClient(config: MonkDBConfig): MonkDBClient {
  * Default client instance for localhost
  */
 export const defaultMonkDBClient = createMonkDBClient({
-  host: 'localhost',
-  port: 4200,
+  host: process.env.NEXT_PUBLIC_DEFAULT_MONKDB_HOST || 'localhost',
+  port: parseInt(process.env.NEXT_PUBLIC_DEFAULT_MONKDB_PORT || '4200'),
   protocol: 'http',
 });
 
