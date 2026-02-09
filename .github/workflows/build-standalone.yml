@@ -30,15 +30,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run standalone build script
+      - name: Run standalone build script (without node_modules)
         run: |
           chmod +x build-standalone.sh
           ./build-standalone.sh
 
-      - name: Display build size
+      - name: Display build size (without node_modules)
         run: |
           du -sh dist-standalone
           echo "Build size without node_modules: $(du -sh dist-standalone | cut -f1)"
+
+      - name: Copy dist-standalone for full version
+        run: |
+          cp -r dist-standalone dist-standalone-full
+
+      - name: Add node_modules to full version
+        run: |
+          echo "📦 Creating full version with node_modules..."
+          cp -r node_modules dist-standalone-full/
+          du -sh dist-standalone-full
+          echo "Full build size with node_modules: $(du -sh dist-standalone-full | cut -f1)"
 
       - name: Create version file
         run: |
@@ -50,41 +61,60 @@ jobs:
           echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> dist-standalone/VERSION.txt
           echo "BUILD_REF=$GITHUB_REF" >> dist-standalone/VERSION.txt
 
-      - name: Create zip archive
+      - name: Create archives (LITE version - without node_modules)
         run: |
+          echo "📦 Creating LITE version (~5MB)..."
           cd dist-standalone
-          zip -r ../monkdb-workbench-standalone.zip .
+          zip -r ../monkdb-workbench-standalone-lite.zip .
           cd ..
+          tar -czf monkdb-workbench-standalone-lite.tar.gz -C dist-standalone .
 
-          # Also create a tar.gz for Linux users
-          tar -czf monkdb-workbench-standalone.tar.gz -C dist-standalone .
+      - name: Create archives (FULL version - with node_modules)
+        run: |
+          echo "📦 Creating FULL version (~366MB)..."
+          cd dist-standalone-full
+          zip -r ../monkdb-workbench-standalone-full.zip .
+          cd ..
+          tar -czf monkdb-workbench-standalone-full.tar.gz -C dist-standalone-full .
 
       - name: Calculate checksums
         run: |
-          sha256sum monkdb-workbench-standalone.zip > monkdb-workbench-standalone.zip.sha256
-          sha256sum monkdb-workbench-standalone.tar.gz > monkdb-workbench-standalone.tar.gz.sha256
+          sha256sum monkdb-workbench-standalone-lite.zip > monkdb-workbench-standalone-lite.zip.sha256
+          sha256sum monkdb-workbench-standalone-lite.tar.gz > monkdb-workbench-standalone-lite.tar.gz.sha256
+          sha256sum monkdb-workbench-standalone-full.zip > monkdb-workbench-standalone-full.zip.sha256
+          sha256sum monkdb-workbench-standalone-full.tar.gz > monkdb-workbench-standalone-full.tar.gz.sha256
 
-      - name: Upload ZIP artifact
+      - name: Upload LITE ZIP artifact
         uses: actions/upload-artifact@v4
         with:
-          name: monkdb-workbench-standalone-zip
+          name: monkdb-workbench-standalone-lite-zip
           path: |
-            monkdb-workbench-standalone.zip
-            monkdb-workbench-standalone.zip.sha256
+            monkdb-workbench-standalone-lite.zip
+            monkdb-workbench-standalone-lite.zip.sha256
 
-      - name: Upload TAR.GZ artifact
+      - name: Upload LITE TAR.GZ artifact
         uses: actions/upload-artifact@v4
         with:
-          name: monkdb-workbench-standalone-tar
+          name: monkdb-workbench-standalone-lite-tar
           path: |
-            monkdb-workbench-standalone.tar.gz
-            monkdb-workbench-standalone.tar.gz.sha256
+            monkdb-workbench-standalone-lite.tar.gz
+            monkdb-workbench-standalone-lite.tar.gz.sha256
 
-      - name: Upload build directory (for inspection)
+      - name: Upload FULL ZIP artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dist-standalone
-          path: dist-standalone/
+          name: monkdb-workbench-standalone-full-zip
+          path: |
+            monkdb-workbench-standalone-full.zip
+            monkdb-workbench-standalone-full.zip.sha256
+
+      - name: Upload FULL TAR.GZ artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: monkdb-workbench-standalone-full-tar
+          path: |
+            monkdb-workbench-standalone-full.tar.gz
+            monkdb-workbench-standalone-full.tar.gz.sha256
 
   # Create GitHub Release when a tag is pushed
   create-release:
@@ -105,16 +135,28 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/standalone-v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Download ZIP artifact
+      - name: Download LITE ZIP artifact
         uses: actions/download-artifact@v4
         with:
-          name: monkdb-workbench-standalone-zip
+          name: monkdb-workbench-standalone-lite-zip
           path: release-files
 
-      - name: Download TAR.GZ artifact
+      - name: Download LITE TAR.GZ artifact
         uses: actions/download-artifact@v4
         with:
-          name: monkdb-workbench-standalone-tar
+          name: monkdb-workbench-standalone-lite-tar
+          path: release-files
+
+      - name: Download FULL ZIP artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: monkdb-workbench-standalone-full-zip
+          path: release-files
+
+      - name: Download FULL TAR.GZ artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: monkdb-workbench-standalone-full-tar
           path: release-files
 
       - name: Generate changelog
@@ -158,10 +200,21 @@ jobs:
 
             ### 📥 Download Options
 
-            - **monkdb-workbench-standalone.zip** - Windows/macOS users
-            - **monkdb-workbench-standalone.tar.gz** - Linux users
+            **Choose the version that fits your needs:**
 
-            Both archives contain the same files.
+            #### LITE Version (~5MB) - Recommended
+            - **monkdb-workbench-standalone-lite.zip** - Windows/macOS users
+            - **monkdb-workbench-standalone-lite.tar.gz** - Linux users
+            - Smaller download, faster transfer
+            - Auto-installs dependencies on first run (requires internet)
+            - Perfect for: Sharing via email, slow connections
+
+            #### FULL Version (~366MB) - Ready to Run
+            - **monkdb-workbench-standalone-full.zip** - Windows/macOS users
+            - **monkdb-workbench-standalone-full.tar.gz** - Linux users
+            - Includes all node_modules pre-installed
+            - No internet needed after download
+            - Perfect for: Offline environments, air-gapped systems
 
             ### 🚀 Quick Start
 
