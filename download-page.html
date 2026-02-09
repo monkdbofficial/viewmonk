@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MonkDB Workbench - Download</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 50px;
+            padding: 40px 20px;
+        }
+
+        .header h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .header p {
+            font-size: 1.3em;
+            opacity: 0.95;
+        }
+
+        .version-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            padding: 8px 16px;
+            border-radius: 20px;
+            margin-top: 15px;
+            font-size: 0.9em;
+        }
+
+        .download-section {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .section-title {
+            font-size: 2em;
+            margin-bottom: 15px;
+            color: #667eea;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .badge {
+            background: #4CAF50;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.5em;
+            font-weight: normal;
+        }
+
+        .description {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+            line-height: 1.6;
+        }
+
+        .download-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .download-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 25px;
+            transition: all 0.3s ease;
+            background: #fafafa;
+        }
+
+        .download-card:hover {
+            border-color: #667eea;
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.2);
+        }
+
+        .platform-icon {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        .platform-name {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .file-info {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 15px;
+        }
+
+        .download-btn {
+            display: block;
+            width: 100%;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+        }
+
+        .download-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .features {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 25px;
+            margin-top: 20px;
+        }
+
+        .feature-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 15px;
+        }
+
+        .feature-icon {
+            font-size: 1.5em;
+            flex-shrink: 0;
+        }
+
+        .feature-text h3 {
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .feature-text p {
+            color: #666;
+            font-size: 0.95em;
+        }
+
+        .quick-start {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .steps {
+            margin-top: 20px;
+        }
+
+        .step {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 25px;
+            align-items: flex-start;
+        }
+
+        .step-number {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        .step-content h3 {
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        .step-content p {
+            color: #666;
+            line-height: 1.6;
+        }
+
+        code {
+            background: #f5f5f5;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            color: #667eea;
+        }
+
+        .footer {
+            text-align: center;
+            color: white;
+            margin-top: 50px;
+            padding: 30px;
+            opacity: 0.9;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2em;
+            }
+
+            .download-section, .features, .quick-start {
+                padding: 25px;
+            }
+
+            .section-title {
+                font-size: 1.5em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 MonkDB Workbench</h1>
+            <p>Standalone Web Package - Ready to Run</p>
+            <div class="version-badge" id="version">Latest Version</div>
+        </div>
+
+        <!-- LITE Version -->
+        <div class="download-section">
+            <h2 class="section-title">
+                📦 LITE Version (~5MB)
+                <span class="badge">RECOMMENDED</span>
+            </h2>
+            <p class="description">
+                Perfect for most users. Smaller download, faster transfer. Auto-installs dependencies on first run (requires internet connection).
+                Ideal for sharing via email or slow connections.
+            </p>
+            <div class="download-grid">
+                <div class="download-card">
+                    <div class="platform-icon">🪟</div>
+                    <div class="platform-name">Windows / macOS</div>
+                    <div class="file-info">ZIP Archive • ~5MB</div>
+                    <a href="https://pub-cc3901daba764b61bc2141554b3d1652.r2.dev/releases/latest/monkdb-workbench-standalone-lite.zip" class="download-btn">
+                        Download ZIP
+                    </a>
+                </div>
+                <div class="download-card">
+                    <div class="platform-icon">🐧</div>
+                    <div class="platform-name">Linux</div>
+                    <div class="file-info">TAR.GZ Archive • ~5MB</div>
+                    <a href="https://pub-cc3901daba764b61bc2141554b3d1652.r2.dev/releases/latest/monkdb-workbench-standalone-lite.tar.gz" class="download-btn">
+                        Download TAR.GZ
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- FULL Version -->
+        <div class="download-section">
+            <h2 class="section-title">
+                💎 FULL Version (~366MB)
+                <span class="badge" style="background: #2196F3;">OFFLINE READY</span>
+            </h2>
+            <p class="description">
+                Includes all node_modules pre-installed. No internet needed after download.
+                Perfect for offline environments, air-gapped systems, or when you need everything bundled together.
+            </p>
+            <div class="download-grid">
+                <div class="download-card">
+                    <div class="platform-icon">🪟</div>
+                    <div class="platform-name">Windows / macOS</div>
+                    <div class="file-info">ZIP Archive • ~366MB</div>
+                    <a href="https://pub-cc3901daba764b61bc2141554b3d1652.r2.dev/releases/latest/monkdb-workbench-standalone-full.zip" class="download-btn">
+                        Download ZIP
+                    </a>
+                </div>
+                <div class="download-card">
+                    <div class="platform-icon">🐧</div>
+                    <div class="platform-name">Linux</div>
+                    <div class="file-info">TAR.GZ Archive • ~366MB</div>
+                    <a href="https://pub-cc3901daba764b61bc2141554b3d1652.r2.dev/releases/latest/monkdb-workbench-standalone-full.tar.gz" class="download-btn">
+                        Download TAR.GZ
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Features -->
+        <div class="features">
+            <h2 class="section-title">✨ Features</h2>
+            <div class="features-grid">
+                <div class="feature-item">
+                    <div class="feature-icon">⚡</div>
+                    <div class="feature-text">
+                        <h3>Zero Configuration</h3>
+                        <p>Works out of the box. No setup required.</p>
+                    </div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon">🔓</div>
+                    <div class="feature-text">
+                        <h3>No API Keys</h3>
+                        <p>Uses Leaflet & OpenStreetMap - completely free.</p>
+                    </div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon">🌍</div>
+                    <div class="feature-text">
+                        <h3>Cross-Platform</h3>
+                        <p>Windows, macOS, and Linux support.</p>
+                    </div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon">🗺️</div>
+                    <div class="feature-text">
+                        <h3>Geospatial Mapping</h3>
+                        <p>Interactive maps with multiple layer options.</p>
+                    </div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon">📊</div>
+                    <div class="feature-text">
+                        <h3>ER Diagrams</h3>
+                        <p>Visualize database relationships easily.</p>
+                    </div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon">🚀</div>
+                    <div class="feature-text">
+                        <h3>Production Ready</h3>
+                        <p>Optimized Next.js build for performance.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Start -->
+        <div class="quick-start">
+            <h2 class="section-title">🚀 Quick Start</h2>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3>Download</h3>
+                        <p>Choose your preferred version (LITE or FULL) and platform from above.</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3>Extract</h3>
+                        <p>Unzip or extract the downloaded archive to your desired location.</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3>Run</h3>
+                        <p>
+                            <strong>Linux/macOS:</strong> Run <code>./start.sh</code><br>
+                            <strong>Windows:</strong> Double-click <code>start.bat</code> or run <code>node server.js</code>
+                        </p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <h3>Access</h3>
+                        <p>Open your browser and navigate to <code>http://localhost:3000</code></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>MonkDB Workbench • Powered by Cloudflare R2</p>
+            <p style="margin-top: 10px; font-size: 0.9em;">
+                No source code included - standalone builds only
+            </p>
+        </div>
+    </div>
+</body>
+</html>
