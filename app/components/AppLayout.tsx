@@ -15,8 +15,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Check if current page is an auth page (login/register)
+  // Check if current page is an auth page (login/register) or embed page
   const isAuthPage = pathname === '/login' || pathname === '/register';
+  const isEmbedPage = pathname?.includes('/embed');
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -42,16 +43,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [commandPaletteOpen]);
 
-  // If it's an auth page, render without sidebar and navigation
-  if (isAuthPage) {
-    return (
-      <div className="flex h-screen flex-col overflow-hidden bg-gray-100 dark:bg-[#0A1929]">
-        {/* Main Content - Full width for auth pages */}
-        <main className="flex-1 overflow-y-auto bg-gray-50 dark:bg-[#0D1B2A]">
-          {children}
-        </main>
-      </div>
-    );
+  // If it's an auth page or embed page, render without sidebar and navigation
+  if (isAuthPage || isEmbedPage) {
+    return <>{children}</>;
   }
 
   return (

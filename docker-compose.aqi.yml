@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  # MonkDB (CrateDB) - Main Database
+  monkdb:
+    image: crate:5.8.4
+    container_name: aqi-monkdb
+    ports:
+      - "4200:4200"   # HTTP endpoint
+      - "5432:5432"   # PostgreSQL protocol
+    environment:
+      - CRATE_HEAP_SIZE=2g
+    volumes:
+      - ./data/monkdb:/data
+    command: >
+      crate
+      -Cdiscovery.type=single-node
+      -Ccluster.name=aqi-cluster
+    networks:
+      - aqi-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4200"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis - Celery Broker + Cache
+  redis:
+    image: redis:7-alpine
+    container_name: aqi-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+    networks:
+      - aqi-network
+    command: redis-server --appendonly yes
+
+  # Celery Worker - Background Agents
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aqi-celery-worker
+    command: celery -A agents.celery_app worker --loglevel=info
+    volumes:
+      - ./backend:/app
+    environment:
+      - MONKDB_HOST=monkdb
+      - REDIS_HOST=redis
+    env_file:
+      - .env
+    depends_on:
+      - monkdb
+      - redis
+    networks:
+      - aqi-network
+    restart: unless-stopped
+
+  # Celery Beat - Task Scheduler
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aqi-celery-beat
+    command: celery -A agents.celery_app beat --loglevel=info
+    volumes:
+      - ./backend:/app
+    environment:
+      - MONKDB_HOST=monkdb
+      - REDIS_HOST=redis
+    env_file:
+      - .env
+    depends_on:
+      - monkdb
+      - redis
+    networks:
+      - aqi-network
+    restart: unless-stopped
+
+  # Flower - Celery Monitoring (Optional)
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aqi-flower
+    command: celery -A agents.celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - MONKDB_HOST=monkdb
+      - REDIS_HOST=redis
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    networks:
+      - aqi-network
+
+networks:
+  aqi-network:
+    driver: bridge
+
+volumes:
+  monkdb-data:
+  redis-data:
