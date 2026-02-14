@@ -116,15 +116,6 @@ export default function Sidebar({}: SidebarProps) {
       )
     },
     {
-      href: '/aqi-dashboard',
-      label: 'AQI Intelligence',
-      icon: (
-        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      )
-    },
-    {
       href: '/vector-ops',
       label: 'Vector Search',
       icon: (
@@ -187,6 +178,63 @@ export default function Sidebar({}: SidebarProps) {
       icon: (
         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+      )
+    },
+  ];
+
+  const aqiIntelligence = [
+    {
+      href: '/aqi-dashboard',
+      label: 'Overview Dashboard',
+      icon: (
+        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+      )
+    },
+    {
+      href: '/aqi-map',
+      label: 'Live Map',
+      icon: (
+        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+        </svg>
+      )
+    },
+    {
+      href: '/aqi-forecasting',
+      label: 'AI Forecasting',
+      icon: (
+        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+        </svg>
+      )
+    },
+    {
+      href: '/aqi-sources',
+      label: 'Source Analysis',
+      icon: (
+        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      )
+    },
+    {
+      href: '/aqi-agents',
+      label: 'Agent Operations',
+      icon: (
+        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+        </svg>
+      )
+    },
+    {
+      href: '/aqi-mitigation',
+      label: 'Mitigation Actions',
+      icon: (
+        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
       )
     },
@@ -303,6 +351,39 @@ export default function Sidebar({}: SidebarProps) {
             })}
           </div>
 
+          {/* AQI Intelligence */}
+          {!isCollapsed && (
+            <div className="mt-8">
+              <p className="mb-3 px-3 text-xs font-semibold uppercase tracking-wider text-teal-600 dark:text-teal-400">
+                🌍 AQI Intelligence
+              </p>
+              <div className="space-y-0.5">
+                {aqiIntelligence.map((item) => {
+                  const isActive = pathname === item.href;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
+                        isActive
+                          ? 'bg-teal-50 text-teal-700 shadow-sm dark:bg-teal-500/20 dark:text-teal-300 dark:shadow-teal-500/10'
+                          : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
+                      }`}
+                    >
+                      {isActive && (
+                        <span className="absolute left-0 top-0 h-full w-1 rounded-r bg-teal-600 dark:bg-teal-400" />
+                      )}
+                      <span className={isActive ? 'text-teal-700 dark:text-teal-300' : 'text-gray-500 group-hover:text-gray-700 dark:text-gray-400 dark:group-hover:text-gray-300'}>
+                        {item.icon}
+                      </span>
+                      <span className="truncate">{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Developer Tools */}
           {!isCollapsed && (
             <div className="mt-8">
@@ -373,6 +454,31 @@ export default function Sidebar({}: SidebarProps) {
           {isCollapsed && (
             <>
               <div className="my-4 border-t border-gray-200 dark:border-gray-700" />
+              {/* AQI Intelligence (Collapsed) */}
+              <div className="space-y-0.5">
+                {aqiIntelligence.map((item) => {
+                  const isActive = pathname === item.href;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`group relative flex w-full items-center justify-center rounded-lg px-3 py-2.5 transition-all ${
+                        isActive
+                          ? 'bg-teal-50 text-teal-700 shadow-sm dark:bg-teal-500/20 dark:text-teal-300 dark:shadow-teal-500/10'
+                          : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300'
+                      }`}
+                      title={item.label}
+                    >
+                      {isActive && (
+                        <span className="absolute left-0 top-0 h-full w-1 rounded-r bg-teal-600 dark:bg-teal-400" />
+                      )}
+                      {item.icon}
+                    </Link>
+                  );
+                })}
+              </div>
+              <div className="my-4 border-t border-gray-200 dark:border-gray-700" />
+              {/* Developer Tools (Collapsed) */}
               <div className="space-y-0.5">
                 {devTools.map((item) => {
                   const isActive = pathname === item.href;

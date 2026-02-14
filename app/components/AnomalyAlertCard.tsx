@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { AlertCircle, AlertTriangle, Zap, Info, BarChart3 } from 'lucide-react';
 
 interface Anomaly {
   station_id: string;
@@ -52,22 +53,22 @@ export default function AnomalyAlertCard({ hoursBack = 24, maxAlerts = 5 }: Anom
 
   const getSeverityColor = (severity: string): string => {
     const colors: Record<string, string> = {
-      critical: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800',
-      very_high: 'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-800',
-      high: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800',
-      moderate: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800',
+      critical: 'bg-gradient-to-br from-red-500/20 to-red-600/10 text-red-100 border-red-500/30',
+      very_high: 'bg-gradient-to-br from-orange-500/20 to-orange-600/10 text-orange-100 border-orange-500/30',
+      high: 'bg-gradient-to-br from-yellow-500/20 to-yellow-600/10 text-yellow-100 border-yellow-500/30',
+      moderate: 'bg-gradient-to-br from-blue-500/20 to-blue-600/10 text-blue-100 border-blue-500/30',
     };
-    return colors[severity] || 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700';
+    return colors[severity] || 'bg-gradient-to-br from-slate-700/50 to-slate-800/50 text-slate-300 border-slate-600/50';
   };
 
-  const getSeverityIcon = (severity: string): string => {
-    const icons: Record<string, string> = {
-      critical: '🚨',
-      very_high: '⚠️',
-      high: '⚡',
-      moderate: 'ℹ️',
+  const getSeverityIcon = (severity: string): React.ReactNode => {
+    const icons: Record<string, React.ReactNode> = {
+      critical: <AlertCircle className="h-6 w-6" />,
+      very_high: <AlertTriangle className="h-6 w-6" />,
+      high: <Zap className="h-6 w-6" />,
+      moderate: <Info className="h-6 w-6" />,
     };
-    return icons[severity] || '📊';
+    return icons[severity] || <BarChart3 className="h-6 w-6" />;
   };
 
   const getTimeAgo = (timestamp: string): string => {
@@ -86,7 +87,7 @@ export default function AnomalyAlertCard({ hoursBack = 24, maxAlerts = 5 }: Anom
 
   if (loading) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
+      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Anomaly Alerts</h3>
         </div>
@@ -98,31 +99,46 @@ export default function AnomalyAlertCard({ hoursBack = 24, maxAlerts = 5 }: Anom
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-      <div className="border-b border-gray-200 p-4 dark:border-gray-700">
+    <div className="h-full flex flex-col rounded-xl border border-slate-700/50 bg-gradient-to-br from-slate-800/50 to-slate-900/50 shadow-lg overflow-hidden">
+      <div className="border-b border-slate-700/50 bg-slate-800/30 p-5 flex-shrink-0">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Anomaly Alerts</h3>
-          <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-800 dark:bg-red-900/20 dark:text-red-400">
+          <div className="flex items-center gap-3">
+            <div className={`rounded-lg p-2.5 shadow-lg ${
+              anomalies.length > 0
+                ? 'bg-gradient-to-br from-red-500 to-red-600'
+                : 'bg-gradient-to-br from-green-500 to-green-600'
+            }`}>
+              <AlertTriangle className="h-5 w-5 text-white" />
+            </div>
+            <h3 className="text-lg font-bold text-white">Anomaly Alerts</h3>
+          </div>
+          <span className={`rounded-full px-3 py-1.5 text-xs font-bold shadow-sm ${
+            anomalies.length > 0
+              ? 'bg-gradient-to-r from-red-500 to-red-600 text-white'
+              : 'bg-gradient-to-r from-green-500 to-green-600 text-white'
+          }`}>
             {anomalies.length} active
           </span>
         </div>
       </div>
 
-      <div className="max-h-64 overflow-y-auto p-3">
+      <div className="flex-1 overflow-y-auto p-5 min-h-0">
         {error && (
-          <div className="rounded-lg bg-red-50 p-4 dark:bg-red-900/20">
-            <p className="text-sm text-red-800 dark:text-red-400">{error}</p>
+          <div className="rounded-lg bg-gradient-to-br from-red-500/20 to-red-600/10 p-4 border border-red-500/30">
+            <p className="text-sm font-semibold text-red-400">{error}</p>
           </div>
         )}
 
         {!error && anomalies.length === 0 && (
-          <div className="text-center py-4">
-            <svg className="mx-auto mb-2 h-10 w-10 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <p className="text-sm font-medium text-gray-900 dark:text-white">All Clear!</p>
-            <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-              No anomalies in last {hoursBack}h
+          <div className="text-center py-8">
+            <div className="mx-auto mb-4 h-16 w-16 rounded-full bg-gradient-to-br from-green-500/20 to-green-600/10 flex items-center justify-center border border-green-500/30">
+              <svg className="h-8 w-8 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <p className="text-base font-bold text-white mb-1">All Clear!</p>
+            <p className="text-sm text-slate-400">
+              No anomalies detected in last {hoursBack} hours
             </p>
           </div>
         )}
@@ -132,38 +148,45 @@ export default function AnomalyAlertCard({ hoursBack = 24, maxAlerts = 5 }: Anom
             {anomalies.map((anomaly, index) => (
               <div
                 key={index}
-                className={`rounded-lg border p-4 transition-all hover:shadow-md ${getSeverityColor(anomaly.severity)}`}
+                className={`rounded-lg border p-4 transition-all hover:shadow-lg backdrop-blur-sm ${getSeverityColor(anomaly.severity)}`}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-3">
-                    <span className="text-2xl">{getSeverityIcon(anomaly.severity)}</span>
+                    <div className={`rounded-lg p-2 shadow-sm ${
+                      anomaly.severity === 'critical' ? 'bg-gradient-to-br from-red-500 to-red-600' :
+                      anomaly.severity === 'very_high' ? 'bg-gradient-to-br from-orange-500 to-orange-600' :
+                      anomaly.severity === 'high' ? 'bg-gradient-to-br from-yellow-500 to-yellow-600' :
+                      'bg-gradient-to-br from-blue-500 to-blue-600'
+                    }`}>
+                      {getSeverityIcon(anomaly.severity)}
+                    </div>
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <h4 className="font-semibold text-sm">
+                        <h4 className="font-bold text-sm text-white">
                           {anomaly.station_name || anomaly.station_id}
                         </h4>
-                        <span className="rounded-full bg-white/50 px-2 py-0.5 text-xs font-medium dark:bg-black/20">
+                        <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-bold backdrop-blur-sm border border-white/20">
                           {anomaly.severity.toUpperCase()}
                         </span>
                       </div>
-                      <p className="text-sm mb-2">{anomaly.alert_message}</p>
-                      <div className="grid grid-cols-3 gap-2 text-xs">
-                        <div>
-                          <span className="opacity-75">Current:</span>
-                          <strong className="ml-1">{Math.round(anomaly.current_aqi)}</strong>
+                      <p className="text-sm mb-3 text-slate-200">{anomaly.alert_message}</p>
+                      <div className="grid grid-cols-3 gap-3 text-xs">
+                        <div className="rounded-lg bg-black/20 px-2 py-1.5 backdrop-blur-sm border border-white/10">
+                          <span className="text-slate-400 block mb-0.5">Current</span>
+                          <strong className="text-white font-bold text-sm">{Math.round(anomaly.current_aqi)}</strong>
                         </div>
-                        <div>
-                          <span className="opacity-75">Expected:</span>
-                          <strong className="ml-1">{Math.round(anomaly.expected_aqi)}</strong>
+                        <div className="rounded-lg bg-black/20 px-2 py-1.5 backdrop-blur-sm border border-white/10">
+                          <span className="text-slate-400 block mb-0.5">Expected</span>
+                          <strong className="text-white font-bold text-sm">{Math.round(anomaly.expected_aqi)}</strong>
                         </div>
-                        <div>
-                          <span className="opacity-75">Z-score:</span>
-                          <strong className="ml-1">{anomaly.zscore.toFixed(1)}σ</strong>
+                        <div className="rounded-lg bg-black/20 px-2 py-1.5 backdrop-blur-sm border border-white/10">
+                          <span className="text-slate-400 block mb-0.5">Z-score</span>
+                          <strong className="text-white font-bold text-sm">{anomaly.zscore.toFixed(1)}σ</strong>
                         </div>
                       </div>
                     </div>
                   </div>
-                  <span className="text-xs opacity-75 whitespace-nowrap ml-2">
+                  <span className="text-xs text-slate-400 whitespace-nowrap ml-2 font-medium">
                     {getTimeAgo(anomaly.timestamp)}
                   </span>
                 </div>
@@ -182,14 +205,14 @@ export default function AnomalyAlertCard({ hoursBack = 24, maxAlerts = 5 }: Anom
       </div>
 
       {anomalies.length > 0 && (
-        <div className="border-t border-gray-200 p-3 dark:border-gray-700">
+        <div className="border-t border-slate-700/50 bg-slate-800/20 p-4 flex-shrink-0">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-gray-600 dark:text-gray-400">
+            <span className="text-slate-400 font-medium">
               Last updated: {new Date().toLocaleTimeString()}
             </span>
             <button
               onClick={fetchAnomalies}
-              className="rounded px-3 py-1 text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20"
+              className="rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-1.5 text-white font-semibold hover:from-blue-600 hover:to-blue-700 shadow-sm transition-all"
             >
               Refresh
             </button>

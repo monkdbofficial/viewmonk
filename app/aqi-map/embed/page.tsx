@@ -130,7 +130,6 @@ export default function AQIMapEmbedPage() {
       {/* Trend Modal */}
       {modalStation && (
         <AQITrendModal
-          isOpen={!!modalStation}
           onClose={() => setModalStation(null)}
           stationId={modalStation.stationId}
           stationName={modalStation.stationName}
