@@ -367,10 +367,6 @@ export default function ConnectionManager() {
                   </li>
                   <li className="flex gap-2">
                     <span className="text-blue-600">•</span>
-                    <span>Create users with <strong>"Create New MonkDB User"</strong> button</span>
-                  </li>
-                  <li className="flex gap-2">
-                    <span className="text-blue-600">•</span>
                     <span>Enable SSL/TLS for production connections</span>
                   </li>
                   <li className="flex gap-2">

@@ -188,7 +188,10 @@ export interface ValidationResult {
   warnings: string[];
 }
 
-export function validateTableDesign(design: TableDesign): ValidationResult {
+export function validateTableDesign(
+  design: TableDesign,
+  existingTables?: Array<{ schema: string; name: string }>,
+): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -200,10 +203,17 @@ export function validateTableDesign(design: TableDesign): ValidationResult {
   // Validate table name
   if (!design.table_name || !design.table_name.trim()) {
     errors.push('Table name is required');
-  } else if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(design.table_name)) {
-    errors.push(
-      'Table name must start with a letter or underscore and contain only alphanumeric characters and underscores'
+  } else if (existingTables && existingTables.length > 0) {
+    const alreadyExists = existingTables.some(
+      t =>
+        t.schema.toLowerCase() === design.schema_name.toLowerCase() &&
+        t.name.toLowerCase() === design.table_name.trim().toLowerCase(),
     );
+    if (alreadyExists) {
+      warnings.push(
+        `Table "${design.schema_name}.${design.table_name}" already exists — this will fail if you create it`,
+      );
+    }
   }
 
   // Validate columns
@@ -211,14 +221,26 @@ export function validateTableDesign(design: TableDesign): ValidationResult {
     errors.push('At least one column is required');
   }
 
+  // Check for duplicate column names
+  const nameCount: Record<string, number> = {};
+  for (const col of design.columns) {
+    const n = col.name?.trim();
+    if (n && n.length > 0) {
+      const key = n.toLowerCase();
+      nameCount[key] = (nameCount[key] ?? 0) + 1;
+    }
+  }
+  const dupNames = Object.keys(nameCount).filter(k => nameCount[k] > 1);
+  if (dupNames.length > 0) {
+    errors.push(
+      `Duplicate column name${dupNames.length > 1 ? 's' : ''}: ${dupNames.join(', ')}`,
+    );
+  }
+
   design.columns.forEach((col, idx) => {
     const trimmedName = col.name?.trim() || '';
     if (!trimmedName) {
       errors.push(`Column ${idx + 1}: Column name is required`);
-    } else if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(trimmedName)) {
-      errors.push(
-        `Column "${trimmedName}": Column name must start with a letter or underscore and contain only alphanumeric characters and underscores`
-      );
     } else if (col.name !== trimmedName) {
       warnings.push(
         `Column "${col.name}": Column name has leading or trailing whitespace. It will be trimmed to "${trimmedName}"`
@@ -265,13 +287,6 @@ export function validateTableDesign(design: TableDesign): ValidationResult {
       warnings.push(`Column "${trimmedName}": No analyzer specified for FULLTEXT index, using default`);
     }
   });
-
-  // Check for duplicate column names (using trimmed names)
-  const columnNames = design.columns.map((col) => col.name.trim().toLowerCase());
-  const duplicates = columnNames.filter((name, idx) => columnNames.indexOf(name) !== idx);
-  if (duplicates.length > 0) {
-    errors.push(`Duplicate column names: ${[...new Set(duplicates)].join(', ')}`);
-  }
 
   // Validate primary key
   const primaryKeyColumns = design.columns.filter((col) =>

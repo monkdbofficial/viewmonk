@@ -37,11 +37,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // SECURITY: Rate limiting (100 requests per minute per IP)
+    // SECURITY: Rate limiting (300 requests per minute per IP)
+    // Skip for local/unknown clients (workbench running on localhost has no forwarded IP)
     const clientId = request.headers.get('x-forwarded-for') ||
                      request.headers.get('x-real-ip') ||
-                     'unknown';
-    if (!apiRateLimiter.check(`sql:${clientId}`)) {
+                     null;
+    if (clientId && !apiRateLimiter.check(`sql:${clientId}`)) {
       return NextResponse.json(
         { error: 'Rate limit exceeded. Please try again later.' },
         { status: 429 }

@@ -37,8 +37,8 @@ import { useToast } from './ToastContext';
 import { usePermissions } from '../hooks/usePermissions';
 import { useAccessibleSchemas } from '../hooks/useAccessibleSchemas';
 import { useSchema } from '../contexts/schema-context';
+import { useSavedViews } from '../lib/saved-views-context';
 import PermissionBadge from './common/PermissionBadge';
-import SchemaSelector from './common/SchemaSelector';
 import type { ColumnMetadata } from '../lib/monkdb-client';
 import dynamic from 'next/dynamic';
 
@@ -68,6 +68,7 @@ export default function SchemaViewer() {
   const { canWrite, canDelete, canCreate, role } = usePermissions();
   const { schemas, loading: schemasLoading, error: schemasError } = useAccessibleSchemas();
   const { activeSchema } = useSchema();
+  const { addRecentTable } = useSavedViews();
   const [expandedSchemas, setExpandedSchemas] = useState<Set<string>>(new Set());
   const [selectedTable, setSelectedTable] = useState<SelectedTable | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -207,6 +208,7 @@ export default function SchemaViewer() {
     setSelectedTable({ schema, name: tableName });
     setViewType('columns');
     setPreviewData(null);
+    addRecentTable(schema, tableName);
   };
 
   const loadDataPreview = async () => {
@@ -442,9 +444,7 @@ WHERE ${primaryKeyCol.column_name} = ?;
                 Schema Explorer
               </h2>
             </div>
-            {/* Enterprise: Schema Selector - shows only accessible schemas */}
-            <SchemaSelector />
-            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
               {activeConnection.name}
             </p>
           </div>

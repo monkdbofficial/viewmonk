@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Database, FolderOpen, Upload, Grid, List, Search, RefreshCw, Plus, Info, BookOpen, BarChart3, Trash2, MoreVertical, Trash, X, AlertTriangle, ChevronDown, Check, Wrench } from 'lucide-react';
+import { Database, FolderOpen, Upload, Grid, List, Search, RefreshCw, Plus, Info, BookOpen, BarChart3, Trash2, Trash, X, AlertTriangle, ChevronDown, Check, Wrench, HardDrive, Star, Files } from 'lucide-react';
 import { useActiveConnection } from '../lib/monkdb-context';
 import { BlobProvider, useBlobStorage } from '../lib/blob-context';
 import BlobUploader from './blob/BlobUploader';
@@ -11,7 +11,6 @@ import BlobFilters, { BlobFilters as BlobFiltersType } from './blob/BlobFilters'
 import CreateTableDialog from './blob/CreateTableDialog';
 import MigrateTableDialog from './blob/MigrateTableDialog';
 import AdvancedFeaturesDialog from './blob/AdvancedFeaturesDialog';
-import SchemaSelector from './common/SchemaSelector';
 
 function BlobStorageContent() {
   const router = useRouter();
@@ -53,11 +52,16 @@ function BlobStorageContent() {
     dateTo: null,
   });
   const [tableFeatures, setTableFeatures] = useState<Record<string, boolean>>({});
-  const [showTableMenu, setShowTableMenu] = useState<string | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState<string | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [showTableDropdown, setShowTableDropdown] = useState(false);
   const [tableSearchQuery, setTableSearchQuery] = useState('');
+
+  // Stats
+  const [tableStats, setTableStats] = useState<{ totalFiles: number; totalSize: number; favorites: number } | null>(null);
+  // Drag-and-drop
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dragCounter = useRef(0);
 
   // Check if table has enterprise features
   const checkTableFeatures = async (table: string): Promise<boolean> => {
@@ -93,71 +97,71 @@ function BlobStorageContent() {
   };
 
   // Load actual blob metadata tables from database
-  useEffect(() => {
-    const loadBlobTables = async () => {
-      if (!activeConnection) {
+  const loadBlobTables = useCallback(async () => {
+    if (!activeConnection) {
+      setTables([]);
+      return;
+    }
+
+    try {
+      console.log('[BlobStorage] Loading actual blob metadata tables from database...');
+
+      // Query to get all tables ending with _blob_metadata
+      const sql = `SELECT table_name FROM information_schema.tables WHERE table_schema = 'doc' AND table_name LIKE '%_blob_metadata'`;
+
+      const response = await fetch('/api/sql?t=' + Date.now(), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-monkdb-host': activeConnection.config.host,
+          'x-monkdb-port': activeConnection.config.port.toString(),
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        },
+        body: JSON.stringify({ stmt: sql }),
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => `HTTP ${response.status}`);
+        console.error('[BlobStorage] Failed to load tables:', response.status, errorText);
         setTables([]);
         return;
       }
 
-      try {
-        console.log('[BlobStorage] Loading actual blob metadata tables from database...');
+      const data = await response.json();
+      console.log('[BlobStorage] Tables query result:', data);
 
-        // Query to get all tables ending with _blob_metadata
-        const sql = `SELECT table_name FROM information_schema.tables WHERE table_schema = 'doc' AND table_name LIKE '%_blob_metadata'`;
+      // Extract base table names (remove _blob_metadata suffix)
+      const tableNames = (data.rows || [])
+        .map((row: any[]) => row[0]) // Get table_name from first column
+        .filter((name: string) => name.endsWith('_blob_metadata'))
+        .map((name: string) => name.replace('_blob_metadata', ''))
+        .sort();
 
-        const response = await fetch('/api/sql?t=' + Date.now(), {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-monkdb-host': activeConnection.config.host,
-            'x-monkdb-port': activeConnection.config.port.toString(),
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-          },
-          body: JSON.stringify({ stmt: sql }),
-          cache: 'no-store',
-        });
+      console.log('[BlobStorage] Found blob tables:', tableNames);
+      setTables(tableNames);
 
-        if (!response.ok) {
-          console.error('[BlobStorage] Failed to load tables');
-          setTables([]);
-          return;
-        }
-
-        const data = await response.json();
-        console.log('[BlobStorage] Tables query result:', data);
-
-        // Extract base table names (remove _blob_metadata suffix)
-        const tableNames = (data.rows || [])
-          .map((row: any[]) => row[0]) // Get table_name from first column
-          .filter((name: string) => name.endsWith('_blob_metadata'))
-          .map((name: string) => name.replace('_blob_metadata', ''))
-          .sort();
-
-        console.log('[BlobStorage] Found blob tables:', tableNames);
-        setTables(tableNames);
-
-        // Check which tables have enterprise features
-        const featuresMap: Record<string, boolean> = {};
-        for (const table of tableNames) {
-          featuresMap[table] = await checkTableFeatures(table);
-        }
-        setTableFeatures(featuresMap);
-        console.log('[BlobStorage] Table enterprise features:', featuresMap);
-
-        // Auto-select first table if none selected
-        if (tableNames.length > 0 && !currentTable) {
-          setCurrentTable(tableNames[0]);
-        }
-      } catch (error) {
-        console.error('[BlobStorage] Error loading tables:', error);
-        setTables([]);
+      // Check which tables have enterprise features
+      const featuresMap: Record<string, boolean> = {};
+      for (const table of tableNames) {
+        featuresMap[table] = await checkTableFeatures(table);
       }
-    };
+      setTableFeatures(featuresMap);
+      console.log('[BlobStorage] Table enterprise features:', featuresMap);
 
-    loadBlobTables();
+      // Auto-select first table if none selected, using functional update to avoid
+      // needing currentTable in the dependency array (which would cause re-fetch loops)
+      setCurrentTable(prev => prev || tableNames[0] || null);
+    } catch (error) {
+      console.error('[BlobStorage] Error loading tables:', error);
+      setTables([]);
+    }
   }, [activeConnection]);
+
+  useEffect(() => {
+    loadBlobTables();
+  }, [loadBlobTables]);
 
   // Load blobs when table or folder changes
   useEffect(() => {
@@ -165,6 +169,55 @@ function BlobStorageContent() {
       loadBlobs(currentTable, currentFolder || undefined);
     }
   }, [currentTable, currentFolder, loadBlobs]);
+
+  // Fetch table stats whenever table changes
+  useEffect(() => {
+    if (!currentTable || !activeConnection) { setTableStats(null); return; }
+    const fetchStats = async () => {
+      try {
+        const metaTable = `${currentTable}_blob_metadata`;
+        const sql = `SELECT COUNT(*) as total, COALESCE(SUM(file_size), 0) as size, COUNT(CASE WHEN is_favorite = true THEN 1 END) as favs FROM "${metaTable}" WHERE deleted_at IS NULL`;
+        const res = await fetch('/api/sql?t=' + Date.now(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-monkdb-host': activeConnection.config.host, 'x-monkdb-port': activeConnection.config.port.toString() },
+          body: JSON.stringify({ stmt: sql }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const row = data.rows?.[0];
+          if (row) setTableStats({ totalFiles: row[0] ?? 0, totalSize: row[1] ?? 0, favorites: row[2] ?? 0 });
+        }
+      } catch { /* non-fatal */ }
+    };
+    fetchStats();
+  }, [currentTable, activeConnection, blobs]); // re-fetch after blobs change (upload/delete)
+
+  // Drag-and-drop handlers
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current++;
+    if (e.dataTransfer.types.includes('Files')) setIsDragOver(true);
+  }, []);
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current--;
+    if (dragCounter.current === 0) setIsDragOver(false);
+  }, []);
+  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); }, []);
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current = 0;
+    setIsDragOver(false);
+    if (currentTable && e.dataTransfer.files.length > 0) setShowUploader(true);
+  }, [currentTable]);
+
+  const formatBytes = (bytes: number): string => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  };
 
   const handleTableSelect = (table: string) => {
     setCurrentTable(table);
@@ -412,366 +465,341 @@ function BlobStorageContent() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* Fixed Header */}
-      <div className="border-b border-gray-200 bg-gradient-to-r from-purple-50 to-white px-6 py-4 dark:border-gray-700 dark:from-gray-800 dark:to-gray-800">
+    <div className="flex h-full flex-col overflow-hidden bg-[#0D1B2A]">
+      {/* ── Header ── */}
+      <div className="border-b border-white/5 bg-[#0A1929] px-6 py-4">
         <div className="flex items-center justify-between">
+          {/* Left: title + breadcrumb */}
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-100 dark:bg-purple-900/30">
-              <FolderOpen className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-600/20 ring-1 ring-purple-500/30">
+              <FolderOpen className="h-5 w-5 text-purple-400" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-                BLOB Storage
-              </h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                {currentTable ? `Table: ${currentTable}` : 'Select a table to get started'}
+              <h1 className="text-base font-semibold text-white leading-tight">BLOB Storage</h1>
+              <p className="text-xs leading-tight">
+                {currentTable ? (
+                  <span className="flex items-center gap-1">
+                    <span className="text-white/30">Table</span>
+                    <span className="text-white/30">/</span>
+                    <span className="text-purple-400 font-medium">{currentTable}</span>
+                  </span>
+                ) : <span className="text-white/30">Select a table to get started</span>}
               </p>
             </div>
           </div>
 
+          {/* Right: actions */}
           <div className="flex items-center gap-2">
-            {/* Schema Selector */}
-            <SchemaSelector />
-
-            <button
-              onClick={() => setShowSupportedTypesModal(true)}
-              className="rounded-lg border border-gray-300 bg-white p-2 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:hover:bg-gray-700"
-              title="Supported File Types"
-            >
-              <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-            </button>
-
-            <button
-              onClick={() => setShowSqlGuideModal(true)}
-              className="rounded-lg border border-gray-300 bg-white p-2 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:hover:bg-gray-700"
-              title="SQL Guide - Create Tables Directly"
-            >
-              <BookOpen className="h-4 w-4 text-green-600 dark:text-green-400" />
-            </button>
-
-            {currentTable && (
+            {/* Secondary actions */}
+            <div className="flex items-center gap-1 rounded-lg bg-white/5 p-1 ring-1 ring-white/10">
               <button
-                onClick={() => setShowMigrateDialog(true)}
-                className="rounded-lg border border-orange-300 bg-orange-50 p-2 hover:bg-orange-100 dark:border-orange-700 dark:bg-orange-900/20 dark:hover:bg-orange-900/30"
-                title="Upgrade Table - Add Enterprise Features"
+                onClick={() => setShowSqlGuideModal(true)}
+                className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-white/50 hover:bg-white/10 hover:text-white transition-colors"
               >
-                <Database className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                <BookOpen className="h-3.5 w-3.5" />
+                SQL Guide
               </button>
-            )}
-
-            {currentTable && (
-              <>
+              <button
+                onClick={() => setShowSupportedTypesModal(true)}
+                className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-white/50 hover:bg-white/10 hover:text-white transition-colors"
+              >
+                <Info className="h-3.5 w-3.5" />
+                File Types
+              </button>
+              {currentTable && (
                 <button
                   onClick={() => router.push(`/blob-analytics?table=${currentTable}`)}
-                  className="rounded-lg border border-gray-300 bg-white p-2 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:hover:bg-gray-700"
-                  title="Storage Analytics - View Comprehensive Dashboard"
+                  className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-white/50 hover:bg-white/10 hover:text-white transition-colors"
                 >
-                  <BarChart3 className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                  <BarChart3 className="h-3.5 w-3.5" />
+                  Analytics
                 </button>
+              )}
+            </div>
 
-                <button
-                  onClick={() => setShowTrashed(!showTrashed)}
-                  className={`rounded-lg border p-2 ${
-                    showTrashed
-                      ? 'border-red-300 bg-red-50 text-red-600 dark:border-red-700 dark:bg-red-900/20 dark:text-red-400'
-                      : 'border-gray-300 bg-white hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:hover:bg-gray-700'
-                  }`}
-                  title={showTrashed ? 'Show Active Files' : 'Show Trash'}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </>
-            )}
+            {/* Divider */}
+            {currentTable && <div className="h-6 w-px bg-white/10" />}
 
+            {/* Table-level actions */}
             {currentTable && (
               <>
                 <button
-                  onClick={() => setShowUploader(true)}
-                  className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600"
+                  onClick={() => setShowTrashed(!showTrashed)}
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    showTrashed
+                      ? 'border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20'
+                      : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white'
+                  }`}
                 >
-                  <Upload className="h-4 w-4" />
-                  Upload Files
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {showTrashed ? 'Active Files' : 'Trash'}
                 </button>
 
                 <button
-                  onClick={() => loadBlobs(currentTable, currentFolder || undefined)}
-                  className="rounded-lg border border-gray-300 bg-white p-2 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:hover:bg-gray-700"
-                  title="Refresh"
+                  onClick={() => setShowMigrateDialog(true)}
+                  className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/50 hover:bg-white/10 hover:text-white transition-colors"
                 >
-                  <RefreshCw className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                  <Wrench className="h-3.5 w-3.5" />
+                  Manage
                 </button>
 
                 <button
-                  onClick={() => setShowAdvancedDialog(true)}
-                  className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                  title="Advanced Features"
+                  onClick={async () => {
+                    await loadBlobTables();
+                    if (currentTable) loadBlobs(currentTable, currentFolder || undefined);
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/50 hover:bg-white/10 hover:text-white transition-colors"
                 >
-                  <Wrench className="h-4 w-4" />
-                  Advanced
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Refresh
                 </button>
               </>
             )}
+
+            <button
+              onClick={() => setShowCreateTableDialog(true)}
+              className="flex items-center gap-2 rounded-lg border border-dashed border-purple-500/40 bg-purple-600/10 px-3 py-1.5 text-xs font-medium text-purple-400 hover:bg-purple-600/20 hover:border-purple-400 transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New Table
+            </button>
           </div>
         </div>
 
-        {/* Table Selector - Dropdown with Search */}
+        {/* ── Toolbar ── */}
         <div className="mt-4 flex items-center gap-2">
-          <div className="relative flex-1 max-w-md">
+          {/* Table selector */}
+          <div className="relative w-52 shrink-0">
             <button
-              onClick={() => setShowTableDropdown(!showTableDropdown)}
-              className="flex w-full items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-900 shadow-sm transition-all duration-200 hover:border-purple-300 hover:shadow-md dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:hover:border-purple-600"
+              onClick={() => tables.length === 0 ? setShowCreateTableDialog(true) : setShowTableDropdown(!showTableDropdown)}
+              className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm transition-all ${
+                showTableDropdown
+                  ? 'border-purple-500/60 bg-[#0D1B2A] ring-2 ring-purple-500/20'
+                  : 'border-white/10 bg-[#0D1B2A] hover:border-white/20'
+              }`}
             >
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-100 dark:bg-purple-900/30">
-                  <Database className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                </div>
-                <span className="font-semibold">{currentTable || 'Select a table'}</span>
-                {currentTable && tableFeatures[currentTable] && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-green-100 to-emerald-100 px-2 py-0.5 text-xs font-semibold text-green-700 shadow-sm dark:from-green-900/40 dark:to-emerald-900/40 dark:text-green-300"
-                    title="Enterprise features enabled">
-                    ✓ Pro
-                  </span>
-                )}
-                {currentTable && tableFeatures[currentTable] === false && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-orange-100 to-amber-100 px-2 py-0.5 text-xs font-semibold text-orange-700 shadow-sm dark:from-orange-900/40 dark:to-amber-900/40 dark:text-orange-300"
-                    title="Legacy table - Upgrade available">
-                    ⚡ Legacy
-                  </span>
-                )}
+              <div className="flex items-center gap-2 min-w-0">
+                <Database className="h-3.5 w-3.5 shrink-0 text-purple-400" />
+                <span className="truncate text-sm font-medium text-white">
+                  {tables.length === 0 ? 'Create a table' : (currentTable || 'Select table')}
+                </span>
               </div>
-              <ChevronDown className={`h-4 w-4 text-gray-500 transition-transform duration-300 ${showTableDropdown ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`h-4 w-4 shrink-0 text-white/30 transition-transform ${showTableDropdown ? 'rotate-180' : ''}`} />
             </button>
 
-            {/* Dropdown Panel */}
+            {/* Dropdown */}
             {showTableDropdown && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setShowTableDropdown(false)} />
-                <div className="absolute left-0 top-full z-20 mt-2 w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
-                  style={{ animation: 'slideDown 0.2s ease-out' }}>
-                  {/* Search Input */}
-                  <div className="border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white p-3 dark:border-gray-700 dark:from-gray-800 dark:to-gray-800">
+                <div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-xl border border-white/10 bg-[#0A1929] shadow-2xl shadow-black/60">
+                  <div className="p-2 border-b border-white/5">
                     <div className="relative">
-                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+                      <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/30" />
                       <input
                         type="text"
                         value={tableSearchQuery}
                         onChange={(e) => setTableSearchQuery(e.target.value)}
                         placeholder="Search tables..."
-                        className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-400 shadow-sm transition-all duration-200 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-500 dark:focus:border-purple-500 dark:focus:ring-purple-500/30"
+                        className="w-full rounded-lg border border-white/10 bg-[#0D1B2A] py-1.5 pl-8 pr-3 text-sm text-white placeholder-white/25 focus:border-purple-500/60 focus:outline-none focus:ring-1 focus:ring-purple-500/20"
                         autoFocus
                       />
                     </div>
                   </div>
 
-                  {/* Table List */}
-                  <div className="max-h-72 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent dark:scrollbar-thumb-gray-600">
-                    {filteredTables.length > 0 ? (
-                      <>
-                        {filteredTables.map((table, index) => (
-                          <div key={table} className="relative">
-                            <div
-                              className={`group flex w-full items-center justify-between border-b border-gray-100 px-4 py-3 text-sm transition-all duration-150 hover:bg-gradient-to-r dark:border-gray-700/50 ${
-                                currentTable === table
-                                  ? 'bg-gradient-to-r from-purple-50 to-purple-50/30 text-purple-900 dark:from-purple-900/30 dark:to-purple-900/10 dark:text-purple-200'
-                                  : 'text-gray-700 hover:from-gray-50 hover:to-white dark:text-gray-300 dark:hover:from-gray-700/50 dark:hover:to-gray-800'
-                              }`}
-                            >
-                              <button
-                                onClick={() => handleTableSelect(table)}
-                                className="flex flex-1 items-center gap-3 text-left"
-                              >
-                                <div className={`flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-200 ${
-                                  currentTable === table
-                                    ? 'bg-purple-200 dark:bg-purple-800/50'
-                                    : 'bg-gray-100 group-hover:bg-purple-100 dark:bg-gray-700 dark:group-hover:bg-purple-900/30'
-                                }`}>
-                                  <Database className={`h-4 w-4 ${
-                                    currentTable === table
-                                      ? 'text-purple-700 dark:text-purple-300'
-                                      : 'text-gray-500 group-hover:text-purple-600 dark:text-gray-400 dark:group-hover:text-purple-400'
-                                  }`} />
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="font-semibold leading-tight">{table}</span>
-                                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                                    {tableFeatures[table] ? 'Enterprise' : 'Legacy'}
-                                  </span>
-                                </div>
-                                {tableFeatures[table] && (
-                                  <span className="inline-flex items-center rounded-md bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-300"
-                                    title="Enterprise features enabled">
-                                    ✓
-                                  </span>
-                                )}
-                                {tableFeatures[table] === false && (
-                                  <span className="inline-flex items-center rounded-md bg-orange-100 px-1.5 py-0.5 text-xs font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-300"
-                                    title="Legacy table">
-                                    ⚡
-                                  </span>
-                                )}
-                              </button>
-                              <div className="flex items-center gap-2 pl-2">
-                                {currentTable === table && (
-                                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-purple-600 dark:bg-purple-500">
-                                    <Check className="h-3.5 w-3.5 text-white" />
-                                  </div>
-                                )}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setShowTableMenu(showTableMenu === table ? null : table);
-                                  }}
-                                  className="rounded-lg p-1.5 transition-colors duration-150 hover:bg-gray-200 dark:hover:bg-gray-600"
-                                  title="More actions"
-                                >
-                                  <MoreVertical className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* Table Actions Menu */}
-                            {showTableMenu === table && (
-                              <>
-                                <div className="fixed inset-0 z-30" onClick={() => setShowTableMenu(null)} />
-                                <div className="absolute right-2 top-full z-40 mt-1 w-48 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
-                                  style={{ animation: 'slideDown 0.15s ease-out' }}>
-                                  <button
-                                    onClick={() => {
-                                      setShowDeleteDialog(table);
-                                      setDeleteConfirmText('');
-                                      setShowTableMenu(null);
-                                      setShowTableDropdown(false);
-                                    }}
-                                    className="flex w-full items-center gap-3 px-4 py-2.5 text-sm font-medium text-red-600 transition-colors duration-150 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
-                                  >
-                                    <Trash className="h-4 w-4" />
-                                    Delete Table
-                                  </button>
-                                </div>
-                              </>
-                            )}
+                  <div className="max-h-64 overflow-y-auto py-1">
+                    {filteredTables.length > 0 ? filteredTables.map((table) => (
+                      <div key={table} className={`group mx-1 flex items-center justify-between rounded-lg px-3 py-2 transition-colors ${
+                        currentTable === table ? 'bg-purple-600/15' : 'hover:bg-white/5'
+                      }`}>
+                        <button
+                          onClick={() => handleTableSelect(table)}
+                          className="flex flex-1 items-center gap-2.5 text-left min-w-0"
+                        >
+                          <Database className={`h-4 w-4 shrink-0 ${currentTable === table ? 'text-purple-400' : 'text-white/30'}`} />
+                          <div className="min-w-0">
+                            <p className={`truncate text-sm font-medium ${currentTable === table ? 'text-purple-300' : 'text-white/80'}`}>{table}</p>
+                            <p className="text-[10px] text-white/25">{tableFeatures[table] ? 'Enterprise' : 'Standard'}</p>
                           </div>
-                        ))}
-                      </>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center px-4 py-12">
-                        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700">
-                          <Search className="h-8 w-8 text-gray-400 dark:text-gray-500" />
-                        </div>
-                        <p className="mt-4 text-sm font-medium text-gray-600 dark:text-gray-400">No tables found</p>
-                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-500">
-                          No tables match "{tableSearchQuery}"
+                          {tableFeatures[table] && (
+                            <span className="ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20">Pro</span>
+                          )}
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowDeleteDialog(table);
+                            setDeleteConfirmText('');
+                            setShowTableDropdown(false);
+                          }}
+                          className="ml-2 shrink-0 rounded p-1 text-white/20 opacity-0 group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-400 transition-all"
+                          title="Delete table"
+                        >
+                          <Trash className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )) : (
+                      <div className="px-3 py-6 text-center">
+                        <p className="text-sm text-white/30">
+                          {tableSearchQuery ? `No results for "${tableSearchQuery}"` : 'No tables yet'}
                         </p>
                       </div>
                     )}
                   </div>
 
-                  {/* Create New Table Button */}
-                  <div className="border-t border-gray-200 bg-gradient-to-r from-gray-50 to-white p-3 dark:border-gray-700 dark:from-gray-800 dark:to-gray-800">
+                  <div className="border-t border-white/5 p-2">
                     <button
-                      onClick={() => {
-                        setShowCreateTableDialog(true);
-                        setShowTableDropdown(false);
-                      }}
-                      className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition-all duration-200 hover:border-purple-400 hover:bg-purple-50 hover:text-purple-700 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-purple-500 dark:hover:bg-purple-900/20 dark:hover:text-purple-300"
+                      onClick={() => { setShowCreateTableDialog(true); setShowTableDropdown(false); }}
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-purple-400 hover:bg-purple-600/10 transition-colors"
                     >
                       <Plus className="h-4 w-4" />
-                      Create New Table
+                      New table
                     </button>
                   </div>
                 </div>
-
-                <style jsx>{`
-                  @keyframes slideDown {
-                    from {
-                      opacity: 0;
-                      transform: translateY(-10px);
-                    }
-                    to {
-                      opacity: 1;
-                      transform: translateY(0);
-                    }
-                  }
-                `}</style>
               </>
             )}
           </div>
+
+          {/* File search */}
+          {currentTable && (
+            <>
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/30" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search files..."
+                  className="w-full rounded-lg border border-white/10 bg-[#0D1B2A] py-2 pl-9 pr-4 text-sm text-white placeholder-white/25 focus:border-purple-500/60 focus:outline-none focus:ring-1 focus:ring-purple-500/20"
+                />
+              </div>
+
+              {/* Sort */}
+              <select
+                value={`${sortBy}-${sortOrder}`}
+                onChange={(e) => {
+                  const [by, order] = e.target.value.split('-') as ['name' | 'size' | 'date', 'asc' | 'desc'];
+                  setSortBy(by);
+                  setSortOrder(order);
+                }}
+                className="rounded-lg border border-white/10 bg-[#0D1B2A] px-3 py-2 text-sm text-white/70 focus:border-purple-500/60 focus:outline-none focus:ring-1 focus:ring-purple-500/20"
+              >
+                <option value="date-desc">Newest First</option>
+                <option value="date-asc">Oldest First</option>
+                <option value="name-asc">Name A–Z</option>
+                <option value="name-desc">Name Z–A</option>
+                <option value="size-asc">Size ↑</option>
+                <option value="size-desc">Size ↓</option>
+              </select>
+
+              {/* View toggle */}
+              <div className="flex items-center rounded-lg border border-white/10 bg-[#0D1B2A] p-1">
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={`rounded p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-purple-600 text-white' : 'text-white/30 hover:text-white/70'}`}
+                  title="Grid View"
+                >
+                  <Grid className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`rounded p-1.5 transition-colors ${viewMode === 'list' ? 'bg-purple-600 text-white' : 'text-white/30 hover:text-white/70'}`}
+                  title="List View"
+                >
+                  <List className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Upload — primary CTA */}
+              <button
+                onClick={() => setShowUploader(true)}
+                className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-500 active:bg-purple-700 transition-colors shadow-lg shadow-purple-900/40"
+              >
+                <Upload className="h-4 w-4" />
+                Upload Files
+              </button>
+            </>
+          )}
         </div>
-
-        {/* Search and View Controls */}
-        {currentTable && (
-          <div className="mt-4 flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search files..."
-                className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-500 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
-              />
-            </div>
-
-            {/* Sort Dropdown */}
-            <select
-              value={`${sortBy}-${sortOrder}`}
-              onChange={(e) => {
-                const [by, order] = e.target.value.split('-') as ['name' | 'size' | 'date', 'asc' | 'desc'];
-                setSortBy(by);
-                setSortOrder(order);
-              }}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-            >
-              <option value="date-desc">📅 Newest First</option>
-              <option value="date-asc">📅 Oldest First</option>
-              <option value="name-asc">🔤 Name (A-Z)</option>
-              <option value="name-desc">🔤 Name (Z-A)</option>
-              <option value="size-asc">📊 Size (Small-Large)</option>
-              <option value="size-desc">📊 Size (Large-Small)</option>
-            </select>
-
-            <div className="flex items-center gap-1 rounded-lg border border-gray-300 bg-white p-1 dark:border-gray-600 dark:bg-gray-800">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`rounded p-1.5 ${
-                  viewMode === 'grid'
-                    ? 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400'
-                    : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'
-                }`}
-                title="Grid View"
-              >
-                <Grid className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`rounded p-1.5 ${
-                  viewMode === 'list'
-                    ? 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400'
-                    : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'
-                }`}
-                title="List View"
-              >
-                <List className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
+      {/* ── Stats Bar ── */}
+      {currentTable && tableStats !== null && (
+        <div className="border-b border-white/5 bg-[#0A1929]/60 px-6 py-2.5">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <Files className="h-3.5 w-3.5 text-white/25" />
+              <span className="text-xs text-white/40">Total files</span>
+              <span className="text-xs font-semibold text-white">{tableStats.totalFiles.toLocaleString()}</span>
+            </div>
+            <div className="h-3 w-px bg-white/10" />
+            <div className="flex items-center gap-2">
+              <HardDrive className="h-3.5 w-3.5 text-white/25" />
+              <span className="text-xs text-white/40">Storage used</span>
+              <span className="text-xs font-semibold text-white">{formatBytes(tableStats.totalSize)}</span>
+            </div>
+            <div className="h-3 w-px bg-white/10" />
+            <div className="flex items-center gap-2">
+              <Star className="h-3.5 w-3.5 text-white/25" />
+              <span className="text-xs text-white/40">Favourites</span>
+              <span className="text-xs font-semibold text-white">{tableStats.favorites.toLocaleString()}</span>
+            </div>
+            <div className="ml-auto text-[10px] text-white/20">
+              Drag &amp; drop files anywhere to upload
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Content */}
-      <div className="flex-1 overflow-auto p-6">
+      <div
+        className="relative flex-1 overflow-auto bg-[#0D1B2A] p-6"
+        onDragEnter={currentTable ? handleDragEnter : undefined}
+        onDragLeave={currentTable ? handleDragLeave : undefined}
+        onDragOver={currentTable ? handleDragOver : undefined}
+        onDrop={currentTable ? handleDrop : undefined}
+      >
+        {/* Drag-and-drop overlay */}
+        {isDragOver && (
+          <div className="pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-purple-500 bg-purple-600/10 backdrop-blur-sm">
+            <Upload className="h-14 w-14 text-purple-400" />
+            <p className="mt-4 text-xl font-semibold text-purple-300">Drop files to upload</p>
+            <p className="mt-1 text-sm text-purple-400/70">to table: {currentTable}</p>
+          </div>
+        )}
+
         {!currentTable ? (
           <div className="flex h-full items-center justify-center">
-            <div className="text-center">
-              <FolderOpen className="mx-auto h-16 w-16 text-gray-400" />
-              <h3 className="mt-4 text-lg font-medium text-gray-900 dark:text-white">
-                Select a Table
-              </h3>
-              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                Choose a table above or create a new one to manage BLOBs
-              </p>
-            </div>
+            {tables.length === 0 ? (
+              <div className="text-center">
+                <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-purple-600/10 ring-1 ring-purple-500/20">
+                  <Database className="h-12 w-12 text-purple-400" />
+                </div>
+                <h3 className="mt-6 text-xl font-bold text-white">
+                  No Blob Tables Yet
+                </h3>
+                <p className="mt-2 text-sm text-white/40">
+                  Create your first blob table to start storing files.
+                </p>
+                <button
+                  onClick={() => setShowCreateTableDialog(true)}
+                  className="mt-6 flex items-center gap-2 mx-auto rounded-lg bg-purple-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600"
+                >
+                  <Plus className="h-4 w-4" />
+                  Create your first table
+                </button>
+              </div>
+            ) : (
+              <div className="text-center">
+                <FolderOpen className="mx-auto h-16 w-16 text-white/20" />
+                <h3 className="mt-4 text-lg font-medium text-white">
+                  Select a Table
+                </h3>
+                <p className="mt-2 text-sm text-white/40">
+                  Choose a table above to manage your BLOBs
+                </p>
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-4">

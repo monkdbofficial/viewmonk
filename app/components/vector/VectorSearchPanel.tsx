@@ -1,12 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Search, Loader2, Download, Copy, Check, FileCode } from 'lucide-react';
+import { Search, Loader2, Download, Copy, Check } from 'lucide-react';
 import { VectorCollection } from '@/app/hooks/useVectorCollections';
 import { useMonkDBClient } from '@/app/lib/monkdb-context';
 import { useToast } from '@/app/components/ToastContext';
-import PythonScriptGenerator from './PythonScriptGenerator';
-import EmbeddingHelper from './EmbeddingHelper';
 
 interface VectorSearchPanelProps {
   collection: VectorCollection | null;
@@ -32,8 +30,6 @@ export default function VectorSearchPanel({
   const client = useMonkDBClient();
   const toast = useToast();
 
-  const [searchMode, setSearchMode] = useState<'python' | 'manual' | 'api'>('python');
-  const [showEmbeddingHelper, setShowEmbeddingHelper] = useState(false);
   const [manualVector, setManualVector] = useState('');
   const [searchType, setSearchType] = useState<'knn' | 'similarity'>('knn');
   const [topK, setTopK] = useState(5);
@@ -172,140 +168,73 @@ export default function VectorSearchPanel({
 
   return (
     <div className="space-y-4">
-      {/* Search Mode Tabs */}
-      <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
-        <button
-          onClick={() => setSearchMode('python')}
-          className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${
-            searchMode === 'python'
-              ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
-              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
-          }`}
-        >
-          <FileCode className="w-4 h-4" />
-          Python Script
-        </button>
-        <button
-          onClick={() => setSearchMode('manual')}
-          className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-            searchMode === 'manual'
-              ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
-              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
-          }`}
-        >
-          Manual Search
-        </button>
-        <button
-          onClick={() => setSearchMode('api')}
-          className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-            searchMode === 'api'
-              ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
-              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
-          }`}
-        >
-          API Examples
-        </button>
+      {/* Vector Input */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Vector Array ({collection.dimension} dimensions)
+        </label>
+        <textarea
+          value={manualVector}
+          onChange={(e) => setManualVector(e.target.value)}
+          placeholder={`[0.1, 0.2, 0.3, ... ${collection.dimension} numbers total]`}
+          className="w-full h-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+          disabled={searching}
+        />
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          Paste a JSON array of {collection.dimension} numbers
+        </p>
       </div>
 
-      {/* Python Script Mode (Official MonkDB Workflow) */}
-      {searchMode === 'python' && (
-        <div className="space-y-4">
-          <PythonScriptGenerator collection={collection} />
-        </div>
-      )}
-
-      {/* Manual Search Mode - For pasting pre-computed embeddings */}
-      {searchMode === 'manual' && (
-        <div className="space-y-3">
-          {/* Info Banner */}
-          <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-700 rounded-lg p-3">
-            <div className="text-xs text-blue-800 dark:text-blue-200">
-              <p className="font-semibold mb-1">Paste Pre-computed Embeddings</p>
-              <p>
-                After generating embeddings using the Python script or external APIs, paste the vector array below to search.
-              </p>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Vector Array ({collection.dimension} dimensions)
-            </label>
-            <textarea
-              value={manualVector}
-              onChange={(e) => setManualVector(e.target.value)}
-              placeholder={`[0.1, 0.2, 0.3, ... ${collection.dimension} numbers total]`}
-              className="w-full h-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-              disabled={searching}
-            />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Expected format: JSON array of {collection.dimension} numbers
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* API Examples Mode - External embedding generation */}
-      {searchMode === 'api' && (
-        <div className="space-y-4">
-          <EmbeddingHelper />
-        </div>
-      )}
-
-      {/* Search Options - Only show in Manual mode */}
-      {searchMode === 'manual' && (
-        <>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Search Type
-              </label>
-              <select
-                value={searchType}
-                onChange={(e) => setSearchType(e.target.value as 'knn' | 'similarity')}
-                disabled={searching}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="knn">KNN Match</option>
-                <option value="similarity">Vector Similarity</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Top K
-              </label>
-              <input
-                type="number"
-                value={topK}
-                onChange={(e) => setTopK(parseInt(e.target.value) || 5)}
-                min="1"
-                max="100"
-                disabled={searching}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-          </div>
-
-          {/* Search Button */}
-          <button
-            onClick={handleSearch}
-            disabled={searching || !manualVector.trim()}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      {/* Search Options */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Search Type
+          </label>
+          <select
+            value={searchType}
+            onChange={(e) => setSearchType(e.target.value as 'knn' | 'similarity')}
+            disabled={searching}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
-            {searching ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Searching...
-              </>
-            ) : (
-              <>
-                <Search className="w-4 h-4" />
-                Search
-              </>
-            )}
-          </button>
-        </>
-      )}
+            <option value="knn">KNN Match</option>
+            <option value="similarity">Vector Similarity</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Top K
+          </label>
+          <input
+            type="number"
+            value={topK}
+            onChange={(e) => setTopK(parseInt(e.target.value) || 5)}
+            min="1"
+            max="100"
+            disabled={searching}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+      </div>
+
+      {/* Search Button */}
+      <button
+        onClick={handleSearch}
+        disabled={searching || !manualVector.trim()}
+        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >
+        {searching ? (
+          <>
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Searching...
+          </>
+        ) : (
+          <>
+            <Search className="w-4 h-4" />
+            Search
+          </>
+        )}
+      </button>
 
       {/* Results */}
       {results.length > 0 && (

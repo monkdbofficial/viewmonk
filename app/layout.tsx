@@ -27,6 +27,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "MonkDB Workbench - Professional Database Management",
   description: "A professional workbench for MonkDB database management and development",
+  icons: {
+    icon: '/image.png',
+    shortcut: '/image.png',
+    apple: '/image.png',
+  },
 };
 
 export default function RootLayout({

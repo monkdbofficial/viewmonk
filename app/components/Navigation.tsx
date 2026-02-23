@@ -42,11 +42,11 @@ export default function Navigation() {
           {/* Left: Logo */}
           <Link href="/" className="flex items-center transition-opacity hover:opacity-80">
             <Image
-              src={theme === 'light' ? '/logo-light.svg' : '/logo-dark.svg'}
+              src="/image.png"
               alt="MonkDB"
-              width={128}
-              height={32}
-              className="h-8 w-auto"
+              width={180}
+              height={40}
+              className="h-10 w-auto dark:invert dark:brightness-0 dark:contrast-200"
               priority
             />
           </Link>

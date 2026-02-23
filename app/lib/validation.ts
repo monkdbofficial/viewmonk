@@ -173,4 +173,4 @@ class RateLimiter {
 }
 
 // Export singleton instance for API routes
-export const apiRateLimiter = new RateLimiter(100, 60000); // 100 requests per minute
+export const apiRateLimiter = new RateLimiter(300, 60000); // 300 requests per minute

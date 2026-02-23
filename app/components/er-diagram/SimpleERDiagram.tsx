@@ -1,10 +1,30 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Search, ZoomIn, ZoomOut, Maximize2, Download, Eye, EyeOff, Grid3x3, Maximize } from 'lucide-react';
-import html2canvas from 'html2canvas';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import {
+  Search, ZoomIn, ZoomOut, Download, Eye, EyeOff,
+  Grid3x3, Maximize, X, ChevronDown, ChevronRight,
+  Crosshair, Filter, RotateCcw, Key, Link, ArrowRight,
+  PanelLeft, Layout, Command,
+} from 'lucide-react';
 import ELK from 'elkjs/lib/elk.bundled.js';
 
+// ─── Design tokens (mirroring liam-hq Dark/variables.css) ────────────────────
+// Primary accent:  #1ded83
+// Node bg:         #141616
+// Header bg:       #232526
+// Node border:     rgba(255,255,255,0.2)
+// Edge (normal):   rgba(255,255,255,0.2)   → turns #1ded83 on highlight
+// Glow:            rgba(29,237,131,0.4)
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+const TABLE_W    = 280;
+const HEADER_H   = 44;
+const ROW_H      = 32;
+const PARTICLE_N = 6;
+const PARTICLE_S = 5; // seconds per cycle
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 interface Column {
   name: string;
   type: string;
@@ -13,15 +33,18 @@ interface Column {
   isForeignKey: boolean;
   references?: { table: string; column: string };
 }
+interface TableMetadata { name: string; columns: Column[]; }
+interface TablePos      { x: number; y: number; }
 
-interface TableMetadata {
-  name: string;
-  columns: Column[];
-}
+type ShowMode = 'all' | 'keys' | 'name';
 
-interface TablePosition {
-  x: number;
-  y: number;
+interface CmdItem {
+  id: string;
+  label: string;
+  description?: string;
+  icon: React.ReactNode;
+  action: () => void;
+  category: 'table' | 'action';
 }
 
 interface SimpleERDiagramProps {
@@ -29,1115 +52,1615 @@ interface SimpleERDiagramProps {
   onTableClick: (tableName: string) => void;
 }
 
-export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagramProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [positions, setPositions] = useState<Map<string, TablePosition>>(new Map());
-  const [dragging, setDragging] = useState<{ table: string; offsetX: number; offsetY: number } | null>(null);
-  const [scale, setScale] = useState(1);
-  const [translate, setTranslate] = useState({ x: 0, y: 0 });
-  const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedTable, setSelectedTable] = useState<string | null>(null);
-  const [showRelationships, setShowRelationships] = useState(true);
-  const [showMinimap, setShowMinimap] = useState(true);
-  const [edgeRoutes, setEdgeRoutes] = useState<Map<string, { points: { x: number; y: number }[] }>>(new Map());
-  const [hoveredRelationship, setHoveredRelationship] = useState<string | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function shortType(t: string) {
+  return t.toLowerCase()
+    .replace(/character varying(\(\d+\))?/g, 'varchar')
+    .replace('timestamp without time zone', 'timestamp')
+    .replace('timestamp with time zone', 'timestamptz')
+    .replace('double precision', 'float')
+    .replace('boolean', 'bool')
+    .replace(/\(\d+\)$/, '');
+}
 
-  // Filter tables - MUST be defined before useEffect that uses it
-  // Use useMemo to prevent unnecessary re-renders
+/** Build a smooth Bezier SVG path between two table columns */
+function bezierPath(
+  sp: TablePos, tp: TablePos,
+  fkIdx: number, pkIdx: number,
+  srcCollapsed: boolean, tgtCollapsed: boolean,
+): { pathD: string; x1: number; y1: number; x2: number; y2: number } {
+  const y1 = srcCollapsed
+    ? sp.y + HEADER_H / 2
+    : sp.y + HEADER_H + (fkIdx >= 0 ? fkIdx : 0) * ROW_H + ROW_H / 2;
+  const y2 = tgtCollapsed
+    ? tp.y + HEADER_H / 2
+    : tp.y + HEADER_H + (pkIdx >= 0 ? pkIdx : 0) * ROW_H + ROW_H / 2;
+
+  const goRight = sp.x + TABLE_W / 2 <= tp.x + TABLE_W / 2;
+  const x1 = goRight ? sp.x + TABLE_W : sp.x;
+  const x2 = goRight ? tp.x : tp.x + TABLE_W;
+
+  const dist = Math.abs(x2 - x1);
+  const curve = Math.min(Math.max(dist * 0.45, 60), 220);
+  const d = goRight ? 1 : -1;
+  const pathD = `M ${x1} ${y1} C ${x1 + d * curve} ${y1}, ${x2 - d * curve} ${y2}, ${x2} ${y2}`;
+  return { pathD, x1, y1, x2, y2 };
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagramProps) {
+  const containerRef  = useRef<HTMLDivElement>(null);
+  const searchRef     = useRef<HTMLInputElement>(null);
+  const cmdRef        = useRef<HTMLInputElement>(null);
+  const cmdListRef    = useRef<HTMLDivElement>(null);
+
+  // Canvas transform
+  const [positions, setPositions]     = useState<Map<string, TablePos>>(new Map());
+  const [scale, setScale]             = useState(1);
+  const [translate, setTranslate]     = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning]     = useState(false);
+  const [panStart, setPanStart]       = useState({ x: 0, y: 0 });
+  const [dragging, setDragging]       = useState<{ table: string; ox: number; oy: number } | null>(null);
+
+  // UI state
+  const [searchTerm, setSearchTerm]           = useState('');
+  const [selectedTable, setSelectedTable]     = useState<string | null>(null);
+  const [hoveredTable, setHoveredTable]       = useState<string | null>(null);
+  const [hoveredRel, setHoveredRel]           = useState<string | null>(null);
+  const [showEdges, setShowEdges]             = useState(true);
+  const [showMinimap, setShowMinimap]         = useState(true);
+  const [showMode, setShowMode]               = useState<ShowMode>('all');
+  const [isFullscreen, setIsFullscreen]       = useState(false);
+  const [collapsed, setCollapsed]             = useState<Set<string>>(new Set());
+  const [hiddenTables, setHiddenTables]       = useState<Set<string>>(new Set());
+  const [relatedOnly, setRelatedOnly]         = useState(false);
+  const [isComputing, setIsComputing]         = useState(false);
+  const [showLeftPanel, setShowLeftPanel]     = useState(true);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [commandSearch, setCommandSearch]     = useState('');
+  const [cmdIndex, setCmdIndex]               = useState(0);
+  const [leftPanelSearch, setLeftPanelSearch] = useState('');
+
+  // ── Derived ─────────────────────────────────────────────────────────────────
+
   const filteredTables = useMemo(
     () => tables.filter(t => t.name.toLowerCase().includes(searchTerm.toLowerCase())),
     [tables, searchTerm]
   );
 
-  // Initialize table positions in a compact grid (will be overridden by ELK layout)
-  useEffect(() => {
-    const newPositions = new Map<string, TablePosition>();
-    const cols = Math.ceil(Math.sqrt(tables.length));
+  const selectedData = useMemo(
+    () => tables.find(t => t.name === selectedTable) ?? null,
+    [tables, selectedTable]
+  );
 
-    tables.forEach((table, index) => {
-      const row = Math.floor(index / cols);
-      const col = index % cols;
-      newPositions.set(table.name, {
-        x: col * 350 + 50,
-        y: row * 280 + 50
-      });
+  // Tables connected (directly) to selectedTable
+  const connectedSet = useMemo(() => {
+    if (!selectedTable) return new Set<string>();
+    const s = new Set<string>();
+    tables.find(t => t.name === selectedTable)?.columns.forEach(c => {
+      if (c.isForeignKey && c.references) s.add(c.references.table);
     });
+    tables.forEach(t => t.columns.forEach(c => {
+      if (c.isForeignKey && c.references?.table === selectedTable) s.add(t.name);
+    }));
+    return s;
+  }, [selectedTable, tables]);
 
-    setPositions(newPositions);
+  // Tables connected to hoveredTable (for hover highlight)
+  const hoveredConnected = useMemo(() => {
+    if (!hoveredTable) return new Set<string>();
+    const s = new Set<string>();
+    tables.find(t => t.name === hoveredTable)?.columns.forEach(c => {
+      if (c.isForeignKey && c.references) s.add(c.references.table);
+    });
+    tables.forEach(t => t.columns.forEach(c => {
+      if (c.isForeignKey && c.references?.table === hoveredTable) s.add(t.name);
+    }));
+    return s;
+  }, [hoveredTable, tables]);
+
+  // Tables actually rendered (search + hidden + relatedOnly filter)
+  const displayedTables = useMemo(() => {
+    let result = filteredTables.filter(t => !hiddenTables.has(t.name));
+    if (relatedOnly && selectedTable) {
+      result = result.filter(t => t.name === selectedTable || connectedSet.has(t.name));
+    }
+    return result;
+  }, [filteredTables, hiddenTables, relatedOnly, selectedTable, connectedSet]);
+
+  // Sidebar FK/incoming info
+  const outgoingFKs = useMemo(() =>
+    selectedData?.columns
+      .filter(c => c.isForeignKey && c.references)
+      .map(c => ({ col: c.name, toTable: c.references!.table, toCol: c.references!.column })) ?? [],
+    [selectedData]
+  );
+  const incomingFKs = useMemo(() =>
+    tables.flatMap(t => t.columns
+      .filter(c => c.isForeignKey && c.references?.table === selectedTable)
+      .map(c => ({ fromTable: t.name, fromCol: c.name }))),
+    [tables, selectedTable]
+  );
+
+  // Visible columns per display mode
+  const visibleCols = (t: TableMetadata) => {
+    if (showMode === 'name') return [];
+    if (showMode === 'keys') return t.columns.filter(c => c.isPrimaryKey || c.isForeignKey);
+    return t.columns;
+  };
+
+  // Left panel table list (filtered by leftPanelSearch)
+  const leftPanelTables = useMemo(() =>
+    tables.filter(t => t.name.toLowerCase().includes(leftPanelSearch.toLowerCase())),
+    [tables, leftPanelSearch]
+  );
+
+  // ── Initial grid positions ────────────────────────────────────────────────
+  useEffect(() => {
+    const m = new Map<string, TablePos>();
+    const cols = Math.ceil(Math.sqrt(tables.length));
+    tables.forEach((t, i) => m.set(t.name, { x: (i % cols) * 360 + 80, y: Math.floor(i / cols) * 320 + 80 }));
+    setPositions(m);
   }, [tables]);
 
-  // Calculate optimal layout and edge routes using ELK (runs only when tables change)
-  useEffect(() => {
-    const calculateLayout = async () => {
-      if (filteredTables.length === 0) {
-        return;
-      }
-
+  // ── ELK auto-layout ──────────────────────────────────────────────────────
+  const runLayout = useCallback(async (tbls: TableMetadata[]) => {
+    if (tbls.length === 0) return;
+    setIsComputing(true);
+    try {
       const elk = new ELK();
+      const nodes = tbls.map(t => ({
+        id: t.name, width: TABLE_W,
+        height: HEADER_H + t.columns.length * ROW_H + 8,
+      }));
+      const edges: any[] = [];
+      tbls.forEach(t => t.columns.forEach(c => {
+        if (!c.isForeignKey || !c.references) return;
+        if (!tbls.find(x => x.name === c.references!.table)) return;
+        edges.push({ id: `${t.name}-${c.name}`, sources: [t.name], targets: [c.references.table] });
+      }));
 
-      // Build ELK graph - start with current positions or defaults
-      const elkNodes = filteredTables.map(table => {
-        const pos = positions.get(table.name) || { x: 0, y: 0 };
-        const tableHeight = 48 + table.columns.length * 32 + 30;
-        return {
-          id: table.name,
-          width: 280,
-          height: tableHeight
-        };
-      });
-
-      const elkEdges: any[] = [];
-      filteredTables.forEach(table => {
-        table.columns.forEach((col, colIdx) => {
-          if (!col.isForeignKey || !col.references) return;
-
-          const targetTable = filteredTables.find(t => t.name === col.references!.table);
-          if (!targetTable) return;
-
-          let pkIdx = targetTable.columns.findIndex(c => c.isPrimaryKey);
-
-          // Fallback: if no PK detected, assume 'id' column is PK
-          if (pkIdx < 0) {
-            pkIdx = targetTable.columns.findIndex(c => c.name.toLowerCase() === 'id');
-          }
-
-          if (pkIdx < 0) return;
-
-          elkEdges.push({
-            id: `${table.name}-${col.name}`,
-            sources: [table.name],
-            targets: [col.references.table]
-          });
-        });
-      });
-
-      const graph = {
+      const result = await elk.layout({
         id: 'root',
         layoutOptions: {
           'elk.algorithm': 'layered',
           'elk.direction': 'RIGHT',
-          'elk.edgeRouting': 'ORTHOGONAL',
-          'elk.layered.nodePlacement.strategy': 'SIMPLE',
+          'elk.edgeRouting': 'SPLINES',
+          'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
           'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
-          'elk.layered.crossingMinimization.greedySwitch': 'TWO_SIDED',
-          'elk.spacing.nodeNode': '150',
-          'elk.spacing.edgeNode': '80',
-          'elk.spacing.edgeEdge': '50',
-          'elk.layered.spacing.edgeNodeBetweenLayers': '100',
-          'elk.layered.spacing.nodeNodeBetweenLayers': '150',
-          'elk.layered.thoroughness': '100',
-          'elk.separateConnectedComponents': 'false',
-          'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-          'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+          'elk.spacing.nodeNode': '120',
+          'elk.layered.spacing.nodeNodeBetweenLayers': '160',
+          'elk.separateConnectedComponents': 'true',
+          'elk.spacing.componentComponent': '100',
         },
-        children: elkNodes,
-        edges: elkEdges
-      };
+        children: nodes,
+        edges,
+      });
 
-      try {
-        const layouted = await elk.layout(graph);
+      const m = new Map<string, TablePos>();
+      result.children?.forEach(n => {
+        if (n.x !== undefined && n.y !== undefined)
+          m.set(n.id, { x: n.x + 80, y: n.y + 80 });
+      });
+      if (m.size > 0) setPositions(m);
+    } catch (e) { console.error('ELK error', e); }
+    finally { setIsComputing(false); }
+  }, []);
 
-        // Extract node positions
-        const newPositions = new Map<string, TablePosition>();
-        layouted.children?.forEach(node => {
-          if (node.x !== undefined && node.y !== undefined) {
-            newPositions.set(node.id, { x: node.x + 50, y: node.y + 50 }); // Add padding
-          }
-        });
+  useEffect(() => { runLayout(filteredTables); }, [filteredTables]); // eslint-disable-line
 
-        // Only update positions if we got valid layout
-        if (newPositions.size > 0) {
-          setPositions(newPositions);
-        }
-
-        // Extract edge routes
-        const routes = new Map<string, { points: { x: number; y: number }[] }>();
-
-        layouted.edges?.forEach(edge => {
-          if (edge.sections && edge.sections.length > 0) {
-            const section = edge.sections[0];
-            const points = [];
-
-            // Start point
-            points.push({ x: section.startPoint.x + 50, y: section.startPoint.y + 50 });
-
-            // Bend points
-            if (section.bendPoints) {
-              section.bendPoints.forEach((bp: any) => {
-                points.push({ x: bp.x + 50, y: bp.y + 50 });
-              });
-            }
-
-            // End point
-            points.push({ x: section.endPoint.x + 50, y: section.endPoint.y + 50 });
-
-            routes.set(edge.id, { points });
-          }
-        });
-
-        setEdgeRoutes(routes);
-        console.log('✅ ELK layout complete:', {
-          nodes: newPositions.size,
-          edges: routes.size
-        });
-      } catch (error) {
-        console.error('❌ ELK layout failed:', error);
-      }
+  // ── Wheel zoom ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    const el = containerRef.current; if (!el) return;
+    const fn = (e: WheelEvent) => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.08 : 0.93;
+      setScale(p => Math.min(Math.max(p * factor, 0.15), 3));
     };
+    el.addEventListener('wheel', fn, { passive: false });
+    return () => el.removeEventListener('wheel', fn);
+  }, []);
 
-    calculateLayout();
-  }, [filteredTables]);
+  // ── Keyboard shortcuts ───────────────────────────────────────────────────
+  useEffect(() => {
+    const fn = (e: KeyboardEvent) => {
+      // Command palette
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setShowCommandPalette(v => !v);
+        setCommandSearch('');
+        setCmdIndex(0);
+        return;
+      }
+      if (e.key === 'Escape') {
+        if (showCommandPalette) { setShowCommandPalette(false); return; }
+        setSelectedTable(null); setRelatedOnly(false);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') { e.preventDefault(); searchRef.current?.focus(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === '0') { e.preventDefault(); setScale(1); setTranslate({ x: 0, y: 0 }); }
+    };
+    document.addEventListener('keydown', fn);
+    return () => document.removeEventListener('keydown', fn);
+  }, [showCommandPalette]);
 
-  // Zoom handlers
-  const handleZoomIn = () => setScale(prev => Math.min(prev + 0.1, 2));
-  const handleZoomOut = () => setScale(prev => Math.max(prev - 0.1, 0.5));
-  const handleResetView = () => {
-    setScale(1);
-    setTranslate({ x: 0, y: 0 });
-  };
-
-  // Export diagram as SVG with proper styling
-  const handleExport = () => {
-    try {
-      // Calculate diagram bounds
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-
-      filteredTables.forEach(table => {
-        const pos = positions.get(table.name);
-        if (!pos) return;
-        const tableHeight = 48 + table.columns.length * 32 + 30;
-        minX = Math.min(minX, pos.x);
-        minY = Math.min(minY, pos.y);
-        maxX = Math.max(maxX, pos.x + 280);
-        maxY = Math.max(maxY, pos.y + tableHeight);
-      });
-
-      const padding = 50;
-      const width = maxX - minX + padding * 2;
-      const height = maxY - minY + padding * 2;
-
-      // Create SVG content with gradients
-      let svgContent = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${minX - padding} ${minY - padding} ${width} ${height}">
-  <defs>
-    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
-      <polygon points="0 0, 10 5, 0 10" fill="#3b82f6" />
-    </marker>
-    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#2563eb;stop-opacity:1" />
-    </linearGradient>
-  </defs>
-  <rect x="${minX - padding}" y="${minY - padding}" width="${width}" height="${height}" fill="#0a0a0a"/>
-
-  <!-- Tables -->
-  <g id="tables">`;
-      filteredTables.forEach(table => {
-        const pos = positions.get(table.name);
-        if (!pos) return;
-
-        const tableHeight = 48 + table.columns.length * 32 + 30;
-
-        svgContent += `  <g transform="translate(${pos.x}, ${pos.y})">
-    <!-- Table container -->
-    <rect width="280" height="${tableHeight}" rx="12" fill="#1e293b" stroke="#374151" stroke-width="2"/>
-
-    <!-- Header -->
-    <rect width="280" height="48" rx="12" fill="url(#headerGrad)"/>
-    <text x="140" y="30" text-anchor="middle" fill="white" font-size="14" font-weight="bold">${table.name}</text>
-
-    <!-- Columns -->
-`;
-
-        table.columns.forEach((col, idx) => {
-          const y = 48 + idx * 32;
-          const isEven = idx % 2 === 0;
-
-          // Row background
-          svgContent += `    <rect y="${y}" width="280" height="32" fill="${isEven ? '#1f2937' : '#111827'}" opacity="0.8"/>\n`;
-
-          // Column name with icon
-          const icon = col.isPrimaryKey ? '🔑' : col.isForeignKey ? '🔗' : '●';
-          const color = col.isPrimaryKey ? '#facc15' : col.isForeignKey ? '#22d3ee' : '#f3f4f6';
-
-          svgContent += `    <text x="10" y="${y + 20}" fill="${color}" font-size="11" font-weight="600">${icon} ${col.name}</text>\n`;
-
-          // Type badge
-          svgContent += `    <text x="270" y="${y + 20}" text-anchor="end" fill="#9ca3af" font-size="10" font-family="monospace">${col.type.toLowerCase()}</text>\n`;
-
-          // FK indicator dot
-          if (col.isForeignKey) {
-            svgContent += `    <circle cx="275" cy="${y + 16}" r="3" fill="#3b82f6" stroke="white" stroke-width="2"/>\n`;
-          }
-
-          // PK/FK badges
-          if (col.isPrimaryKey) {
-            svgContent += `    <rect x="60" y="${y + 12}" width="18" height="12" rx="2" fill="#facc15" opacity="0.2"/>\n`;
-            svgContent += `    <text x="69" y="${y + 20}" text-anchor="middle" fill="#facc15" font-size="8" font-weight="bold">PK</text>\n`;
-          }
-          if (col.isForeignKey) {
-            svgContent += `    <rect x="82" y="${y + 12}" width="16" height="12" rx="2" fill="#3b82f6" opacity="0.2"/>\n`;
-            svgContent += `    <text x="90" y="${y + 20}" text-anchor="middle" fill="#3b82f6" font-size="8" font-weight="bold">FK</text>\n`;
-          }
-        });
-
-        // Stats footer
-        const pkCount = table.columns.filter(c => c.isPrimaryKey).length;
-        const fkCount = table.columns.filter(c => c.isForeignKey).length;
-        const reqCount = table.columns.filter(c => !c.nullable).length;
-        const footerY = 48 + table.columns.length * 32;
-
-        svgContent += `    <rect y="${footerY}" width="280" height="30" fill="#111827" opacity="0.6"/>
-    <text x="10" y="${footerY + 18}" fill="#facc15" font-size="10">🔑 ${pkCount} PK</text>
-    <text x="70" y="${footerY + 18}" fill="#3b82f6" font-size="10">🔗 ${fkCount} FK</text>
-    <text x="130" y="${footerY + 18}" fill="#ef4444" font-size="10">★ ${reqCount} Req</text>
-    <text x="270" y="${footerY + 18}" text-anchor="end" fill="#6b7280" font-size="10">${table.columns.length} cols</text>
-`;
-
-        svgContent += `  </g>\n`;
-      });
-
-      svgContent += `  </g>\n\n  <!-- Connection Lines (on top) -->\n  <g id="connections">\n`;
-
-      // Add connection lines with WORKING calculations
-      filteredTables.forEach(table => {
-        const sourcePos = positions.get(table.name);
-        if (!sourcePos) return;
-
-        table.columns.forEach((col, colIdx) => {
-          if (!col.isForeignKey || !col.references) return;
-
-          const targetTable = filteredTables.find(t => t.name === col.references!.table);
-          if (!targetTable) return;
-
-          const targetPos = positions.get(col.references!.table);
-          if (!targetPos) return;
-
-          // Find PK row index in target table
-          const pkIdx = targetTable.columns.findIndex(c => c.isPrimaryKey);
-
-          // Row measurements
-          const headerH = 48;
-          const rowH = 32;
-          const borderW = 2;
-
-          // Calculate positions
-          const x1 = sourcePos.x + 280;
-          const x2 = targetPos.x;
-
-          // Use row-based Y if valid, otherwise center
-          let y1, y2;
-          if (colIdx >= 0 && colIdx < table.columns.length) {
-            y1 = sourcePos.y + borderW + headerH + (colIdx * rowH) + (rowH / 2);
-          } else {
-            y1 = sourcePos.y + 100; // Fallback to center
-          }
-
-          if (pkIdx >= 0 && pkIdx < targetTable.columns.length) {
-            y2 = targetPos.y + borderW + headerH + (pkIdx * rowH) + (rowH / 2);
-          } else {
-            y2 = targetPos.y + 100; // Fallback to center
-          }
-
-          // Smart routing: check if path would intersect other tables
-          const midX = (x1 + x2) / 2;
-          const midY = (y1 + y2) / 2;
-
-          let needsRouting = false;
-          for (const otherTable of filteredTables) {
-            if (otherTable.name === table.name || otherTable.name === col.references.table) continue;
-
-            const otherPos = positions.get(otherTable.name);
-            if (!otherPos) continue;
-
-            const tableHeight = 48 + otherTable.columns.length * 32 + 30;
-
-            // Check if path midpoint would intersect this table
-            if (midX >= otherPos.x - 20 && midX <= otherPos.x + 300 &&
-                midY >= otherPos.y - 20 && midY <= otherPos.y + tableHeight + 20) {
-              needsRouting = true;
-              break;
-            }
-          }
-
-          svgContent += `    <!-- ${table.name}.${col.name} -> ${col.references.table} -->\n`;
-
-          if (needsRouting) {
-            // Route around obstacles
-            const offset = 100;
-            const routeY = Math.min(y1, y2) - offset;
-
-            svgContent += `    <path d="M ${x1} ${y1} C ${x1 + 60} ${y1}, ${x1 + 60} ${routeY}, ${x1 + 120} ${routeY} L ${x2 - 120} ${routeY} C ${x2 - 60} ${routeY}, ${x2 - 60} ${y2}, ${x2} ${y2}" stroke="#3b82f6" stroke-width="2.5" fill="none" opacity="0.8"/>\n`;
-          } else {
-            // Direct smooth curve
-            const dx = x2 - x1;
-            const cx1 = x1 + dx * 0.5;
-            const cy1 = y1;
-            const cx2 = x2 - dx * 0.5;
-            const cy2 = y2;
-
-            svgContent += `    <path d="M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}" stroke="#3b82f6" stroke-width="2.5" fill="none" opacity="0.8"/>\n`;
-          }
-
-          svgContent += `    <polygon points="${x2},${y2} ${x2+8},${y2-4} ${x2+8},${y2+4}" fill="#3b82f6" opacity="0.8"/>\n`;
-        });
-      });
-
-      svgContent += `  </g>\n</svg>`;
-
-      // Download SVG
-      const blob = new Blob([svgContent], { type: 'image/svg+xml' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `er-diagram-${new Date().getTime()}.svg`;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Export failed:', error);
-      alert(`Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  // Focus command palette input when opened
+  useEffect(() => {
+    if (showCommandPalette) {
+      setTimeout(() => cmdRef.current?.focus(), 50);
     }
-  };
+  }, [showCommandPalette]);
 
-  // Export diagram as PNG
-  const handleExportPNG = () => {
-    try {
-      // Calculate diagram bounds
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  // ── View helpers ────────────────────────────────────────────────────────
+  const zoomIn    = () => setScale(p => Math.min(p + 0.1, 3));
+  const zoomOut   = () => setScale(p => Math.max(p - 0.1, 0.15));
+  const resetView = () => { setScale(1); setTranslate({ x: 0, y: 0 }); };
 
-      filteredTables.forEach(table => {
-        const pos = positions.get(table.name);
-        if (!pos) return;
-        const tableHeight = 48 + table.columns.length * 32 + 30;
-        minX = Math.min(minX, pos.x);
-        minY = Math.min(minY, pos.y);
-        maxX = Math.max(maxX, pos.x + 280);
-        maxY = Math.max(maxY, pos.y + tableHeight);
-      });
+  const fitToScreen = useCallback(() => {
+    if (!containerRef.current || displayedTables.length === 0) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    displayedTables.forEach(t => {
+      const p = positions.get(t.name); if (!p) return;
+      const h = collapsed.has(t.name) ? HEADER_H : HEADER_H + t.columns.length * ROW_H + 8;
+      minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x + TABLE_W); maxY = Math.max(maxY, p.y + h);
+    });
+    const rect = containerRef.current.getBoundingClientRect();
+    const pad = 80;
+    const s = Math.min((rect.width - pad * 2) / (maxX - minX), (rect.height - pad * 2) / (maxY - minY), 1.2);
+    setScale(s);
+    setTranslate({ x: (rect.width - (maxX - minX) * s) / 2 - minX * s, y: (rect.height - (maxY - minY) * s) / 2 - minY * s });
+  }, [displayedTables, positions, collapsed]);
 
-      const padding = 50;
-      const width = maxX - minX + padding * 2;
-      const height = maxY - minY + padding * 2;
+  const focusTable = useCallback((name: string) => {
+    const p = positions.get(name); if (!p || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    setTranslate({ x: rect.width / 2 - (p.x + TABLE_W / 2) * scale, y: rect.height / 2 - (p.y + HEADER_H) * scale });
+  }, [positions, scale]);
 
-      // Create SVG content with standard colors
-      let svgContent = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${minX - padding} ${minY - padding} ${width} ${height}">
-  <defs>
-    <linearGradient id="headerGrad-png" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#2563eb;stop-opacity:1" />
-    </linearGradient>
-  </defs>
-  <rect x="${minX - padding}" y="${minY - padding}" width="${width}" height="${height}" fill="#0a0a0a"/>
-  <g id="tables">`;
+  // ── Tidy Up ──────────────────────────────────────────────────────────────
+  const tidyUp = useCallback(() => { runLayout(displayedTables); }, [runLayout, displayedTables]);
 
-      filteredTables.forEach(table => {
-        const pos = positions.get(table.name);
-        if (!pos) return;
-
-        const tableHeight = 48 + table.columns.length * 32 + 30;
-
-        svgContent += `  <g transform="translate(${pos.x}, ${pos.y})">
-    <rect width="280" height="${tableHeight}" rx="12" fill="#1e293b" stroke="#374151" stroke-width="2"/>
-    <rect width="280" height="48" rx="12" fill="url(#headerGrad-png)"/>
-    <text x="140" y="30" text-anchor="middle" fill="white" font-size="14" font-weight="bold">${table.name}</text>
-`;
-
-        table.columns.forEach((col, idx) => {
-          const y = 48 + idx * 32;
-          const isEven = idx % 2 === 0;
-          svgContent += `    <rect y="${y}" width="280" height="32" fill="${isEven ? '#1f2937' : '#111827'}" opacity="0.8"/>\n`;
-          const icon = col.isPrimaryKey ? '🔑' : col.isForeignKey ? '🔗' : '●';
-          const color = col.isPrimaryKey ? '#facc15' : col.isForeignKey ? '#22d3ee' : '#f3f4f6';
-          svgContent += `    <text x="10" y="${y + 20}" fill="${color}" font-size="11" font-weight="600">${icon} ${col.name}</text>\n`;
-          svgContent += `    <text x="270" y="${y + 20}" text-anchor="end" fill="#9ca3af" font-size="10" font-family="monospace">${col.type.toLowerCase()}</text>\n`;
-          if (col.isForeignKey) {
-            svgContent += `    <circle cx="275" cy="${y + 16}" r="3" fill="#3b82f6" stroke="white" stroke-width="2"/>\n`;
-          }
-          if (col.isPrimaryKey) {
-            svgContent += `    <rect x="60" y="${y + 12}" width="18" height="12" rx="2" fill="#facc15" opacity="0.2"/>\n`;
-            svgContent += `    <text x="69" y="${y + 20}" text-anchor="middle" fill="#facc15" font-size="8" font-weight="bold">PK</text>\n`;
-          }
-          if (col.isForeignKey) {
-            svgContent += `    <rect x="82" y="${y + 12}" width="16" height="12" rx="2" fill="#3b82f6" opacity="0.2"/>\n`;
-            svgContent += `    <text x="90" y="${y + 20}" text-anchor="middle" fill="#3b82f6" font-size="8" font-weight="bold">FK</text>\n`;
-          }
-        });
-
-        const pkCount = table.columns.filter(c => c.isPrimaryKey).length;
-        const fkCount = table.columns.filter(c => c.isForeignKey).length;
-        const reqCount = table.columns.filter(c => !c.nullable).length;
-        const footerY = 48 + table.columns.length * 32;
-
-        svgContent += `    <rect y="${footerY}" width="280" height="30" fill="#111827" opacity="0.6"/>
-    <text x="10" y="${footerY + 18}" fill="#facc15" font-size="10">🔑 ${pkCount} PK</text>
-    <text x="70" y="${footerY + 18}" fill="#3b82f6" font-size="10">🔗 ${fkCount} FK</text>
-    <text x="130" y="${footerY + 18}" fill="#ef4444" font-size="10">★ ${reqCount} Req</text>
-    <text x="270" y="${footerY + 18}" text-anchor="end" fill="#6b7280" font-size="10">${table.columns.length} cols</text>
-  </g>\n`;
-      });
-
-      svgContent += `  </g>\n  <g id="connections">\n`;
-
-      filteredTables.forEach(table => {
-        const sourcePos = positions.get(table.name);
-        if (!sourcePos) return;
-
-        table.columns.forEach((col, colIdx) => {
-          if (!col.isForeignKey || !col.references) return;
-
-          const targetTable = filteredTables.find(t => t.name === col.references!.table);
-          if (!targetTable) return;
-
-          const targetPos = positions.get(col.references!.table);
-          if (!targetPos) return;
-
-          const pkIdx = targetTable.columns.findIndex(c => c.isPrimaryKey);
-          const headerH = 48;
-          const rowH = 32;
-          const borderW = 2;
-
-          const x1 = sourcePos.x + 280;
-          const x2 = targetPos.x;
-          const y1 = sourcePos.y + borderW + headerH + (colIdx * rowH) + (rowH / 2);
-          const y2 = pkIdx >= 0 ? targetPos.y + borderW + headerH + (pkIdx * rowH) + (rowH / 2) : targetPos.y + 100;
-
-          const dx = x2 - x1;
-          const cx1 = x1 + dx * 0.5;
-          const cy1 = y1;
-          const cx2 = x2 - dx * 0.5;
-          const cy2 = y2;
-
-          svgContent += `    <path d="M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}" stroke="#3b82f6" stroke-width="2.5" fill="none" opacity="0.8"/>\n`;
-          svgContent += `    <polygon points="${x2},${y2} ${x2+8},${y2-4} ${x2+8},${y2+4}" fill="#3b82f6" opacity="0.8"/>\n`;
-        });
-      });
-
-      svgContent += `  </g>\n</svg>`;
-
-      // Convert SVG to PNG using canvas
-      const canvas = document.createElement('canvas');
-      canvas.width = width * 2;
-      canvas.height = height * 2;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Failed to get canvas context');
-
-      const img = new Image();
-      img.onload = () => {
-        ctx.fillStyle = '#0a0a0a';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-        canvas.toBlob((blob) => {
-          if (!blob) {
-            alert('Failed to generate PNG');
-            return;
-          }
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = `er-diagram-${new Date().getTime()}.png`;
-          link.click();
-          URL.revokeObjectURL(url);
-        }, 'image/png');
-      };
-
-      img.onerror = () => {
-        alert('Failed to load SVG image');
-      };
-
-      const svgBlob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
-      const svgUrl = URL.createObjectURL(svgBlob);
-      img.src = svgUrl;
-
-    } catch (error) {
-      console.error('PNG export failed:', error);
-      alert(`PNG export failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  };
-
-  // Toggle fullscreen mode
-  const handleToggleFullscreen = () => {
+  // ── Fullscreen ───────────────────────────────────────────────────────────
+  const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       containerRef.current?.parentElement?.requestFullscreen();
       setIsFullscreen(true);
-    } else {
-      document.exitFullscreen();
-      setIsFullscreen(false);
-    }
+    } else { document.exitFullscreen(); setIsFullscreen(false); }
   };
 
-  // Table drag handlers
-  const handleTableMouseDown = (e: React.MouseEvent, tableName: string) => {
+  // ── Drag / Pan ───────────────────────────────────────────────────────────
+  const handleTableMouseDown = (e: React.MouseEvent, name: string) => {
     e.stopPropagation();
-    const pos = positions.get(tableName);
-    if (!pos) return;
-
-    setDragging({
-      table: tableName,
-      offsetX: e.clientX / scale - pos.x,
-      offsetY: e.clientY / scale - pos.y
-    });
-    setSelectedTable(tableName);
+    const p = positions.get(name); if (!p) return;
+    setDragging({ table: name, ox: e.clientX / scale - p.x, oy: e.clientY / scale - p.y });
+    setSelectedTable(name);
+    onTableClick(name);
   };
-
-  // Canvas pan handlers
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
     if (e.button === 0 && !dragging) {
       setIsPanning(true);
       setPanStart({ x: e.clientX - translate.x, y: e.clientY - translate.y });
+      setSelectedTable(null); setRelatedOnly(false);
     }
   };
-
   const handleMouseMove = (e: React.MouseEvent) => {
     if (dragging) {
-      const newX = e.clientX / scale - dragging.offsetX;
-      const newY = e.clientY / scale - dragging.offsetY;
-      setPositions(prev => new Map(prev).set(dragging.table, { x: newX, y: newY }));
+      setPositions(prev => new Map(prev).set(dragging.table, {
+        x: e.clientX / scale - dragging.ox, y: e.clientY / scale - dragging.oy
+      }));
     } else if (isPanning) {
       setTranslate({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
     }
   };
+  const handleMouseUp = () => { setDragging(null); setIsPanning(false); };
 
-  const handleMouseUp = () => {
-    setDragging(null);
-    setIsPanning(false);
+  const toggleCollapse = (name: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCollapsed(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n; });
   };
 
+  const toggleHidden = (name: string) => {
+    setHiddenTables(prev => {
+      const n = new Set(prev);
+      n.has(name) ? n.delete(name) : n.add(name);
+      return n;
+    });
+  };
+
+  // ── Export ──────────────────────────────────────────────────────────────
+  const buildSVG = (): string => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    displayedTables.forEach(t => {
+      const p = positions.get(t.name); if (!p) return;
+      const h = HEADER_H + t.columns.length * ROW_H + 8;
+      minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x + TABLE_W); maxY = Math.max(maxY, p.y + h);
+    });
+    const pad = 60, W = maxX - minX + pad * 2, H = maxY - minY + pad * 2;
+    const vx = minX - pad, vy = minY - pad;
+
+    let svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${vx} ${vy} ${W} ${H}">
+<defs>
+  <marker id="ex-many" viewBox="0 0 20 20" refX="0" refY="10" markerWidth="14" markerHeight="14" orient="auto">
+    <path d="M 0 2 L 12 10 M 0 10 L 12 10 M 0 18 L 12 10" stroke="#1ded83" stroke-width="1.5" fill="none"/>
+  </marker>
+  <marker id="ex-one" viewBox="0 0 10 20" refX="10" refY="10" markerWidth="10" markerHeight="14" orient="auto">
+    <line x1="9" y1="2" x2="9" y2="18" stroke="#1ded83" stroke-width="2"/>
+  </marker>
+</defs>
+<rect x="${vx}" y="${vy}" width="${W}" height="${H}" fill="#0a0e1a"/>
+<g id="edges">`;
+
+    displayedTables.forEach(t => {
+      const sp = positions.get(t.name); if (!sp) return;
+      t.columns.forEach((c, ci) => {
+        if (!c.isForeignKey || !c.references) return;
+        const tgt = displayedTables.find(x => x.name === c.references!.table);
+        const tp  = tgt && positions.get(tgt.name);
+        if (!tgt || !tp) return;
+        const pkI = tgt.columns.findIndex(x => x.isPrimaryKey);
+        const { pathD } = bezierPath(sp, tp, ci, pkI, false, false);
+        svg += `\n  <path d="${pathD}" stroke="rgba(255,255,255,0.25)" stroke-width="1.2" fill="none" marker-start="url(#ex-many)" marker-end="url(#ex-one)"/>`;
+      });
+    });
+
+    svg += `\n</g>\n<g id="tables">`;
+    displayedTables.forEach(t => {
+      const p = positions.get(t.name); if (!p) return;
+      const h = HEADER_H + t.columns.length * ROW_H + 8;
+      svg += `\n  <g transform="translate(${p.x},${p.y})">
+    <rect width="${TABLE_W}" height="${h}" rx="8" fill="#0a0e1a" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
+    <rect width="${TABLE_W}" height="${HEADER_H}" rx="8" fill="#0d1b2a"/>
+    <rect y="${HEADER_H - 8}" width="${TABLE_W}" height="8" fill="#0d1b2a"/>
+    <line x1="0" y1="${HEADER_H}" x2="${TABLE_W}" y2="${HEADER_H}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+    <text x="12" y="27" fill="rgba(255,255,255,0.7)" font-size="12" font-weight="500" font-family="system-ui,sans-serif">${t.name}</text>`;
+      t.columns.forEach((c, i) => {
+        const y = HEADER_H + i * ROW_H;
+        const nameColor = c.isPrimaryKey ? '#1ded83' : c.isForeignKey ? '#1ded83' : 'rgba(255,255,255,0.9)';
+        if (i > 0) svg += `\n    <line x1="0" y1="${y}" x2="${TABLE_W}" y2="${y}" stroke="rgba(255,255,255,0.07)" stroke-width="0.5"/>`;
+        svg += `\n    <text x="36" y="${y + 20}" fill="${nameColor}" font-size="11" font-family="system-ui,sans-serif">${c.name}</text>`;
+        svg += `\n    <text x="${TABLE_W - 8}" y="${y + 20}" text-anchor="end" fill="rgba(255,255,255,0.4)" font-size="10" font-family="monospace">${shortType(c.type)}</text>`;
+      });
+      svg += `\n  </g>`;
+    });
+    svg += `\n</g>\n</svg>`;
+    return svg;
+  };
+
+  const exportSVG = () => {
+    const blob = new Blob([buildSVG()], { type: 'image/svg+xml' });
+    const url  = URL.createObjectURL(blob);
+    Object.assign(document.createElement('a'), { href: url, download: `er-${Date.now()}.svg` }).click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportPNG = () => {
+    const svgStr = buildSVG();
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    displayedTables.forEach(t => {
+      const p = positions.get(t.name); if (!p) return;
+      const h = HEADER_H + t.columns.length * ROW_H + 8;
+      minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x + TABLE_W); maxY = Math.max(maxY, p.y + h);
+    });
+    const W = maxX - minX + 120, H = maxY - minY + 120;
+    const canvas = document.createElement('canvas');
+    canvas.width = W * 2; canvas.height = H * 2;
+    const ctx = canvas.getContext('2d')!;
+    const img = new Image();
+    img.onload = () => {
+      ctx.fillStyle = '#141616'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(blob => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        Object.assign(document.createElement('a'), { href: url, download: `er-${Date.now()}.png` }).click();
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+    };
+    img.src = URL.createObjectURL(new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }));
+  };
+
+  // ── Command palette items ────────────────────────────────────────────────
+  const commandItems: CmdItem[] = useMemo(() => {
+    const q = commandSearch.toLowerCase();
+    const tableItems: CmdItem[] = tables
+      .filter(t => !q || t.name.toLowerCase().includes(q))
+      .map(t => ({
+        id: `table:${t.name}`,
+        label: t.name,
+        description: `${t.columns.length} columns · ${t.columns.filter(c => c.isPrimaryKey).length} PK · ${t.columns.filter(c => c.isForeignKey).length} FK`,
+        icon: (
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
+            <rect x="0.5" y="0.5" width="11" height="3.5" rx="0.8" stroke="rgba(255,255,255,0.4)" strokeWidth="0.8"/>
+            <rect x="0.5" y="5" width="5" height="6.5" rx="0.8" stroke="rgba(255,255,255,0.4)" strokeWidth="0.8"/>
+            <rect x="6.5" y="5" width="5" height="6.5" rx="0.8" stroke="rgba(255,255,255,0.4)" strokeWidth="0.8"/>
+          </svg>
+        ),
+        action: () => {
+          setSelectedTable(t.name);
+          onTableClick(t.name);
+          setShowCommandPalette(false);
+        },
+        category: 'table' as const,
+      }));
+
+    const actions: CmdItem[] = [
+      {
+        id: 'action:fit',
+        label: 'Fit to screen',
+        description: 'Fit all visible tables in view',
+        icon: <RotateCcw className="h-3 w-3" />,
+        action: () => { fitToScreen(); setShowCommandPalette(false); },
+        category: 'action',
+      },
+      {
+        id: 'action:tidy',
+        label: 'Tidy up layout',
+        description: 'Re-run auto layout algorithm',
+        icon: <Layout className="h-3 w-3" />,
+        action: () => { tidyUp(); setShowCommandPalette(false); },
+        category: 'action',
+      },
+      {
+        id: 'action:show-all',
+        label: 'Show all tables',
+        description: 'Remove all visibility filters',
+        icon: <Eye className="h-3 w-3" />,
+        action: () => { setHiddenTables(new Set()); setShowCommandPalette(false); },
+        category: 'action',
+      },
+      {
+        id: 'action:toggle-edges',
+        label: showEdges ? 'Hide relationships' : 'Show relationships',
+        description: 'Toggle edge visibility',
+        icon: showEdges ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />,
+        action: () => { setShowEdges(v => !v); setShowCommandPalette(false); },
+        category: 'action',
+      },
+      {
+        id: 'action:export-svg',
+        label: 'Export SVG',
+        description: 'Download diagram as SVG',
+        icon: <Download className="h-3 w-3" />,
+        action: () => { exportSVG(); setShowCommandPalette(false); },
+        category: 'action',
+      },
+      {
+        id: 'action:export-png',
+        label: 'Export PNG',
+        description: 'Download diagram as PNG',
+        icon: <Download className="h-3 w-3" />,
+        action: () => { exportPNG(); setShowCommandPalette(false); },
+        category: 'action',
+      },
+    ].filter(a => !q || a.label.toLowerCase().includes(q) || (a.description?.toLowerCase().includes(q)));
+
+    return q
+      ? [...tableItems, ...actions]
+      : [...tableItems, ...actions];
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tables, commandSearch, showEdges]);
+
+  // Command palette keyboard navigation
+  const handleCmdKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setCmdIndex(i => Math.min(i + 1, commandItems.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setCmdIndex(i => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      commandItems[cmdIndex]?.action();
+    } else if (e.key === 'Escape') {
+      setShowCommandPalette(false);
+    }
+  };
+
+  // Keep selected item in view
+  useEffect(() => {
+    const list = cmdListRef.current;
+    if (!list) return;
+    const item = list.children[cmdIndex] as HTMLElement;
+    item?.scrollIntoView({ block: 'nearest' });
+  }, [cmdIndex]);
+
+  // Reset index when search changes
+  useEffect(() => { setCmdIndex(0); }, [commandSearch]);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────────
+
   return (
-    <div className="flex h-full flex-col bg-white dark:bg-gray-950">
-      {/* Enhanced Toolbar with Premium Styling */}
-      <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 bg-gradient-to-r from-gray-50 via-gray-100 to-gray-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800 px-6 py-3.5 shadow-xl">
-        <div className="flex items-center gap-3">
-          {/* Premium Search Bar */}
-          <div className="relative group">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 transition-colors group-focus-within:text-blue-400" />
+    <div className="flex h-full flex-col" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+
+      {/* ════════════════════ TOOLBAR ════════════════════ */}
+      <div
+        className="flex items-center justify-between gap-3 px-3 py-1.5 flex-shrink-0 border-b"
+        style={{ background: '#0d1117', borderColor: 'rgba(255,255,255,0.08)', minHeight: 44 }}
+      >
+        {/* Left */}
+        <div className="flex items-center gap-2">
+
+          {/* Left panel toggle */}
+          <ToolbarToggle
+            active={showLeftPanel}
+            onClick={() => setShowLeftPanel(v => !v)}
+            icon={<PanelLeft className="h-3.5 w-3.5" />}
+            label="Tables"
+          />
+
+          {/* Divider */}
+          <div className="h-4 w-px" style={{ background: 'rgba(255,255,255,0.1)' }} />
+
+          {/* Command palette trigger */}
+          <button
+            onClick={() => { setShowCommandPalette(true); setCommandSearch(''); setCmdIndex(0); }}
+            className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs transition-colors"
+            style={{ border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.4)', background: 'transparent' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+          >
+            <Command className="h-3.5 w-3.5" />
+            <span>Search…</span>
+            <kbd className="rounded px-1 py-0.5 text-[9px] font-mono" style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.35)' }}>⌘K</kbd>
+          </button>
+
+          {/* Divider */}
+          <div className="h-4 w-px" style={{ background: 'rgba(255,255,255,0.1)' }} />
+
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 pointer-events-none" style={{ color: 'rgba(255,255,255,0.35)' }} />
             <input
+              ref={searchRef}
               type="text"
-              placeholder="Search tables..."
+              placeholder="Filter tables… (⌘F)"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-64 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800/50 py-2.5 pl-10 pr-4 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 backdrop-blur-sm transition-all focus:border-blue-500 focus:bg-gray-50 dark:focus:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              onChange={e => setSearchTerm(e.target.value)}
+              className="w-44 rounded-md py-1.5 pl-8 pr-6 text-xs focus:outline-none transition-colors"
+              style={{
+                background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                color: 'rgba(255,255,255,0.85)',
+              }}
             />
+            {searchTerm && (
+              <button onClick={() => setSearchTerm('')} className="absolute right-1.5 top-1/2 -translate-y-1/2" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                <X className="h-3 w-3" />
+              </button>
+            )}
           </div>
 
-          {/* Enhanced Zoom Controls */}
-          <div className="flex items-center gap-1 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800/50 backdrop-blur-sm">
-            <button onClick={handleZoomOut} className="p-2.5 text-gray-500 dark:text-gray-400 transition-all hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-900 dark:hover:text-white active:scale-95">
-              <ZoomOut className="h-4 w-4" />
-            </button>
-            <span className="min-w-[65px] text-center text-sm font-bold text-gray-900 dark:text-white">
-              {Math.round(scale * 100)}%
-            </span>
-            <button onClick={handleZoomIn} className="p-2.5 text-gray-500 dark:text-gray-400 transition-all hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-900 dark:hover:text-white active:scale-95">
-              <ZoomIn className="h-4 w-4" />
-            </button>
+          {/* Divider */}
+          <div className="h-4 w-px" style={{ background: 'rgba(255,255,255,0.1)' }} />
+
+          {/* Zoom */}
+          <div className="flex items-center rounded-md overflow-hidden text-xs" style={{ border: '1px solid rgba(255,255,255,0.1)' }}>
+            {[
+              { icon: <ZoomOut className="h-3.5 w-3.5" />, fn: zoomOut, title: 'Zoom out' },
+              { label: `${Math.round(scale * 100)}%`, fn: resetView, title: 'Reset zoom (⌘0)' },
+              { icon: <ZoomIn className="h-3.5 w-3.5" />, fn: zoomIn, title: 'Zoom in' },
+            ].map((btn, i) => (
+              <button
+                key={i}
+                onClick={btn.fn}
+                title={btn.title}
+                className="px-2 py-1.5 transition-colors"
+                style={{
+                  color: 'rgba(255,255,255,0.55)',
+                  borderLeft: i > 0 ? '1px solid rgba(255,255,255,0.1)' : undefined,
+                  minWidth: btn.label ? 50 : undefined,
+                  textAlign: 'center',
+                  fontFamily: 'monospace',
+                  fontWeight: 600,
+                  fontSize: 11,
+                  background: 'transparent',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                {btn.label ?? btn.icon}
+              </button>
+            ))}
           </div>
 
-          {/* Enhanced Reset Button */}
-          <button
-            onClick={handleResetView}
-            className="flex items-center gap-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800/50 px-4 py-2.5 text-sm font-semibold text-gray-900 dark:text-white backdrop-blur-sm transition-all hover:border-gray-400 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/70 active:scale-95"
-          >
-            <Maximize2 className="h-4 w-4" />
-            Reset View
-          </button>
+          {/* Divider */}
+          <div className="h-4 w-px" style={{ background: 'rgba(255,255,255,0.1)' }} />
 
-          {/* Enhanced Toggle Buttons */}
-          <button
-            onClick={() => setShowRelationships(!showRelationships)}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all active:scale-95 ${
-              showRelationships
-                ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/30'
-                : 'border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 backdrop-blur-sm hover:border-gray-400 dark:hover:border-gray-600 hover:text-gray-900 dark:hover:text-white'
-            }`}
-          >
-            {showRelationships ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-            Links
-          </button>
+          {/* All / Keys / Name toggle */}
+          <div className="flex items-center rounded-md overflow-hidden text-xs" style={{ border: '1px solid rgba(255,255,255,0.1)' }}>
+            {(['all', 'keys', 'name'] as const).map((m, i) => (
+              <button
+                key={m}
+                onClick={() => setShowMode(m)}
+                className="px-3 py-1.5 font-medium transition-colors"
+                style={{
+                  background: showMode === m ? '#1ded83' : 'transparent',
+                  color: showMode === m ? '#141616' : 'rgba(255,255,255,0.55)',
+                  borderLeft: i > 0 ? '1px solid rgba(255,255,255,0.1)' : undefined,
+                }}
+              >
+                {m === 'all' ? 'All' : m === 'keys' ? 'Keys' : 'Name'}
+              </button>
+            ))}
+          </div>
 
-          <button
-            onClick={() => setShowMinimap(!showMinimap)}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all active:scale-95 ${
-              showMinimap
-                ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/30'
-                : 'border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 backdrop-blur-sm hover:border-gray-400 dark:hover:border-gray-600 hover:text-gray-900 dark:hover:text-white'
-            }`}
-          >
-            <Grid3x3 className="h-4 w-4" />
-            Map
-          </button>
+          {/* Divider */}
+          <div className="h-4 w-px" style={{ background: 'rgba(255,255,255,0.1)' }} />
+
+          {/* Edges toggle */}
+          <ToolbarToggle
+            active={showEdges} onClick={() => setShowEdges(v => !v)}
+            icon={showEdges ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+            label="Links"
+          />
+          {/* Minimap toggle */}
+          <ToolbarToggle
+            active={showMinimap} onClick={() => setShowMinimap(v => !v)}
+            icon={<Grid3x3 className="h-3.5 w-3.5" />}
+            label="Map"
+          />
+          {/* Fit to screen */}
+          <ToolbarBtn onClick={fitToScreen} icon={<RotateCcw className="h-3.5 w-3.5" />} label="Fit" title="Fit to screen" />
+          {/* Tidy Up */}
+          <ToolbarBtn
+            onClick={tidyUp}
+            icon={<Layout className={`h-3.5 w-3.5 ${isComputing ? 'animate-spin' : ''}`} />}
+            label="Tidy"
+            title="Tidy up layout"
+          />
+
+          {/* Related only — only when table selected */}
+          {selectedTable && (
+            <ToolbarToggle
+              active={relatedOnly} onClick={() => setRelatedOnly(v => !v)}
+              icon={<Filter className="h-3.5 w-3.5" />}
+              label="Related"
+            />
+          )}
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Enhanced Table Count Badge */}
-          <div className="rounded-lg border border-gray-300 dark:border-gray-700 bg-gradient-to-br from-gray-100 to-gray-100/50 dark:from-gray-800 dark:to-gray-800/50 px-5 py-2.5 shadow-lg backdrop-blur-sm">
-            <span className="text-sm font-bold text-gray-900 dark:text-white">
-              {filteredTables.length} <span className="font-normal text-gray-600 dark:text-gray-400">Tables</span>
-            </span>
+        {/* Right */}
+        <div className="flex items-center gap-2">
+          {/* Stats */}
+          <div className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs" style={{ border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.55)' }}>
+            <span className="h-1.5 w-1.5 rounded-full inline-block" style={{ background: '#1ded83' }} />
+            <span style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 600 }}>{displayedTables.length}</span>
+            <span>/ {tables.length}</span>
+            {isComputing && <span style={{ color: '#1ded83' }} className="ml-1">· computing…</span>}
           </div>
-
-          {/* Fullscreen Button */}
+          <div className="h-4 w-px" style={{ background: 'rgba(255,255,255,0.1)' }} />
+          <ToolbarBtn onClick={toggleFullscreen} icon={<Maximize className="h-3.5 w-3.5" />} label={isFullscreen ? 'Exit' : 'Full'} />
+          <ToolbarBtn onClick={exportPNG} icon={<Download className="h-3.5 w-3.5" />} label="PNG" />
+          {/* SVG = primary CTA */}
           <button
-            onClick={handleToggleFullscreen}
-            className="flex items-center gap-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800/50 px-4 py-2.5 text-sm font-semibold text-gray-900 dark:text-white backdrop-blur-sm transition-all hover:border-gray-400 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/70 active:scale-95"
+            onClick={exportSVG}
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors"
+            style={{ background: '#1ded83', color: '#141616' }}
+            onMouseEnter={e => (e.currentTarget.style.background = '#4af19c')}
+            onMouseLeave={e => (e.currentTarget.style.background = '#1ded83')}
           >
-            <Maximize className="h-4 w-4" />
-            {isFullscreen ? 'Exit' : 'Fullscreen'}
-          </button>
-
-          {/* Export Buttons */}
-          <button
-            onClick={handleExportPNG}
-            className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-600 to-green-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-500 hover:to-green-400 active:scale-95"
-          >
-            <Download className="h-4 w-4" />
-            PNG
-          </button>
-
-          <button
-            onClick={handleExport}
-            className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-orange-600 to-orange-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-orange-500/30 transition-all hover:from-orange-500 hover:to-orange-400 active:scale-95"
-          >
-            <Download className="h-4 w-4" />
-            SVG
+            <Download className="h-3.5 w-3.5" /> SVG
           </button>
         </div>
       </div>
 
-      {/* Enhanced Canvas with Grid Background */}
-      <div
-        ref={containerRef}
-        className="relative flex-1 overflow-hidden bg-gray-50 dark:bg-gray-950"
-        onMouseDown={handleCanvasMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        style={{
-          cursor: isPanning ? 'grabbing' : dragging ? 'default' : 'grab',
-          userSelect: 'none',
-          WebkitUserSelect: 'none',
-          backgroundImage: `
-            linear-gradient(rgba(59, 130, 246, 0.08) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(59, 130, 246, 0.08) 1px, transparent 1px)
-          `,
-          backgroundSize: '50px 50px',
-          backgroundPosition: `${translate.x}px ${translate.y}px`
-        }}
-      >
-        <div
-          style={{
-            transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
-            transformOrigin: '0 0',
-            width: '5000px',
-            height: '5000px',
-            position: 'relative',
-            transition: dragging || isPanning ? 'none' : 'transform 0.3s ease-out'
-          }}
-        >
-          {/* PROPERLY CONNECTED Relationship Lines - DEBUG MODE */}
-          {showRelationships && (
-            <svg
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '5000px',
-                height: '5000px',
-                pointerEvents: 'none',
-                overflow: 'visible',
-                zIndex: 100
-              }}
-            >
-              <defs>
-                {/* Crow's foot notation markers - professional ER diagram style */}
+      {/* ════════════════════ BODY ════════════════════ */}
+      <div className="flex flex-1 overflow-hidden">
 
-                {/* One side (PK side) - single line */}
-                <marker
-                  id="one"
-                  markerWidth="12"
-                  markerHeight="12"
-                  refX="0"
-                  refY="6"
-                  orient="auto"
+        {/* ════════════════════ LEFT PANEL ════════════════════ */}
+        {showLeftPanel && (
+          <div
+            className="flex flex-col flex-shrink-0 overflow-hidden"
+            style={{
+              width: 220,
+              borderRight: '1px solid rgba(255,255,255,0.08)',
+              background: '#0d1117',
+            }}
+          >
+            {/* Panel header */}
+            <div className="flex items-center justify-between px-3 py-2.5 flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.35)' }}>Tables</span>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setHiddenTables(new Set())}
+                  title="Show all"
+                  className="flex items-center justify-center rounded px-1.5 py-0.5 text-[9px] font-semibold transition-colors"
+                  style={{ color: 'rgba(255,255,255,0.3)', border: '1px solid rgba(255,255,255,0.08)', background: 'transparent' }}
+                  onMouseEnter={e => { (e.currentTarget.style.color = '#1ded83'); (e.currentTarget.style.borderColor = 'rgba(29,237,131,0.3)'); }}
+                  onMouseLeave={e => { (e.currentTarget.style.color = 'rgba(255,255,255,0.3)'); (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'); }}
                 >
-                  <line x1="0" y1="0" x2="0" y2="12" stroke="#3b82f6" strokeWidth="2" />
-                </marker>
-
-                {/* Many side (FK side) - crow's foot */}
-                <marker
-                  id="many"
-                  markerWidth="16"
-                  markerHeight="16"
-                  refX="16"
-                  refY="8"
-                  orient="auto"
+                  All
+                </button>
+                <button
+                  onClick={() => setHiddenTables(new Set(tables.map(t => t.name)))}
+                  title="Hide all"
+                  className="flex items-center justify-center rounded px-1.5 py-0.5 text-[9px] font-semibold transition-colors"
+                  style={{ color: 'rgba(255,255,255,0.3)', border: '1px solid rgba(255,255,255,0.08)', background: 'transparent' }}
+                  onMouseEnter={e => { (e.currentTarget.style.color = 'rgba(247,80,73,0.8)'); (e.currentTarget.style.borderColor = 'rgba(247,80,73,0.2)'); }}
+                  onMouseLeave={e => { (e.currentTarget.style.color = 'rgba(255,255,255,0.3)'); (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'); }}
                 >
-                  <path
-                    d="M 16 8 L 0 0 M 16 8 L 0 8 M 16 8 L 0 16"
-                    stroke="#3b82f6"
-                    strokeWidth="2"
-                    fill="none"
-                  />
-                </marker>
-
-                {/* Hover states */}
-                <marker
-                  id="one-hover"
-                  markerWidth="12"
-                  markerHeight="12"
-                  refX="0"
-                  refY="6"
-                  orient="auto"
-                >
-                  <line x1="0" y1="0" x2="0" y2="12" stroke="#60a5fa" strokeWidth="3" />
-                </marker>
-
-                <marker
-                  id="many-hover"
-                  markerWidth="18"
-                  markerHeight="18"
-                  refX="18"
-                  refY="9"
-                  orient="auto"
-                >
-                  <path
-                    d="M 18 9 L 0 0 M 18 9 L 0 9 M 18 9 L 0 18"
-                    stroke="#60a5fa"
-                    strokeWidth="3"
-                    fill="none"
-                  />
-                </marker>
-              </defs>
-
-              {/* Row-to-row with working Y as fallback */}
-              {filteredTables.flatMap(table => {
-                const sourcePos = positions.get(table.name);
-                if (!sourcePos) return [];
-
-                // Get all FK columns in this table to calculate offsets
-                const fkColumns = table.columns.filter(col => col.isForeignKey && col.references);
-
-                if (fkColumns.length > 1) {
-                  console.log(`📊 Table '${table.name}' has ${fkColumns.length} FKs:`, fkColumns.map(c => `${c.name} -> ${c.references?.table}`));
-                }
-
-                return fkColumns.map((fkCol, fkIndex) => {
-                    const targetPos = positions.get(fkCol.references!.table);
-                    if (!targetPos) return null;
-
-                    // Find FK column row index
-                    const fkRowIndex = table.columns.findIndex(c => c.name === fkCol.name);
-
-                    // Find target table and PK row index
-                    const targetTable = filteredTables.find(t => t.name === fkCol.references!.table);
-                    if (!targetTable) return null;
-                    const pkRowIndex = targetTable.columns.findIndex(c => c.isPrimaryKey);
-
-                    // Component measurements
-                    const headerH = 48;
-                    const rowH = 32;
-                    const borderW = 2;
-
-                    // No offset - line starts exactly from the FK column row
-                    // User-friendly: RIGHT edge to LEFT edge
-                    const x1 = sourcePos.x + 280; // RIGHT edge - line starts here
-                    const y1 = fkRowIndex >= 0
-                      ? sourcePos.y + borderW + headerH + (fkRowIndex * rowH) + (rowH / 2)
-                      : sourcePos.y + 100; // Fallback to center
-
-                    const x2 = targetPos.x; // LEFT edge - line ends here
-                    const y2 = pkRowIndex >= 0
-                      ? targetPos.y + borderW + headerH + (pkRowIndex * rowH) + (rowH / 2)
-                      : targetPos.y + 100; // Fallback to center
-
-                    const relationshipKey = `${table.name}.${fkCol.name}->${fkCol.references!.table}`;
-                    const isHighlighted = selectedTable === table.name || selectedTable === fkCol.references!.table;
-                    const isHovered = hoveredRelationship === relationshipKey;
-
-                    // Use ELK-calculated route for clean orthogonal routing
-                    const edgeId = `${table.name}-${fkCol.name}`;
-                    const elkRoute = edgeRoutes.get(edgeId);
-
-                    let pathD;
-                    if (elkRoute && elkRoute.points.length >= 2) {
-                      // Clean professional routing - straight lines with sharp corners
-                      pathD = `M ${x1} ${y1}`;
-
-                      // Draw through all ELK points with straight lines
-                      const firstPoint = elkRoute.points[0];
-                      pathD += ` L ${firstPoint.x} ${y1}`;
-                      if (Math.abs(firstPoint.y - y1) > 1) {
-                        pathD += ` L ${firstPoint.x} ${firstPoint.y}`;
-                      }
-
-                      // Straight lines through bend points
-                      for (let i = 1; i < elkRoute.points.length; i++) {
-                        const point = elkRoute.points[i];
-                        pathD += ` L ${point.x} ${point.y}`;
-                      }
-
-                      // Final segments
-                      const lastPoint = elkRoute.points[elkRoute.points.length - 1];
-                      if (Math.abs(lastPoint.y - y2) > 1) {
-                        pathD += ` L ${lastPoint.x} ${y2}`;
-                      }
-                      pathD += ` L ${x2} ${y2}`;
-                    } else {
-                      // Simple clean path
-                      const midX = (x1 + x2) / 2;
-                      pathD = `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
-                    }
-
-                    return (
-                      <g key={`${table.name}-${fkCol.name}`}>
-                        {/* Invisible thicker path for easier hovering */}
-                        <path
-                          d={pathD}
-                          stroke="transparent"
-                          strokeWidth="20"
-                          fill="none"
-                          style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
-                          onMouseEnter={() => setHoveredRelationship(relationshipKey)}
-                          onMouseLeave={() => setHoveredRelationship(null)}
-                        />
-                        {/* Clean path - dot shows FK side, marker shows PK side */}
-                        <path
-                          d={pathD}
-                          stroke={isHovered ? "#60a5fa" : "#3b82f6"}
-                          strokeWidth={isHovered ? "2" : "1.5"}
-                          markerEnd={isHovered ? "url(#one-hover)" : "url(#one)"}
-                          opacity={hoveredRelationship && !isHovered ? "0.2" : isHovered ? "1" : "0.75"}
-                          fill="none"
-                          strokeLinecap="square"
-                          strokeLinejoin="miter"
-                          style={{
-                            pointerEvents: 'none',
-                            transition: 'all 0.15s ease'
-                          }}
-                        />
-                        {/* Compact label on hover - professional style */}
-                        {isHovered && (
-                          <g>
-                            <rect
-                              x={(x1 + x2) / 2 - 85}
-                              y={(y1 + y2) / 2 - 15}
-                              width="170"
-                              height="30"
-                              rx="4"
-                              fill="#1e293b"
-                              stroke="#60a5fa"
-                              strokeWidth="2"
-                              opacity="0.98"
-                              style={{ pointerEvents: 'none' }}
-                            />
-                            <text
-                              x={(x1 + x2) / 2}
-                              y={(y1 + y2) / 2 + 5}
-                              textAnchor="middle"
-                              fill="#60a5fa"
-                              fontSize="12"
-                              fontWeight="600"
-                              style={{ pointerEvents: 'none' }}
-                            >
-                              {table.name}.{fkCol.name} → {fkCol.references!.table}.{fkCol.references!.column}
-                            </text>
-                          </g>
-                        )}
-                      </g>
-                    );
-                  })
-                  .filter(Boolean);
-              })}
-            </svg>
-          )}
-
-          {/* Render tables */}
-          {filteredTables.map(table => {
-            const pos = positions.get(table.name);
-            if (!pos) return null;
-
-            return (
-              <div
-                key={table.name}
-                className={`absolute rounded-xl border-2 shadow-2xl transition-all duration-300 bg-white dark:bg-gradient-to-br dark:from-slate-800 dark:to-slate-900 ${
-                  selectedTable === table.name
-                    ? 'border-blue-400 shadow-blue-500/50 scale-105 z-50'
-                    : 'border-gray-300 dark:border-gray-700 hover:border-blue-500/50 hover:shadow-blue-500/20 hover:scale-[1.02]'
-                } ${
-                  dragging?.table === table.name
-                    ? 'cursor-grabbing shadow-blue-600/60 ring-2 ring-blue-400/50'
-                    : 'cursor-grab'
-                }`}
-                style={{
-                  left: pos.x,
-                  top: pos.y,
-                  width: 280,
-                  willChange: dragging?.table === table.name ? 'transform' : 'auto',
-                  userSelect: 'none',
-                  WebkitUserSelect: 'none'
-                }}
-                onMouseDown={(e) => handleTableMouseDown(e, table.name)}
-                onClick={() => onTableClick(table.name)}
-              >
-                {/* Compact Header - EXACTLY 48px */}
-                <div className="relative overflow-hidden rounded-t-lg bg-gradient-to-br from-blue-600 to-blue-500 px-3 py-2 shadow-lg flex items-center" style={{ height: '48px', minHeight: '48px', maxHeight: '48px' }}>
-                  <div className="flex items-center gap-2 w-full">
-                    <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/20 flex-shrink-0">
-                      <span className="text-xs">📊</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-bold text-white truncate">
-                        {table.name}
-                      </h3>
-                      <div className="flex items-center gap-1.5 text-[10px] text-blue-100">
-                        <span>{table.columns.length} cols</span>
-                        <span>•</span>
-                        <span>{table.columns.filter(c => c.isPrimaryKey).length} PK</span>
-                        <span>•</span>
-                        <span>{table.columns.filter(c => c.isForeignKey).length} FK</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Compact Columns */}
-                <div className="max-h-80 overflow-y-auto scrollbar-thin scrollbar-track-gray-200 dark:scrollbar-track-gray-900 scrollbar-thumb-gray-400 dark:scrollbar-thumb-gray-700">
-                  {table.columns.map((col, idx) => {
-                    const isLast = idx === table.columns.length - 1;
-                    const relationshipKey = col.isForeignKey && col.references
-                      ? `${table.name}.${col.name}->${col.references.table}`
-                      : null;
-                    const isRelationshipHovered = relationshipKey === hoveredRelationship;
-
-                    return (
-                      <div
-                        key={col.name}
-                        className={`group relative flex items-center justify-between border-b border-gray-200 dark:border-gray-800/50 px-2.5 transition-all ${
-                          isRelationshipHovered ? 'bg-blue-500/20' : 'hover:bg-gray-100 dark:hover:bg-gray-700/30'
-                        } ${
-                          idx % 2 === 0 ? 'bg-gray-50 dark:bg-gray-800/40' : 'bg-white dark:bg-gray-900/40'
-                        } ${isLast ? 'border-b-0' : ''}`}
-                        style={{ height: '32px' }}
-                      >
-                        {/* Left indicator */}
-                        <div className={`absolute left-0 top-0 h-full w-0.5 ${
-                          col.isPrimaryKey ? 'bg-yellow-400' : col.isForeignKey ? 'bg-blue-400' : 'bg-transparent'
-                        }`} />
-
-                        {/* Connection indicator on RIGHT for FK - where line starts */}
-                        {col.isForeignKey && (
-                          <div className="absolute right-0 top-1/2 -translate-y-1/2 z-10">
-                            <div className={`h-3 w-3 rounded-full border-2 border-white shadow-lg transition-all ${
-                              isRelationshipHovered ? 'bg-blue-300 scale-150 shadow-blue-400/50' : 'bg-blue-400'
-                            }`}></div>
-                          </div>
-                        )}
-
-                        {/* Column Info */}
-                        <div className="flex items-center gap-2 pl-1 min-w-0 flex-1">
-                          {/* Icon */}
-                          <div className={`flex h-5 w-5 items-center justify-center rounded ${
-                            col.isPrimaryKey
-                              ? 'bg-yellow-500/20 text-yellow-500 dark:text-yellow-400'
-                              : col.isForeignKey
-                              ? 'bg-blue-500/20 text-blue-500 dark:text-blue-400'
-                              : 'bg-gray-400/20 dark:bg-gray-600/20 text-gray-600 dark:text-gray-400'
-                          }`}>
-                            <span className="text-[10px]">
-                              {col.isPrimaryKey ? '🔑' : col.isForeignKey ? '🔗' : '●'}
-                            </span>
-                          </div>
-
-                          {/* Column Name */}
-                          <div className="flex flex-col min-w-0 flex-1">
-                            <div className="flex items-center gap-1">
-                              <span className={`text-xs font-semibold truncate ${
-                                col.isPrimaryKey ? 'text-yellow-600 dark:text-yellow-400' : col.isForeignKey ? 'text-cyan-600 dark:text-cyan-400' : 'text-gray-700 dark:text-gray-100'
-                              }`}>
-                                {col.name}
-                              </span>
-                              {col.isPrimaryKey && (
-                                <span className="rounded bg-yellow-500/20 px-1 py-0.5 text-[8px] font-bold text-yellow-600 dark:text-yellow-400">PK</span>
-                              )}
-                              {col.isForeignKey && (
-                                <span className="rounded bg-blue-500/20 px-1 py-0.5 text-[8px] font-bold text-blue-600 dark:text-blue-400">FK</span>
-                              )}
-                              {!col.nullable && (
-                                <span className="text-red-500 dark:text-red-400 text-[10px]">*</span>
-                              )}
-                            </div>
-                            {/* FK reference */}
-                            {col.isForeignKey && col.references && (
-                              <span className="text-[9px] text-cyan-600 dark:text-cyan-400/70 truncate">
-                                → {col.references.table}.{col.references.column}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Type */}
-                        <span className="rounded bg-gray-200 dark:bg-gray-700/50 px-2 py-0.5 text-[10px] font-mono font-semibold text-gray-700 dark:text-gray-300 ml-1">
-                          {col.type.toLowerCase()}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Compact Stats Bar */}
-                <div className="flex items-center justify-between rounded-b-lg border-t border-gray-200 dark:border-gray-700/50 bg-gray-100 dark:bg-gray-900/60 px-2.5 py-1.5">
-                  <div className="flex items-center gap-2 text-[10px]">
-                    <span className="text-yellow-600 dark:text-yellow-400">🔑 {table.columns.filter(c => c.isPrimaryKey).length} PK</span>
-                    <span className="text-gray-400 dark:text-gray-600">•</span>
-                    <span className="text-blue-600 dark:text-blue-400">🔗 {table.columns.filter(c => c.isForeignKey).length} FK</span>
-                    <span className="text-gray-400 dark:text-gray-600">•</span>
-                    <span className="text-red-600 dark:text-red-400">★ {table.columns.filter(c => !c.nullable).length} Req</span>
-                  </div>
-                  <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-500">
-                    {table.columns.length} cols
-                  </span>
-                </div>
+                  None
+                </button>
               </div>
-            );
-          })}
-        </div>
+            </div>
 
-        {/* Enhanced Minimap */}
-        {showMinimap && (
-          <div className="absolute bottom-6 right-6 rounded-xl border border-gray-300 dark:border-gray-700/50 bg-gradient-to-br from-white to-gray-50 dark:from-gray-800/95 dark:to-gray-900/95 p-3 shadow-2xl backdrop-blur-xl">
-            <div className="relative h-36 w-36 rounded-lg bg-gray-100 dark:bg-gray-950/80 p-1 ring-1 ring-gray-300 dark:ring-gray-700/50">
-              {tables.map(table => {
-                const pos = positions.get(table.name);
-                if (!pos) return null;
+            {/* Search within panel */}
+            <div className="px-2 py-2 flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 pointer-events-none" style={{ color: 'rgba(255,255,255,0.25)' }} />
+                <input
+                  type="text"
+                  placeholder="Filter…"
+                  value={leftPanelSearch}
+                  onChange={e => setLeftPanelSearch(e.target.value)}
+                  className="w-full rounded py-1 pl-6 pr-2 text-[11px] focus:outline-none"
+                  style={{
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    color: 'rgba(255,255,255,0.7)',
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Visibility stats */}
+            <div className="flex items-center gap-2 px-3 py-1.5 flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#1ded83' }} />
+              <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                {tables.length - hiddenTables.size} visible · {hiddenTables.size} hidden
+              </span>
+            </div>
+
+            {/* Table list */}
+            <div className="flex-1 overflow-y-auto">
+              {leftPanelTables.map(t => {
+                const isHidden  = hiddenTables.has(t.name);
+                const isSel     = selectedTable === t.name;
+                const isConn    = connectedSet.has(t.name) && !!selectedTable;
+                const isHovered = hoveredTable === t.name;
+
                 return (
                   <div
-                    key={table.name}
-                    className="absolute rounded transition-all duration-200"
+                    key={t.name}
+                    className="group flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors"
                     style={{
-                      left: pos.x * 0.05,
-                      top: pos.y * 0.05,
-                      width: 20,
-                      height: 15,
-                      backgroundColor: selectedTable === table.name ? '#3b82f6' : '#9ca3af',
-                      boxShadow: selectedTable === table.name ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none'
+                      borderBottom: '1px solid rgba(255,255,255,0.04)',
+                      background: isSel
+                        ? 'rgba(29,237,131,0.1)'
+                        : isHovered
+                        ? 'rgba(255,255,255,0.04)'
+                        : 'transparent',
+                      opacity: isHidden ? 0.4 : 1,
                     }}
-                  />
+                    onClick={() => {
+                      if (isHidden) return;
+                      setSelectedTable(t.name);
+                      onTableClick(t.name);
+                      focusTable(t.name);
+                    }}
+                    onMouseEnter={e => {
+                      if (!isSel) (e.currentTarget.style.background = 'rgba(255,255,255,0.04)');
+                    }}
+                    onMouseLeave={e => {
+                      if (!isSel) (e.currentTarget.style.background = 'transparent');
+                    }}
+                  >
+                    {/* Color dot */}
+                    <span
+                      className="h-1.5 w-1.5 rounded-full flex-shrink-0"
+                      style={{
+                        background: isSel ? '#1ded83' : isConn ? 'rgba(29,237,131,0.6)' : isHidden ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.3)',
+                      }}
+                    />
+
+                    {/* Table name */}
+                    <span
+                      className="flex-1 min-w-0 truncate text-[11px]"
+                      style={{
+                        color: isSel ? '#1ded83' : isConn ? 'rgba(29,237,131,0.85)' : isHidden ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.65)',
+                        fontWeight: isSel ? 600 : 400,
+                        textDecoration: isHidden ? 'line-through' : 'none',
+                      }}
+                    >
+                      {t.name}
+                    </span>
+
+                    {/* Column count */}
+                    <span className="text-[9px] flex-shrink-0" style={{ color: 'rgba(255,255,255,0.2)' }}>
+                      {t.columns.length}
+                    </span>
+
+                    {/* Eye toggle */}
+                    <button
+                      onClick={e => { e.stopPropagation(); toggleHidden(t.name); }}
+                      className="flex items-center justify-center rounded flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                      style={{ color: isHidden ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.4)', width: 16, height: 16 }}
+                      title={isHidden ? 'Show table' : 'Hide table'}
+                    >
+                      {isHidden
+                        ? <EyeOff className="h-3 w-3" />
+                        : <Eye className="h-3 w-3" />}
+                    </button>
+                  </div>
                 );
               })}
-            </div>
-            <div className="mt-2 flex items-center justify-center gap-2">
-              <div className="h-1.5 w-1.5 rounded-full bg-blue-500"></div>
-              <p className="text-center text-xs font-bold tracking-wider text-gray-700 dark:text-gray-300">OVERVIEW</p>
-              <div className="h-1.5 w-1.5 rounded-full bg-blue-500"></div>
             </div>
           </div>
         )}
 
+        {/* ════════════════════ CANVAS ════════════════════ */}
+        <div
+          ref={containerRef}
+          className="relative flex-1 overflow-hidden"
+          onMouseDown={handleCanvasMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          style={{
+            cursor: isPanning ? 'grabbing' : dragging ? 'grabbing' : 'grab',
+            userSelect: 'none', WebkitUserSelect: 'none',
+            background: '#141616',
+            backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)',
+            backgroundSize: '24px 24px',
+            backgroundPosition: `${translate.x % 24}px ${translate.y % 24}px`,
+          }}
+        >
+          {/* Loading fade-out overlay */}
+          {isComputing && (
+            <div className="absolute inset-0 z-50 pointer-events-none transition-opacity" style={{ opacity: 0.4, background: '#141616' }} />
+          )}
+
+          <div
+            style={{
+              transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
+              transformOrigin: '0 0',
+              width: '5000px', height: '5000px',
+              position: 'relative',
+              transition: dragging || isPanning ? 'opacity 0.3s ease' : 'transform 0.1s ease-out, opacity 0.3s ease',
+              opacity: isComputing ? 0 : 1,
+            }}
+          >
+            {/* ─── Relationship edges (SVG) ─── */}
+            {showEdges && (
+              <svg style={{ position: 'absolute', top: 0, left: 0, width: '5000px', height: '5000px', pointerEvents: 'none', overflow: 'visible', zIndex: 1 }}>
+                <defs>
+                  <filter id="e-glow" x="-100%" y="-100%" width="300%" height="300%">
+                    <feGaussianBlur stdDeviation="3" result="b" />
+                    <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+                  </filter>
+
+                  <linearGradient id="pgrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#1ded83" stopOpacity="0" />
+                    <stop offset="40%" stopColor="#1ded83" stopOpacity="1" />
+                    <stop offset="100%" stopColor="#4af19c" stopOpacity="0.8" />
+                  </linearGradient>
+
+                  <marker id="erd-many"   viewBox="0 0 20 20" refX="0"  refY="10" markerWidth="14" markerHeight="14" orient="auto">
+                    <path d="M 0 2 L 14 10 M 0 10 L 14 10 M 0 18 L 14 10" stroke="rgba(255,255,255,0.3)" strokeWidth="1.3" fill="none"/>
+                  </marker>
+                  <marker id="erd-many-h" viewBox="0 0 20 20" refX="0"  refY="10" markerWidth="14" markerHeight="14" orient="auto">
+                    <path d="M 0 2 L 14 10 M 0 10 L 14 10 M 0 18 L 14 10" stroke="#1ded83" strokeWidth="1.6" fill="none"/>
+                  </marker>
+
+                  <marker id="erd-one"   viewBox="0 0 10 20" refX="10" refY="10" markerWidth="10" markerHeight="14" orient="auto">
+                    <line x1="9" y1="2" x2="9" y2="18" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5"/>
+                  </marker>
+                  <marker id="erd-one-h" viewBox="0 0 10 20" refX="10" refY="10" markerWidth="10" markerHeight="14" orient="auto">
+                    <line x1="9" y1="2" x2="9" y2="18" stroke="#1ded83" strokeWidth="2"/>
+                  </marker>
+                </defs>
+
+                {displayedTables.flatMap(table => {
+                  const sp = positions.get(table.name); if (!sp) return [];
+                  return table.columns
+                    .filter(c => c.isForeignKey && c.references)
+                    .map(fk => {
+                      const tgt = displayedTables.find(t => t.name === fk.references!.table);
+                      const tp  = tgt && positions.get(tgt.name);
+                      if (!tgt || !tp) return null;
+
+                      const fkIdx = table.columns.findIndex(c => c.name === fk.name);
+                      const pkIdx = tgt.columns.findIndex(c => c.isPrimaryKey);
+                      const srcC  = collapsed.has(table.name);
+                      const tgtC  = collapsed.has(tgt.name);
+
+                      const { pathD, x1, y1, x2, y2 } = bezierPath(sp, tp, fkIdx, pkIdx, srcC, tgtC);
+                      const relKey   = `${table.name}.${fk.name}->${fk.references!.table}`;
+                      const isHov    = hoveredRel === relKey;
+
+                      // Highlight from selection
+                      const isSelHlt = selectedTable === table.name || selectedTable === fk.references!.table;
+                      // Highlight from hover
+                      const isHvrHlt = hoveredTable === table.name || hoveredTable === fk.references!.table;
+                      const isHlt    = isSelHlt || isHvrHlt;
+
+                      // Dim: if selection active and not related; or hover active and not related
+                      const dimBySelect = !!selectedTable && !isSelHlt;
+                      const dimByHover  = !!hoveredTable && !selectedTable && !isHvrHlt;
+                      const dim         = dimBySelect || dimByHover;
+                      const opacity     = dim ? 0.06 : isHov ? 1 : isHlt ? 0.85 : 0.4;
+
+                      return (
+                        <g key={`${table.name}-${fk.name}`}>
+                          <path d={pathD} stroke="transparent" strokeWidth="18" fill="none"
+                            style={{ cursor: 'default', pointerEvents: 'stroke' }}
+                            onMouseEnter={() => setHoveredRel(relKey)}
+                            onMouseLeave={() => setHoveredRel(null)}
+                          />
+
+                          <path
+                            d={pathD}
+                            stroke={isHov || isHlt ? '#1ded83' : 'rgba(255,255,255,0.25)'}
+                            strokeWidth={isHov ? 1.8 : isHlt ? 1.4 : 1}
+                            fill="none" opacity={opacity}
+                            strokeLinecap="square" strokeLinejoin="miter"
+                            markerStart={isHov || isHlt ? 'url(#erd-many-h)' : 'url(#erd-many)'}
+                            markerEnd={isHov || isHlt ? 'url(#erd-one-h)' : 'url(#erd-one)'}
+                            filter={isHov ? 'url(#e-glow)' : undefined}
+                            style={{ pointerEvents: 'none', transition: 'all 0.15s ease' }}
+                          />
+
+                          {/* Animated particles on highlight/hover */}
+                          {(isHov || isHlt) && Array.from({ length: PARTICLE_N }, (_, i) => (
+                            <ellipse key={i} rx="5" ry="1.5" fill="url(#pgrad)" opacity={opacity * 0.9}>
+                              <animateMotion
+                                begin={`${-i * (PARTICLE_S / PARTICLE_N)}s`}
+                                dur={`${PARTICLE_S}s`}
+                                repeatCount="indefinite"
+                                rotate="auto"
+                                path={pathD}
+                                calcMode="spline"
+                                keySplines="0.42,0,0.58,1"
+                              />
+                            </ellipse>
+                          ))}
+
+                          {/* Hover label */}
+                          {isHov && (() => {
+                            const labelText = `${table.name}.${fk.name} → ${fk.references!.table}`;
+                            const labelW = Math.max(160, labelText.length * 7.4 + 24);
+                            const cx = (x1 + x2) / 2;
+                            const cy = (y1 + y2) / 2;
+                            return (
+                            <g style={{ pointerEvents: 'none' }}>
+                              <rect x={cx - labelW / 2} y={cy - 13} width={labelW} height="26" rx="6"
+                                fill="#141616" stroke="#1ded83" strokeWidth="1" opacity="0.96" />
+                              <text x={cx} y={cy + 4}
+                                textAnchor="middle" fill="#1ded83" fontSize="11" fontWeight="500" fontFamily="monospace">
+                                {labelText}
+                              </text>
+                            </g>
+                            );
+                          })()}
+                        </g>
+                      );
+                    }).filter(Boolean);
+                })}
+              </svg>
+            )}
+
+            {/* ─── Table nodes ─── */}
+            {displayedTables.map(table => {
+              const pos = positions.get(table.name); if (!pos) return null;
+              const cols      = visibleCols(table);
+              const isSel     = selectedTable === table.name;
+              const isDrag    = dragging?.table === table.name;
+              const isConn    = !!selectedTable && !isSel && connectedSet.has(table.name);
+
+              // Dimming: by selection or by hover (hover takes priority when no selection active)
+              const dimBySelect = !!selectedTable && !isSel && !isConn;
+              const dimByHover  = !!hoveredTable && !selectedTable && table.name !== hoveredTable && !hoveredConnected.has(table.name);
+              const isDimmed    = dimBySelect || dimByHover;
+
+              // Is this table highlighted by hover (and no selection active)
+              const isHoverSel  = !selectedTable && hoveredTable === table.name;
+              const isHoverConn = !selectedTable && !!hoveredTable && hoveredConnected.has(table.name);
+              const isCollapsed = collapsed.has(table.name);
+
+              // TABLE_NAME mode: collapse body
+              const bodyHidden = showMode === 'name' || isCollapsed;
+
+              return (
+                <div
+                  key={table.name}
+                  className="absolute overflow-hidden rounded-lg"
+                  style={{
+                    left: pos.x, top: pos.y, width: TABLE_W,
+                    zIndex: isSel || isDrag ? 50 : 2,
+                    cursor: isDrag ? 'grabbing' : 'grab',
+                    userSelect: 'none', WebkitUserSelect: 'none',
+                    background: '#141616',
+                    border: isSel || isHoverSel
+                      ? '2px solid #1ded83'
+                      : isConn || isHoverConn
+                      ? '1px solid rgba(29,237,131,0.45)'
+                      : '1px solid rgba(255,255,255,0.15)',
+                    boxShadow: isSel || isHoverSel
+                      ? '0 0 0 0px transparent, 0 0 20px rgba(29,237,131,0.4)'
+                      : isDrag
+                      ? '0 20px 40px rgba(0,0,0,0.6)'
+                      : '0 0 20px rgba(0,0,0,0.4)',
+                    opacity: isDimmed ? 0.18 : 1,
+                    transition: 'opacity 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
+                    willChange: isDrag ? 'transform' : 'auto',
+                  }}
+                  onMouseDown={e => handleTableMouseDown(e, table.name)}
+                  onClick={() => onTableClick(table.name)}
+                  onMouseEnter={() => setHoveredTable(table.name)}
+                  onMouseLeave={() => setHoveredTable(null)}
+                >
+                  {/* ── Header ── */}
+                  <div
+                    className="flex items-center justify-between gap-2 px-3"
+                    style={{
+                      height: HEADER_H, minHeight: HEADER_H,
+                      background: '#232526',
+                      borderBottom: bodyHidden ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                    }}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
+                        <rect x="0.5" y="0.5" width="13" height="4" rx="1" stroke="rgba(255,255,255,0.4)" strokeWidth="1"/>
+                        <rect x="0.5" y="5.5" width="6" height="8" rx="1" stroke="rgba(255,255,255,0.4)" strokeWidth="1"/>
+                        <rect x="7.5" y="5.5" width="6" height="8" rx="1" stroke="rgba(255,255,255,0.4)" strokeWidth="1"/>
+                      </svg>
+                      <span className="text-sm font-medium truncate" style={{ color: isSel || isHoverSel ? '#1ded83' : 'rgba(255,255,255,0.7)', fontSize: 12, transition: 'color 0.15s ease' }}>
+                        {table.name}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold" style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.45)' }}>
+                        {table.columns.length}
+                      </span>
+                      {/* Collapse toggle (not shown in NAME mode since body is always hidden) */}
+                      {showMode !== 'name' && (
+                        <button
+                          onClick={e => toggleCollapse(table.name, e)}
+                          className="flex items-center justify-center rounded transition-colors"
+                          style={{ color: 'rgba(255,255,255,0.3)', width: 16, height: 16 }}
+                          onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.7)')}
+                          onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.3)')}
+                          title={isCollapsed ? 'Expand' : 'Collapse'}
+                        >
+                          {isCollapsed
+                            ? <ChevronRight className="h-3 w-3" />
+                            : <ChevronDown className="h-3 w-3" />}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ── Columns (hidden in NAME mode or when collapsed) ── */}
+                  {!bodyHidden && (
+                    <div className="overflow-y-auto overflow-x-hidden" style={{ maxHeight: 280 }}>
+                      {cols.length === 0 ? (
+                        <div className="px-3 py-3 text-[11px] italic" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                          No key columns
+                        </div>
+                      ) : (
+                        cols.map((col, idx) => {
+                          const isLast   = idx === cols.length - 1;
+                          const relKey   = col.isForeignKey && col.references
+                            ? `${table.name}.${col.name}->${col.references.table}` : null;
+                          const isRelHov = relKey === hoveredRel;
+                          const isRelHlt = !!relKey && (selectedTable === table.name || selectedTable === col.references?.table);
+
+                          const rowBg = isRelHov || isRelHlt
+                            ? 'rgba(29,237,131,0.1)'
+                            : 'transparent';
+
+                          const isHighlightedTable = isSel || isConn || isHoverSel || isHoverConn;
+
+                          return (
+                            <div
+                              key={col.name}
+                              className="relative transition-colors"
+                              style={{
+                                height: ROW_H, display: 'grid', gridTemplateColumns: 'auto 1fr auto',
+                                alignItems: 'center', gap: 6,
+                                paddingLeft: 8, paddingRight: col.isForeignKey ? 12 : 8,
+                                borderBottom: !isLast ? '1px solid rgba(255,255,255,0.06)' : undefined,
+                                background: rowBg,
+                              }}
+                              onMouseEnter={e => { if (!isRelHov && !isRelHlt) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.04)'; }}
+                              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = rowBg; }}
+                            >
+                              {/* FK dot connector */}
+                              {col.isForeignKey && (
+                                <div
+                                  className="absolute right-0 top-1/2 h-2.5 w-2.5 rounded-full border transition-all"
+                                  style={{
+                                    borderColor: '#141616',
+                                    background: isRelHov ? '#1ded83' : isRelHlt ? 'rgba(29,237,131,0.7)' : 'rgba(255,255,255,0.2)',
+                                    transform: 'translate(50%, -50%)',
+                                    zIndex: 10,
+                                    transition: 'background 0.15s ease',
+                                  }}
+                                />
+                              )}
+
+                              {/* Column icon */}
+                              <div style={{ width: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                {col.isPrimaryKey ? (
+                                  <Key className="h-3.5 w-3.5" style={{ color: '#1ded83' }} />
+                                ) : col.isForeignKey ? (
+                                  <Link className="h-3.5 w-3.5" style={{ color: '#1ded83' }} />
+                                ) : col.nullable ? (
+                                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                                    <path d="M 5 1 L 9 5 L 5 9 L 1 5 Z" stroke="rgba(255,255,255,0.4)" strokeWidth="1.2" fill="none" />
+                                  </svg>
+                                ) : (
+                                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                                    <path d="M 5 1 L 9 5 L 5 9 L 1 5 Z" fill="rgba(255,255,255,0.45)" />
+                                  </svg>
+                                )}
+                              </div>
+
+                              {/* Column name + FK hint */}
+                              <div className="min-w-0 flex flex-col justify-center">
+                                <span className="text-xs truncate" style={{
+                                  color: col.isPrimaryKey || col.isForeignKey ? '#1ded83' : 'rgba(255,255,255,0.85)',
+                                  fontWeight: col.isPrimaryKey ? 600 : 400,
+                                  fontSize: 11,
+                                }}>
+                                  {col.name}
+                                </span>
+                                {col.isForeignKey && col.references && (
+                                  <span className="text-[9px] truncate" style={{ color: 'rgba(29,237,131,0.55)', lineHeight: 1 }}>
+                                    → {col.references.table}.{col.references.column}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Column type — visible only on highlighted table */}
+                              <span
+                                className="text-[10px] font-mono flex-shrink-0 transition-opacity"
+                                style={{
+                                  color: 'rgba(255,255,255,0.45)',
+                                  opacity: isHighlightedTable || isRelHov ? 1 : 0,
+                                  transition: 'opacity 0.25s ease',
+                                }}
+                              >
+                                {shortType(col.type)}
+                              </span>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── Minimap ── */}
+          {showMinimap && (
+            <div
+              className="absolute bottom-5 right-5 rounded-xl p-2.5 shadow-2xl"
+              style={{
+                background: 'rgba(20,22,22,0.94)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                backdropFilter: 'blur(8px)',
+              }}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[9px] font-bold tracking-widest uppercase" style={{ color: 'rgba(255,255,255,0.3)' }}>OVERVIEW</p>
+                <div className="flex gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full inline-block" style={{ background: '#1ded83' }} />
+                  <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                    {displayedTables.length} shown
+                  </span>
+                </div>
+              </div>
+              <div className="relative rounded-md overflow-hidden" style={{ width: 144, height: 104, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                {displayedTables.map(t => {
+                  const p = positions.get(t.name); if (!p) return null;
+                  const isTSel = selectedTable === t.name;
+                  const isTConn = (connectedSet.has(t.name) && !!selectedTable) || (hoveredConnected.has(t.name) && !!hoveredTable);
+                  const isTHov = hoveredTable === t.name;
+                  return (
+                    <div
+                      key={t.name}
+                      className="absolute rounded-sm transition-all duration-150"
+                      style={{
+                        left: p.x * 0.038, top: p.y * 0.038,
+                        width: 16, height: 9,
+                        background: isTSel || isTHov ? '#1ded83' : isTConn ? 'rgba(29,237,131,0.55)' : 'rgba(255,255,255,0.2)',
+                        boxShadow: isTSel || isTHov ? '0 0 6px rgba(29,237,131,0.6)' : 'none',
+                      }}
+                    />
+                  );
+                })}
+              </div>
+              <p className="text-center text-[9px] mt-1.5" style={{ color: 'rgba(255,255,255,0.2)' }}>⌘K palette · ⌘F search · ⌘0 reset</p>
+            </div>
+          )}
+        </div>
+
+        {/* ════════════════════ RIGHT SIDEBAR (table inspector) ════════════════════ */}
+        {selectedTable && selectedData && (
+          <div
+            className="flex flex-col flex-shrink-0 overflow-hidden"
+            style={{
+              width: 280,
+              borderLeft: '1px solid rgba(255,255,255,0.08)',
+              background: '#0d1117',
+            }}
+          >
+            {/* Sidebar header */}
+            <div className="flex items-start justify-between gap-2 px-4 pt-4 pb-3 flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <div className="min-w-0">
+                <p className="text-[9px] uppercase tracking-widest mb-1" style={{ color: 'rgba(255,255,255,0.3)' }}>Table Inspector</p>
+                <h2 className="text-sm font-bold truncate" style={{ color: '#1ded83', fontSize: 13 }}>{selectedTable}</h2>
+                <div className="flex items-center gap-2 mt-1.5 flex-wrap" style={{ fontSize: 10 }}>
+                  <SidebarStat color="rgba(255,255,255,0.5)" label={`${selectedData.columns.length} cols`} />
+                  <SidebarStat color="#1ded83" label={`${selectedData.columns.filter(c => c.isPrimaryKey).length} PK`} />
+                  <SidebarStat color="rgba(29,237,131,0.6)" label={`${selectedData.columns.filter(c => c.isForeignKey).length} FK`} />
+                  <SidebarStat color="rgba(255,255,255,0.35)" label={`${selectedData.columns.filter(c => !c.nullable).length} req`} />
+                </div>
+              </div>
+              <div className="flex gap-1 flex-shrink-0 mt-0.5">
+                <button
+                  onClick={() => focusTable(selectedTable)}
+                  className="flex items-center justify-center rounded-md transition-colors"
+                  style={{ width: 24, height: 24, color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.06)' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = '#1ded83')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.4)')}
+                  title="Focus on table"
+                >
+                  <Crosshair className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => { setSelectedTable(null); setRelatedOnly(false); }}
+                  className="flex items-center justify-center rounded-md transition-colors"
+                  style={{ width: 24, height: 24, color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.06)' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.8)')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.4)')}
+                  title="Close (Esc)"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Related only toggle */}
+            <div className="px-4 py-2 flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+              <button
+                onClick={() => setRelatedOnly(v => !v)}
+                className="w-full flex items-center justify-between gap-2 rounded-md px-3 py-2 text-xs transition-colors"
+                style={{
+                  background: relatedOnly ? 'rgba(29,237,131,0.12)' : 'rgba(255,255,255,0.05)',
+                  border: relatedOnly ? '1px solid rgba(29,237,131,0.35)' : '1px solid rgba(255,255,255,0.08)',
+                  color: relatedOnly ? '#1ded83' : 'rgba(255,255,255,0.5)',
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <Filter className="h-3.5 w-3.5" />
+                  <span className="font-medium">Show related only</span>
+                </div>
+                <span className="text-[9px] font-semibold rounded px-1.5 py-0.5" style={{ background: 'rgba(255,255,255,0.08)' }}>
+                  {1 + connectedSet.size} tables
+                </span>
+              </button>
+            </div>
+
+            {/* Scrollable content */}
+            <div className="flex-1 overflow-y-auto" style={{ fontSize: 11 }}>
+
+              <SidebarSection label="Columns" count={selectedData.columns.length}>
+                {selectedData.columns.map(col => (
+                  <div
+                    key={col.name}
+                    className="flex items-center gap-2 px-4 py-1.5 transition-colors"
+                    style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', minHeight: 30 }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <div style={{ width: 14, flexShrink: 0 }}>
+                      {col.isPrimaryKey ? (
+                        <Key className="h-3 w-3" style={{ color: '#1ded83' }} />
+                      ) : col.isForeignKey ? (
+                        <Link className="h-3 w-3" style={{ color: '#1ded83' }} />
+                      ) : col.nullable ? (
+                        <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                          <path d="M4 0.5L7.5 4L4 7.5L0.5 4Z" stroke="rgba(255,255,255,0.3)" strokeWidth="1" fill="none"/>
+                        </svg>
+                      ) : (
+                        <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                          <path d="M4 0.5L7.5 4L4 7.5L0.5 4Z" fill="rgba(255,255,255,0.35)"/>
+                        </svg>
+                      )}
+                    </div>
+                    <span className="flex-1 min-w-0 truncate" style={{
+                      color: col.isPrimaryKey || col.isForeignKey ? '#1ded83' : 'rgba(255,255,255,0.75)',
+                      fontWeight: col.isPrimaryKey ? 600 : 400,
+                    }}>
+                      {col.name}
+                      {!col.nullable && <span style={{ color: 'rgba(247,80,73,0.7)', marginLeft: 2 }}>*</span>}
+                    </span>
+                    <span className="font-mono flex-shrink-0" style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>
+                      {shortType(col.type)}
+                    </span>
+                  </div>
+                ))}
+              </SidebarSection>
+
+              {outgoingFKs.length > 0 && (
+                <SidebarSection label="References" count={outgoingFKs.length}>
+                  {outgoingFKs.map(r => (
+                    <button
+                      key={r.col}
+                      className="w-full flex items-center gap-2 px-4 py-2 text-left transition-colors"
+                      style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+                      onMouseEnter={e => {
+                        (e.currentTarget.style.background = 'rgba(29,237,131,0.06)');
+                        setHoveredRel(`${selectedTable}.${r.col}->${r.toTable}`);
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget.style.background = 'transparent');
+                        setHoveredRel(null);
+                      }}
+                      onClick={() => { setSelectedTable(r.toTable); onTableClick(r.toTable); }}
+                    >
+                      <ArrowRight className="h-3 w-3 flex-shrink-0" style={{ color: '#1ded83' }} />
+                      <div className="min-w-0">
+                        <div className="truncate" style={{ color: '#1ded83', fontWeight: 500 }}>{r.toTable}</div>
+                        <div className="truncate text-[9px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                          via {r.col} → {r.toCol}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </SidebarSection>
+              )}
+
+              {incomingFKs.length > 0 && (
+                <SidebarSection label="Referenced by" count={incomingFKs.length}>
+                  {incomingFKs.map((r, i) => (
+                    <button
+                      key={i}
+                      className="w-full flex items-center gap-2 px-4 py-2 text-left transition-colors"
+                      style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+                      onMouseEnter={e => {
+                        (e.currentTarget.style.background = 'rgba(29,237,131,0.06)');
+                        setHoveredRel(`${r.fromTable}.${r.fromCol}->${selectedTable}`);
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget.style.background = 'transparent');
+                        setHoveredRel(null);
+                      }}
+                      onClick={() => { setSelectedTable(r.fromTable); onTableClick(r.fromTable); }}
+                    >
+                      <ArrowRight className="h-3 w-3 flex-shrink-0 rotate-180" style={{ color: 'rgba(29,237,131,0.6)' }} />
+                      <div className="min-w-0">
+                        <div className="truncate" style={{ color: 'rgba(29,237,131,0.8)', fontWeight: 500 }}>{r.fromTable}</div>
+                        <div className="truncate text-[9px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                          via {r.fromCol}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </SidebarSection>
+              )}
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* ════════════════════ COMMAND PALETTE ════════════════════ */}
+      {showCommandPalette && (
+        <div
+          className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh]"
+          style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowCommandPalette(false); }}
+        >
+          <div
+            className="flex flex-col rounded-xl shadow-2xl overflow-hidden"
+            style={{
+              width: 560, maxHeight: '65vh',
+              background: '#1a1d1e',
+              border: '1px solid rgba(255,255,255,0.12)',
+              boxShadow: '0 32px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(29,237,131,0.08)',
+            }}
+          >
+            {/* Search input */}
+            <div className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <Search className="h-4 w-4 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
+              <input
+                ref={cmdRef}
+                type="text"
+                placeholder="Search tables, run commands…"
+                value={commandSearch}
+                onChange={e => setCommandSearch(e.target.value)}
+                onKeyDown={handleCmdKeyDown}
+                className="flex-1 bg-transparent text-sm focus:outline-none"
+                style={{ color: 'rgba(255,255,255,0.9)' }}
+              />
+              {commandSearch && (
+                <button onClick={() => setCommandSearch('')} style={{ color: 'rgba(255,255,255,0.3)' }}>
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+              <kbd className="rounded px-1.5 py-0.5 text-[10px] font-mono" style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.3)' }}>Esc</kbd>
+            </div>
+
+            {/* Items */}
+            <div ref={cmdListRef} className="overflow-y-auto flex-1">
+              {/* Tables section header */}
+              {commandItems.filter(i => i.category === 'table').length > 0 && (
+                <div className="px-4 py-2 sticky top-0" style={{ background: '#1a1d1e', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                  <span className="text-[9px] uppercase tracking-widest font-bold" style={{ color: 'rgba(255,255,255,0.3)' }}>Tables</span>
+                </div>
+              )}
+              {commandItems.filter(i => i.category === 'table').map((item, idx) => {
+                const isActive = cmdIndex === commandItems.indexOf(item);
+                return (
+                  <button
+                    key={item.id}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors"
+                    style={{
+                      background: isActive ? 'rgba(29,237,131,0.1)' : 'transparent',
+                      borderLeft: isActive ? '2px solid #1ded83' : '2px solid transparent',
+                    }}
+                    onClick={item.action}
+                    onMouseEnter={() => setCmdIndex(commandItems.indexOf(item))}
+                  >
+                    <div style={{ color: isActive ? '#1ded83' : 'rgba(255,255,255,0.35)', flexShrink: 0 }}>
+                      {item.icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate" style={{ color: isActive ? '#1ded83' : 'rgba(255,255,255,0.85)' }}>
+                        {item.label}
+                      </div>
+                      {item.description && (
+                        <div className="text-[10px] truncate" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                          {item.description}
+                        </div>
+                      )}
+                    </div>
+                    {isActive && (
+                      <kbd className="rounded px-1.5 py-0.5 text-[9px] font-mono flex-shrink-0" style={{ background: 'rgba(29,237,131,0.15)', color: '#1ded83' }}>↵</kbd>
+                    )}
+                  </button>
+                );
+              })}
+
+              {/* Actions section header */}
+              {commandItems.filter(i => i.category === 'action').length > 0 && (
+                <div className="px-4 py-2 sticky top-0 mt-1" style={{ background: '#1a1d1e', borderBottom: '1px solid rgba(255,255,255,0.06)', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                  <span className="text-[9px] uppercase tracking-widest font-bold" style={{ color: 'rgba(255,255,255,0.3)' }}>Commands</span>
+                </div>
+              )}
+              {commandItems.filter(i => i.category === 'action').map((item) => {
+                const isActive = cmdIndex === commandItems.indexOf(item);
+                return (
+                  <button
+                    key={item.id}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors"
+                    style={{
+                      background: isActive ? 'rgba(29,237,131,0.1)' : 'transparent',
+                      borderLeft: isActive ? '2px solid #1ded83' : '2px solid transparent',
+                    }}
+                    onClick={item.action}
+                    onMouseEnter={() => setCmdIndex(commandItems.indexOf(item))}
+                  >
+                    <div style={{ color: isActive ? '#1ded83' : 'rgba(255,255,255,0.35)', flexShrink: 0 }}>
+                      {item.icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate" style={{ color: isActive ? '#1ded83' : 'rgba(255,255,255,0.85)' }}>
+                        {item.label}
+                      </div>
+                      {item.description && (
+                        <div className="text-[10px] truncate" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                          {item.description}
+                        </div>
+                      )}
+                    </div>
+                    {isActive && (
+                      <kbd className="rounded px-1.5 py-0.5 text-[9px] font-mono flex-shrink-0" style={{ background: 'rgba(29,237,131,0.15)', color: '#1ded83' }}>↵</kbd>
+                    )}
+                  </button>
+                );
+              })}
+
+              {commandItems.length === 0 && (
+                <div className="px-4 py-8 text-center text-sm" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                  No results for "{commandSearch}"
+                </div>
+              )}
+            </div>
+
+            {/* Footer hints */}
+            <div className="flex items-center gap-4 px-4 py-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', background: '#141616' }}>
+              {[
+                { keys: ['↑', '↓'], label: 'navigate' },
+                { keys: ['↵'], label: 'select' },
+                { keys: ['Esc'], label: 'close' },
+              ].map(({ keys, label }) => (
+                <span key={label} className="flex items-center gap-1 text-[10px]" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                  {keys.map(k => (
+                    <kbd key={k} className="rounded px-1 py-0.5 font-mono" style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.4)', fontSize: 9 }}>{k}</kbd>
+                  ))}
+                  {label}
+                </span>
+              ))}
+              <span className="ml-auto text-[10px]" style={{ color: 'rgba(255,255,255,0.2)' }}>
+                {commandItems.length} result{commandItems.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Sub-components ────────────────────────────────────────────────────────────
+
+function ToolbarToggle({
+  active, onClick, icon, label
+}: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all"
+      style={{
+        background: active ? 'rgba(29,237,131,0.12)' : 'transparent',
+        border: active ? '1px solid rgba(29,237,131,0.35)' : '1px solid rgba(255,255,255,0.1)',
+        color: active ? '#1ded83' : 'rgba(255,255,255,0.5)',
+      }}
+      onMouseEnter={e => {
+        if (!active) (e.currentTarget.style.background = 'rgba(255,255,255,0.07)');
+      }}
+      onMouseLeave={e => {
+        if (!active) (e.currentTarget.style.background = 'transparent');
+      }}
+    >
+      {icon} {label}
+    </button>
+  );
+}
+
+function ToolbarBtn({
+  onClick, icon, label, title
+}: { onClick: () => void; icon: React.ReactNode; label: string; title?: string }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors"
+      style={{ color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent' }}
+      onMouseEnter={e => { (e.currentTarget.style.background = 'rgba(255,255,255,0.07)'); (e.currentTarget.style.color = 'rgba(255,255,255,0.85)'); }}
+      onMouseLeave={e => { (e.currentTarget.style.background = 'transparent'); (e.currentTarget.style.color = 'rgba(255,255,255,0.5)'); }}
+    >
+      {icon} {label}
+    </button>
+  );
+}
+
+function SidebarStat({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="flex items-center gap-1">
+      <span className="h-1 w-1 rounded-full" style={{ background: color }} />
+      <span style={{ color: 'rgba(255,255,255,0.45)' }}>{label}</span>
+    </span>
+  );
+}
+
+function SidebarSection({ label, count, children }: { label: string; count: number; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 px-4 py-2 sticky top-0" style={{ background: '#0d1117', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <span className="text-[9px] uppercase tracking-widest font-bold" style={{ color: 'rgba(255,255,255,0.35)' }}>{label}</span>
+        <span className="rounded-full px-1.5 text-[9px] font-semibold" style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.4)' }}>{count}</span>
+      </div>
+      {children}
     </div>
   );
 }

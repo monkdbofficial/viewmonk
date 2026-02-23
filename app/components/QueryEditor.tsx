@@ -7,8 +7,6 @@ import { useActiveConnection } from '../lib/monkdb-context';
 import { useQueryTabs } from '../lib/query-tabs-context';
 import { useSavedViews } from '../lib/saved-views-context';
 import { useSchema } from '../contexts/schema-context';
-import SchemaSelector from './common/SchemaSelector';
-import TransactionManager from './TransactionManager';
 import MonacoSQLEditor, { SchemaMetadata } from './MonacoSQLEditor';
 import DroppableMonacoEditor from './DroppableMonacoEditor';
 import SchemaExplorer from './SchemaExplorer';
@@ -252,6 +250,25 @@ export default function QueryEditor() {
           `Add a WHERE clause to filter data more specifically`,
           `Consider creating an index on frequently queried columns`,
           `Break complex queries into smaller steps`
+        ]
+      };
+    }
+
+    // OperationOnInaccessibleRelation - Blob tables don't support SQL DML
+    if (rawError.includes('OperationOnInaccessibleRelation') || rawError.includes("doesn't support or allow")) {
+      const tableMatch = rawError.match(/relation "([^"]+)"/i);
+      const tableName = tableMatch ? tableMatch[1] : 'blob table';
+      const opMatch = rawError.match(/allow (\w+) operations/i);
+      const operation = opMatch ? opMatch[1].toUpperCase() : 'DML';
+
+      return {
+        title: '❌ Blob Table Cannot Use SQL DML',
+        message: `The table "${tableName}" is a blob table and does not support SQL ${operation} operations. Blobs are managed via the HTTP API, not SQL.`,
+        suggestions: [
+          `Use the Blob Storage page to delete files through the UI`,
+          `To delete a specific blob via HTTP: DELETE /_blobs/${tableName.split('.').pop()}/{sha1_hash}`,
+          `To list blobs: SELECT digest, last_modified FROM blob.${tableName.split('.').pop()}`,
+          `Blob tables only support SELECT — use the Blob Storage page for uploads and deletes`
         ]
       };
     }
@@ -932,28 +949,182 @@ export default function QueryEditor() {
   };
 
   // SQL Formatting
-  const formatSQL = (sql: string) => {
+  const formatSQL = (sql: string): string => {
     if (!sql.trim()) return sql;
 
-    return sql
-      .replace(/\bSELECT\b/gi, '\nSELECT\n  ')
-      .replace(/\bFROM\b/gi, '\nFROM\n  ')
-      .replace(/\bWHERE\b/gi, '\nWHERE\n  ')
-      .replace(/\bAND\b/gi, '\n  AND ')
-      .replace(/\bOR\b/gi, '\n  OR ')
-      .replace(/\bGROUP BY\b/gi, '\nGROUP BY\n  ')
-      .replace(/\bHAVING\b/gi, '\nHAVING\n  ')
-      .replace(/\bORDER BY\b/gi, '\nORDER BY\n  ')
-      .replace(/\bLIMIT\b/gi, '\nLIMIT ')
-      .replace(/\bOFFSET\b/gi, '\nOFFSET ')
-      .replace(/\bJOIN\b/gi, '\nJOIN ')
-      .replace(/\bLEFT JOIN\b/gi, '\nLEFT JOIN ')
-      .replace(/\bRIGHT JOIN\b/gi, '\nRIGHT JOIN ')
-      .replace(/\bINNER JOIN\b/gi, '\nINNER JOIN ')
-      .replace(/\bON\b/gi, '\n  ON ')
-      .replace(/,(?!\s)/g, ',\n  ')
-      .replace(/\n\s*\n/g, '\n')
+    // ── Phase 1: Stash string literals & comments ──────────────────────────
+    // Protects quoted content from keyword substitution
+    const stash: string[] = [];
+    let work = '';
+    let i = 0;
+    while (i < sql.length) {
+      // -- single-line comment
+      if (sql[i] === '-' && sql[i + 1] === '-') {
+        const nl = sql.indexOf('\n', i);
+        const end = nl < 0 ? sql.length : nl + 1;
+        stash.push(sql.slice(i, end));
+        work += `\x01${stash.length - 1}\x01`;
+        i = end;
+        continue;
+      }
+      // /* block comment */
+      if (sql[i] === '/' && sql[i + 1] === '*') {
+        const end = sql.indexOf('*/', i + 2);
+        const endPos = end < 0 ? sql.length : end + 2;
+        stash.push(sql.slice(i, endPos));
+        work += `\x01${stash.length - 1}\x01`;
+        i = endPos;
+        continue;
+      }
+      // 'string literal' (handles '' escaped quotes)
+      if (sql[i] === "'") {
+        let j = i + 1;
+        while (j < sql.length) {
+          if (sql[j] === "'" && sql[j + 1] === "'") { j += 2; continue; }
+          if (sql[j] === "'") { j++; break; }
+          j++;
+        }
+        stash.push(sql.slice(i, j));
+        work += `\x01${stash.length - 1}\x01`;
+        i = j;
+        continue;
+      }
+      // "quoted identifier"
+      if (sql[i] === '"') {
+        let j = i + 1;
+        while (j < sql.length) {
+          if (sql[j] === '"' && sql[j + 1] === '"') { j += 2; continue; }
+          if (sql[j] === '"') { j++; break; }
+          j++;
+        }
+        stash.push(sql.slice(i, j));
+        work += `\x01${stash.length - 1}\x01`;
+        i = j;
+        continue;
+      }
+      work += sql[i++];
+    }
+
+    // ── Phase 2: Normalize whitespace ─────────────────────────────────────
+    work = work.trim().replace(/\s+/g, ' ');
+
+    // ── Phase 3: Uppercase keywords (longest/most-specific first) ─────────
+    const KWS = [
+      'SELECT DISTINCT', 'SELECT',
+      'INSERT INTO', 'VALUES',
+      'UPDATE', 'DELETE FROM',
+      'CREATE TABLE IF NOT EXISTS', 'CREATE TABLE',
+      'DROP TABLE IF EXISTS', 'DROP TABLE',
+      'ALTER TABLE', 'TRUNCATE TABLE',
+      'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
+      'LEFT OUTER JOIN', 'RIGHT OUTER JOIN', 'FULL OUTER JOIN',
+      'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN', 'CROSS JOIN', 'JOIN',
+      'FROM', 'WHERE', 'ON', 'SET',
+      'GROUP BY', 'HAVING', 'ORDER BY',
+      'LIMIT', 'OFFSET',
+      'AND', 'OR', 'NOT IN', 'NOT',
+      'UNION ALL', 'UNION', 'INTERSECT', 'EXCEPT',
+      'AS', 'IN', 'BETWEEN', 'LIKE', 'IS NOT NULL', 'IS NULL',
+      'ASC', 'DESC', 'DISTINCT', 'NULL', 'TRUE', 'FALSE',
+    ];
+    for (const kw of KWS) {
+      work = work.replace(new RegExp(`\\b${kw.replace(/ /g, '\\s+')}\\b`, 'gi'), kw);
+    }
+
+    // ── Phase 4: Protect commas inside parentheses ─────────────────────────
+    // Prevents function-call args like ROUND(x, 2) from being comma-expanded
+    const PC = '\x02'; // protected comma placeholder
+    let safe = '';
+    let depth = 0;
+    for (let k = 0; k < work.length; k++) {
+      if      (work[k] === '(')               { depth++; safe += '('; }
+      else if (work[k] === ')')               { depth--; safe += ')'; }
+      else if (work[k] === ',' && depth > 0)  { safe += PC; }
+      else                                    { safe += work[k]; }
+    }
+    work = safe;
+
+    // ── Phase 5: Structural line breaks ────────────────────────────────────
+    // Multi-word patterns BEFORE their component single words
+    let s = work
+
+      // Set operations
+      .replace(/\bUNION ALL\b/g,   '\n\nUNION ALL\n\n')
+      .replace(/\bUNION\b/g,       '\n\nUNION\n\n')
+      .replace(/\bINTERSECT\b/g,   '\n\nINTERSECT\n\n')
+      .replace(/\bEXCEPT\b/g,      '\n\nEXCEPT\n\n')
+
+      // DDL
+      .replace(/\bCREATE TABLE IF NOT EXISTS\b/g, '\nCREATE TABLE IF NOT EXISTS ')
+      .replace(/\bCREATE TABLE\b/g,   '\nCREATE TABLE ')
+      .replace(/\bDROP TABLE IF EXISTS\b/g, '\nDROP TABLE IF EXISTS ')
+      .replace(/\bDROP TABLE\b/g,     '\nDROP TABLE ')
+      .replace(/\bALTER TABLE\b/g,    '\nALTER TABLE ')
+      .replace(/\bTRUNCATE TABLE\b/g, '\nTRUNCATE TABLE ')
+
+      // DML — INSERT
+      .replace(/\bINSERT INTO\b/g, '\nINSERT INTO ')
+      .replace(/\bVALUES\b/g,      '\nVALUES\n  ')
+
+      // DML — DELETE (must be before standalone FROM)
+      .replace(/\bDELETE FROM\b/g, '\nDELETE FROM\n  ')
+
+      // DML — UPDATE
+      .replace(/\bUPDATE\b/g, '\nUPDATE ')
+      .replace(/\bSET\b/g,    '\nSET\n  ')
+
+      // SELECT
+      .replace(/\bSELECT DISTINCT\b/g, '\nSELECT DISTINCT\n  ')
+      .replace(/\bSELECT\b/g,          '\nSELECT\n  ')
+
+      // FROM — negative lookbehind prevents double-match inside DELETE FROM
+      .replace(/(?<!DELETE )\bFROM\b/g, '\nFROM\n  ')
+
+      // JOINs (specific variants before plain JOIN)
+      .replace(/\bLEFT OUTER JOIN\b/g,  '\n  LEFT OUTER JOIN ')
+      .replace(/\bRIGHT OUTER JOIN\b/g, '\n  RIGHT OUTER JOIN ')
+      .replace(/\bFULL OUTER JOIN\b/g,  '\n  FULL OUTER JOIN ')
+      .replace(/\bLEFT JOIN\b/g,        '\n  LEFT JOIN ')
+      .replace(/\bRIGHT JOIN\b/g,       '\n  RIGHT JOIN ')
+      .replace(/\bINNER JOIN\b/g,       '\n  INNER JOIN ')
+      .replace(/\bCROSS JOIN\b/g,       '\n  CROSS JOIN ')
+      .replace(/\bJOIN\b/g,             '\n  JOIN ')
+      .replace(/\bON\b/g,               '\n    ON ')
+
+      // WHERE / predicates
+      .replace(/\bWHERE\b/g, '\nWHERE\n  ')
+      .replace(/\bAND\b/g,   '\n  AND ')
+      .replace(/\bOR\b/g,    '\n  OR ')
+
+      // Grouping / sorting / pagination
+      .replace(/\bGROUP BY\b/g, '\nGROUP BY\n  ')
+      .replace(/\bHAVING\b/g,   '\nHAVING\n  ')
+      .replace(/\bORDER BY\b/g, '\nORDER BY\n  ')
+      .replace(/\bLIMIT\b/g,    '\nLIMIT ')
+      .replace(/\bOFFSET\b/g,   '\nOFFSET ')
+
+      // Top-level commas only (depth > 0 commas are protected as \x02)
+      .replace(/,\s*/g, ',\n  ')
+
+      // Semicolons on their own line
+      .replace(/;\s*/g, ';\n')
+
+      // Trailing whitespace on lines
+      .replace(/ +\n/g, '\n')
+
+      // Collapse 3+ blank lines → 1
+      .replace(/\n{3,}/g, '\n\n')
       .trim();
+
+    // ── Phase 6: Restore protected commas ─────────────────────────────────
+    s = s.replace(/\x02/g, ', ');
+
+    // ── Phase 7: Restore stashed literals ─────────────────────────────────
+    for (let j = stash.length - 1; j >= 0; j--) {
+      s = s.replace(new RegExp(`\x01${j}\x01`, 'g'), () => stash[j]);
+    }
+
+    return s;
   };
 
   const handleFormatSQL = () => {
@@ -1043,7 +1214,7 @@ export default function QueryEditor() {
     }
   };
 
-  const handleSaveQuery = async () => {
+  const handleSaveQuery = () => {
     if (!saveQueryData.name.trim()) {
       toast.error('Validation Error', 'Please enter a query name');
       return;
@@ -1054,30 +1225,32 @@ export default function QueryEditor() {
       return;
     }
 
-    // Check if running in Tauri environment
-    if (typeof window === 'undefined' || !window.__TAURI__) {
-      toast.error('Desktop App Required', 'Saving queries requires the Tauri desktop app');
-      return;
-    }
-
     try {
       const tags = saveQueryData.tags
         .split(',')
         .map((t) => t.trim())
         .filter((t) => t.length > 0);
 
-      await invoke('save_query', {
-        request: {
-          name: saveQueryData.name.trim(),
-          description: saveQueryData.description.trim() || null,
-          query: query.trim(),
-          connection_id: activeConnection?.id || null,
-          folder: saveQueryData.folder.trim() || null,
-          tags,
-        },
-      });
+      const now = new Date().toISOString();
+      const newEntry = {
+        id: `sq_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        name: saveQueryData.name.trim(),
+        description: saveQueryData.description.trim() || undefined,
+        query: query.trim(),
+        connection_id: activeConnection?.id,
+        folder: saveQueryData.folder.trim() || undefined,
+        tags,
+        is_favorite: false,
+        created_at: now,
+        updated_at: now,
+        execution_count: 0,
+      };
 
-      toast.success('Saved', `Query "${saveQueryData.name}" saved successfully`);
+      const existing = JSON.parse(localStorage.getItem('monkdb_saved_queries') || '[]');
+      existing.unshift(newEntry);
+      localStorage.setItem('monkdb_saved_queries', JSON.stringify(existing));
+
+      toast.success('Saved', `Query "${saveQueryData.name}" saved`);
       setShowSaveDialog(false);
       setSaveQueryData({ name: '', description: '', folder: '', tags: '' });
     } catch (error) {
@@ -1820,23 +1993,6 @@ WITH (max_num_segments = 1);`,
               </p>
             </div>
           </div>
-
-          <div className="h-8 w-px bg-gray-300 dark:bg-gray-600" />
-
-          {/* Enterprise: Schema Selector */}
-          <SchemaSelector />
-
-          <div className="h-8 w-px bg-gray-300 dark:bg-gray-600" />
-
-          {/* Enterprise: Transaction Manager */}
-          <TransactionManager
-            onExecute={async (sql: string) => {
-              if (!activeConnection) return;
-              await activeConnection.client.query(sql);
-              toast.success('Transaction Command', `Executed: ${sql}`);
-            }}
-            isExecuting={isExecuting}
-          />
 
           <div className="h-8 w-px bg-gray-300 dark:bg-gray-600" />
 
