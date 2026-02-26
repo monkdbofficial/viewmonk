@@ -1,0 +1,406 @@
+'use client';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import {
+  X, DownloadCloud, FileJson, ImageDown,
+  Settings2, Maximize2, Minimize2, ChevronDown,
+  ArrowLeft, LayoutGrid, Filter,
+} from 'lucide-react';
+import WidgetRenderer from './WidgetRenderer';
+import GlobalTimeRangeBar from './GlobalTimeRangeBar';
+import { getTheme } from '@/app/lib/timeseries/themes';
+import type { ThemeTokens } from '@/app/lib/timeseries/themes';
+import { getDefaultTimeRange } from '@/app/lib/timeseries/time-range';
+import { useDashboardRefresh } from '@/app/hooks/timeseries/useDashboardRefresh';
+import type { DashboardConfig, TimeRange, ActiveFilter } from '@/app/lib/timeseries/types';
+
+const ROW_HEIGHT = 160;  // Taller rows fill the viewport better
+const COL_COUNT  = 12;
+const GAP        = 14;
+
+// ── Export helpers ────────────────────────────────────────────────────────────
+
+function exportAsJSON(config: DashboardConfig) {
+  const json = JSON.stringify(config, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `${config.name.toLowerCase().replace(/\s+/g, '-')}-dashboard.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function exportAsPNG(canvasEl: HTMLElement | null, name: string) {
+  if (!canvasEl) return;
+  try {
+    const { default: html2canvas } = await import('html2canvas');
+    const canvas = await html2canvas(canvasEl, {
+      backgroundColor: null,
+      scale: 2,
+      useCORS: true,
+      logging: false,
+    });
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a   = document.createElement('a');
+      a.href    = url;
+      a.download = `${name.toLowerCase().replace(/\s+/g, '-')}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }, 'image/png');
+  } catch {
+    alert('PNG export requires html2canvas. Please try JSON export instead.');
+  }
+}
+
+// ── Export dropdown ───────────────────────────────────────────────────────────
+
+interface ExportMenuProps {
+  config: DashboardConfig;
+  canvasRef: React.RefObject<HTMLDivElement | null>;
+  theme: ThemeTokens;
+}
+
+function ExportMenu({ config, canvasRef, theme }: ExportMenuProps) {
+  const [open, setOpen] = useState(false);
+  const isLight = theme.id === 'light-clean';
+
+  const btnCls = isLight
+    ? 'border border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:text-blue-600'
+    : `${theme.cardBorder} ${theme.cardBg} ${theme.textSecondary} hover:bg-white/[0.10] hover:text-white/90`;
+
+  // Dropdown panel: always use theme tokens so it matches the dashboard theme
+  const dropBg     = isLight ? '#ffffff' : (theme.cardBg.replace(/^bg-\[(.+)\]$/, '$1').replace(/^bg-/, '') || '#0f1929');
+  const dropBorder  = isLight ? 'rgba(229,231,235,1)' : 'rgba(255,255,255,0.1)';
+  const itemHoverBg = isLight ? 'rgba(249,250,251,1)'  : 'rgba(255,255,255,0.07)';
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${btnCls}`}
+        title="Export dashboard"
+      >
+        <DownloadCloud className="h-3.5 w-3.5" />
+        Export
+        <ChevronDown className="h-3 w-3 opacity-60" />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            className="absolute right-0 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-xl shadow-2xl"
+            style={{ background: dropBg, border: `1px solid ${dropBorder}` }}
+          >
+            <button
+              onClick={() => { exportAsPNG(canvasRef.current, config.name); setOpen(false); }}
+              className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-xs transition-colors ${theme.textSecondary}`}
+              style={{ ['--hover-bg' as string]: itemHoverBg }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = itemHoverBg; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            >
+              <ImageDown className="h-3.5 w-3.5" style={{ color: theme.accentPrimary }} />
+              Export as PNG
+            </button>
+            <div style={{ height: 1, background: dropBorder, opacity: 0.5 }} />
+            <button
+              onClick={() => { exportAsJSON(config); setOpen(false); }}
+              className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-xs transition-colors ${theme.textSecondary}`}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = itemHoverBg; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            >
+              <FileJson className="h-3.5 w-3.5" style={{ color: theme.accentPrimary }} />
+              Export as JSON
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Main DashboardViewer ──────────────────────────────────────────────────────
+
+interface DashboardViewerProps {
+  config: DashboardConfig;
+  demoMode?: boolean;
+  /** Per-widget demo data keyed by widget ID (only used in demoMode) */
+  templateDemoData?: Record<string, Record<string, unknown>>;
+  onEdit?: () => void;
+  onBack?: () => void;
+}
+
+export default function DashboardViewer({
+  config, demoMode = false, templateDemoData, onEdit, onBack,
+}: DashboardViewerProps) {
+  // Detect the app's current light/dark mode from the <html> class
+  const [appIsDark, setAppIsDark] = useState(true);
+  useEffect(() => {
+    const check = () => setAppIsDark(document.documentElement.classList.contains('dark'));
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+
+  // In preview/demo mode: override theme to match the app's light/dark mode.
+  // In normal view mode: also respect app dark mode — auto-swap light-clean → dark-navy
+  // so a dashboard saved with light theme doesn't render white in dark mode.
+  const effectiveThemeId = demoMode
+    ? (appIsDark
+        ? (config.themeId === 'light-clean' ? 'dark-navy' : config.themeId)
+        : 'light-clean')
+    : (appIsDark && config.themeId === 'light-clean' ? 'dark-navy' : config.themeId);
+
+  const theme = getTheme(effectiveThemeId);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+
+  const [timeRange,        setTimeRange]        = useState<TimeRange>(getDefaultTimeRange());
+  const [refreshInterval,  setRefreshInterval]  = useState<number | 'manual'>(config.refreshInterval);
+  const [activeFilter,     setActiveFilter]     = useState<ActiveFilter | null>(null);
+  const [isRefreshing,     setIsRefreshing]     = useState(false);
+  const [refreshTick,      setRefreshTick]      = useState(0);
+  const [isFullscreen,     setIsFullscreen]     = useState(false);
+
+  const triggerRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    setRefreshTick((t) => t + 1);
+    setTimeout(() => setIsRefreshing(false), 1500);
+  }, []);
+
+  useDashboardRefresh(refreshInterval, triggerRefresh);
+
+  const maxRow = config.widgets.reduce((m, w) => Math.max(m, w.position.y + w.position.h), 0);
+  const canvasHeight = maxRow * (ROW_HEIGHT + GAP) + GAP;
+
+  const isLight = theme.id === 'light-clean';
+  const toolbarBg = isLight
+    ? 'border-b border-gray-200 bg-white/90 backdrop-blur'
+    : `border-b ${theme.divider} ${theme.cardBg} backdrop-blur`;
+
+  // In normal mode: use -m-8 to escape AppLayout's p-8 padding → full-bleed dashboard
+  // In fullscreen: overlay the entire screen
+  const containerCls = isFullscreen
+    ? 'fixed inset-0 z-50 flex flex-col'
+    : 'flex flex-col -m-8';
+
+  const isLive = !demoMode && refreshInterval !== 'manual';
+
+  return (
+    <div className={`${containerCls} ${theme.pageBg}`}>
+      {/* ── Toolbar ──────────────────────────────────────────────────────────── */}
+      <div className={`flex flex-shrink-0 items-center gap-3 px-4 py-3 ${toolbarBg}`}>
+
+        {/* Left: back + title block */}
+        <div className="flex flex-1 items-center gap-3 min-w-0">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className={`flex-shrink-0 rounded-lg p-1.5 transition-colors ${
+                isLight
+                  ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'
+                  : 'text-white/40 hover:bg-white/10 hover:text-white/80'
+              }`}
+              title="Back to dashboards"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          )}
+
+          {/* Dashboard icon + name + meta */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div
+              className="flex-shrink-0 flex h-7 w-7 items-center justify-center rounded-lg"
+              style={{ background: `${theme.accentPrimary}20` }}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" style={{ color: theme.accentPrimary }} />
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className={`truncate text-sm font-bold ${theme.textPrimary}`}>
+                  {config.name}
+                </h1>
+
+                {/* Widget count chip */}
+                <span
+                  className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${theme.textMuted}`}
+                  style={{ border: `1px solid ${isLight ? 'rgba(107,114,128,0.2)' : 'rgba(255,255,255,0.12)'}` }}
+                >
+                  {config.widgets.length}w
+                </span>
+
+                {/* LIVE badge */}
+                {isLive && (
+                  <span className="flex-shrink-0 flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wider"
+                    style={{
+                      background: 'rgba(16,185,129,0.12)',
+                      border: '1px solid rgba(16,185,129,0.25)',
+                      color: '#10B981',
+                    }}>
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                    </span>
+                    LIVE
+                  </span>
+                )}
+
+                {/* Preview badge */}
+                {demoMode && (
+                  <span className={`flex-shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${theme.accentBadge}`}>
+                    Preview
+                  </span>
+                )}
+              </div>
+
+              {config.description && (
+                <p className={`truncate text-[11px] ${theme.textMuted} mt-0.5`} style={{ opacity: 0.7 }}>
+                  {config.description}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right: controls */}
+        <div className="flex flex-shrink-0 items-center gap-2">
+          {!demoMode && (
+            <GlobalTimeRangeBar
+              timeRange={timeRange}
+              refreshInterval={refreshInterval}
+              isRefreshing={isRefreshing}
+              theme={theme}
+              onTimeRangeChange={(r) => { setTimeRange(r); triggerRefresh(); }}
+              onRefreshIntervalChange={setRefreshInterval}
+              onRefreshNow={triggerRefresh}
+            />
+          )}
+
+          {!demoMode && (
+            <ExportMenu
+              config={config}
+              canvasRef={canvasRef}
+              theme={theme}
+            />
+          )}
+
+          {onEdit && !demoMode && (
+            <button
+              onClick={onEdit}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                isLight
+                  ? 'border-gray-200 bg-white text-gray-700 hover:border-blue-300 hover:text-blue-600'
+                  : 'border-white/10 bg-white/[0.06] text-white/60 hover:border-white/20 hover:text-white/90'
+              }`}
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+              Edit
+            </button>
+          )}
+
+          <button
+            onClick={() => setIsFullscreen((f) => !f)}
+            className={`rounded-lg p-1.5 transition-colors ${
+              isLight
+                ? 'text-gray-500 hover:bg-gray-100'
+                : 'text-white/40 hover:bg-white/10 hover:text-white/80'
+            }`}
+            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+          >
+            {isFullscreen
+              ? <Minimize2 className="h-4 w-4" />
+              : <Maximize2 className="h-4 w-4" />
+            }
+          </button>
+        </div>
+      </div>
+
+      {/* ── Active filter pill ─────────────────────────────────────────────── */}
+      {activeFilter && (
+        <div
+          className={`flex flex-shrink-0 items-center gap-2 px-4 py-2 border-b ${theme.divider}`}
+          style={{ background: `${theme.accentPrimary}08` }}
+        >
+          <Filter className={`h-3 w-3 flex-shrink-0 ${theme.textMuted}`} style={{ opacity: 0.6 }} />
+          <span className={`text-xs font-medium ${theme.textMuted}`} style={{ opacity: 0.8 }}>
+            Filtered by
+          </span>
+          <span
+            className="flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold"
+            style={{
+              background: `${theme.accentPrimary}20`,
+              border:     `1px solid ${theme.accentPrimary}40`,
+              color:      theme.accentPrimary,
+            }}
+          >
+            <span className={theme.textMuted} style={{ opacity: 0.7 }}>{activeFilter.column}:</span>
+            <strong>{String(activeFilter.value)}</strong>
+            <button
+              onClick={() => setActiveFilter(null)}
+              className="ml-0.5 opacity-60 hover:opacity-100 transition-opacity"
+            >
+              <X className="h-2.5 w-2.5" />
+            </button>
+          </span>
+          <span className={`text-[11px] ${theme.textMuted}`} style={{ opacity: 0.5 }}>
+            — all widgets filtered
+          </span>
+          <button
+            onClick={() => setActiveFilter(null)}
+            className={`ml-auto text-[11px] font-medium ${theme.textMuted} underline-offset-2 hover:underline transition-all`}
+            style={{ opacity: 0.6 }}
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/* ── Widget canvas ──────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-auto">
+        {/* Subtle dot-grid texture on the canvas — more prominent on light, barely visible on dark */}
+        <div
+          ref={canvasRef}
+          className="relative w-full"
+          style={{
+            height:    Math.max(canvasHeight, 400),
+            minHeight: 'calc(100vh - 80px)',
+            backgroundImage: `radial-gradient(circle, ${isLight ? 'rgba(148,163,184,0.35)' : 'rgba(255,255,255,0.04)'} 1px, transparent 1px)`,
+            backgroundSize:  `${GAP + (isLight ? 14 : 20)}px ${GAP + (isLight ? 14 : 20)}px`,
+          }}
+        >
+          {config.widgets.map((widget) => {
+            const PAD    = 20; // canvas edge padding (px)
+            const usableW = `(100% - ${2 * PAD}px - ${(COL_COUNT - 1) * GAP}px)`;
+            const colW   = `calc(${usableW} / ${COL_COUNT})`;
+            const left   = `calc(${PAD}px + ${widget.position.x} * (${colW} + ${GAP}px))`;
+            const top    = `${PAD + widget.position.y * (ROW_HEIGHT + GAP)}px`;
+            const width  = `calc(${widget.position.w} * ${colW} + ${(widget.position.w - 1) * GAP}px)`;
+            const height = `${widget.position.h * ROW_HEIGHT + (widget.position.h - 1) * GAP}px`;
+
+            return (
+              <div
+                key={widget.id}
+                className="absolute"
+                style={{ left, top, width, height }}
+              >
+                <WidgetRenderer
+                  widget={widget}
+                  themeId={effectiveThemeId}
+                  timeRange={timeRange}
+                  activeFilter={activeFilter}
+                  demoMode={demoMode}
+                  demoData={demoMode && templateDemoData ? templateDemoData[widget.id] : undefined}
+                  refreshTick={refreshTick}
+                  onDrillDown={setActiveFilter}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}

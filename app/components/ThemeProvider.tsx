@@ -12,7 +12,11 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>('light');
+  // Read the class the inline anti-flash script already applied — avoids white flash
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window !== 'undefined' && document.documentElement.classList.contains('dark')) return 'dark';
+    return 'light';
+  });
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
