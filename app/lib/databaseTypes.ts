@@ -3,7 +3,6 @@
 export type DatabaseType =
   | 'document'    // MongoDB-style
   | 'vector'      // Vector embeddings for AI/ML
-  | 'timeseries'  // Time-series data
   | 'geospatial'  // Geographic data
   | 'tabular'     // SQL tables
   | 'olap'        // Analytical processing
@@ -44,17 +43,6 @@ export const databaseProfiles: DatabaseProfile[] = [
     queryLanguage: 'Vector Similarity Search',
     features: ['Similarity Search', 'KNN', 'ANN Algorithms', 'Embeddings', 'AI/ML Integration'],
     color: '#8b5cf6'
-  },
-  {
-    id: 'timeseries',
-    name: 'Time Series',
-    type: 'timeseries',
-    icon: '📈',
-    description: 'Optimized for time-stamped data and metrics',
-    protocol: 'InfluxDB Protocol',
-    queryLanguage: 'InfluxQL / Flux',
-    features: ['Time-based Queries', 'Downsampling', 'Retention Policies', 'Real-time Analytics'],
-    color: '#3b82f6'
   },
   {
     id: 'geospatial',
@@ -127,20 +115,6 @@ export const generateVectorData = (count: number) => {
   }));
 };
 
-export const generateTimeSeriesData = (count: number) => {
-  const now = Date.now();
-  return Array.from({ length: count }, (_, i) => ({
-    _id: `ts_${i}`,
-    timestamp: new Date(now - (count - i) * 60000).toISOString(),
-    metric: ['cpu_usage', 'memory_usage', 'disk_io', 'network_throughput'][Math.floor(Math.random() * 4)],
-    value: Math.random() * 100,
-    tags: {
-      host: `server-${Math.floor(Math.random() * 5) + 1}`,
-      datacenter: ['us-east', 'us-west', 'eu-central'][Math.floor(Math.random() * 3)],
-      environment: ['production', 'staging'][Math.floor(Math.random() * 2)]
-    }
-  }));
-};
 
 export const generateGeospatialData = (count: number) => {
   return Array.from({ length: count }, (_, i) => ({
@@ -239,14 +213,6 @@ export const unifiedDatabases = [
         size: '45 MB',
         indexes: ['_id', 'embedding_index'],
         data: generateVectorData(50)
-      },
-      {
-        name: 'metrics',
-        type: 'timeseries' as DatabaseType,
-        documentCount: 50000,
-        size: '120 MB',
-        indexes: ['timestamp', 'metric', 'tags'],
-        data: generateTimeSeriesData(100)
       },
       {
         name: 'locations',

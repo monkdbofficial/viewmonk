@@ -343,14 +343,14 @@ export default function BlobUploader({ table, folder, onClose }: BlobUploaderPro
             onClick={() => fileInputRef.current?.click()}
             className={`cursor-pointer rounded-lg border-2 border-dashed p-12 text-center transition-colors ${
               isDragging
-                ? 'border-purple-500 bg-purple-50 dark:border-purple-400 dark:bg-purple-900/20'
+                ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-900/20'
                 : 'border-gray-300 hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-500'
             }`}
           >
             <Upload
               className={`mx-auto h-12 w-12 ${
                 isDragging
-                  ? 'text-purple-500 dark:text-purple-400'
+                  ? 'text-blue-500 dark:text-blue-400'
                   : 'text-gray-400'
               }`}
             />
@@ -435,7 +435,7 @@ export default function BlobUploader({ table, folder, onClose }: BlobUploaderPro
             <button
               onClick={uploadFiles}
               disabled={!canUpload || isUploading}
-              className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-purple-500 dark:hover:bg-purple-600"
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
             >
               {isUploading ? 'Uploading...' : 'Upload'}
             </button>

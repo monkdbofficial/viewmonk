@@ -71,8 +71,8 @@ export default function CreateTableDialog({ onClose, onCreate }: CreateTableDial
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-200 p-6 dark:border-gray-700">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-100 dark:bg-purple-900/30">
-              <Database className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/30">
+              <Database className="h-5 w-5 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">
@@ -112,7 +112,7 @@ export default function CreateTableDialog({ onClose, onCreate }: CreateTableDial
               className={`w-full rounded-lg border px-4 py-2.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-700 dark:text-white ${
                 error
                   ? 'border-red-300 focus:border-red-500 focus:ring-red-500 dark:border-red-600'
-                  : 'border-gray-300 focus:border-purple-500 focus:ring-purple-500 dark:border-gray-600'
+                  : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600'
               }`}
             />
             {error ? (
@@ -147,7 +147,7 @@ export default function CreateTableDialog({ onClose, onCreate }: CreateTableDial
           <button
             onClick={handleCreate}
             disabled={creating || !tableName.trim()}
-            className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-purple-500 dark:hover:bg-purple-600"
+            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
           >
             {creating && <Loader2 className="h-4 w-4 animate-spin" />}
             {creating ? 'Creating...' : 'Create Table'}

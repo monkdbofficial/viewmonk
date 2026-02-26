@@ -241,7 +241,7 @@ export default function EnhancedTableSQLPreview({
           </button>
         </div>
         <div className="p-4">
-          <pre className="overflow-x-auto rounded-lg bg-gray-900 p-4 text-sm text-gray-100">
+          <pre className="overflow-x-auto rounded-lg bg-slate-100 dark:bg-gray-900 p-4 text-sm text-slate-800 dark:text-gray-100">
             <code>{sql}</code>
           </pre>
         </div>

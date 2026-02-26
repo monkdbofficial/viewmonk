@@ -155,7 +155,7 @@ export default function BlobFilters({
           <Filter className="h-5 w-5 text-gray-500 dark:text-gray-400" />
           <span className="font-medium text-gray-900 dark:text-white">Filters</span>
           {hasActiveFilters && (
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-100 text-xs font-bold text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
               {activeFilterCount}
             </span>
           )}
@@ -194,7 +194,7 @@ export default function BlobFilters({
                       onClick={() => handleFileTypeToggle(option.value)}
                       className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
                         filters.fileTypes.includes(option.value)
-                          ? 'border-purple-500 bg-purple-50 text-purple-700 dark:border-purple-400 dark:bg-purple-900/30 dark:text-purple-300'
+                          ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-900/30 dark:text-blue-300'
                           : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
                       }`}
                     >
@@ -223,7 +223,7 @@ export default function BlobFilters({
                       onClick={() => handleSizePreset(preset.min, preset.max)}
                       className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
                         filters.sizeMin === preset.min && filters.sizeMax === preset.max
-                          ? 'border-purple-500 bg-purple-50 text-purple-700 dark:border-purple-400 dark:bg-purple-900/30 dark:text-purple-300'
+                          ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-900/30 dark:text-blue-300'
                           : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
                       }`}
                     >
@@ -249,7 +249,7 @@ export default function BlobFilters({
                       onFiltersChange({ ...filters, sizeMin: value });
                     }}
                     placeholder="0"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                   />
                 </div>
                 <div>
@@ -266,7 +266,7 @@ export default function BlobFilters({
                       onFiltersChange({ ...filters, sizeMax: value });
                     }}
                     placeholder="∞"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                   />
                 </div>
               </div>
@@ -288,7 +288,7 @@ export default function BlobFilters({
                       onClick={() => handleDatePreset(preset.from, preset.to)}
                       className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
                         isActive
-                          ? 'border-purple-500 bg-purple-50 text-purple-700 dark:border-purple-400 dark:bg-purple-900/30 dark:text-purple-300'
+                          ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-900/30 dark:text-blue-300'
                           : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
                       }`}
                     >
@@ -310,7 +310,7 @@ export default function BlobFilters({
                     onChange={(e) =>
                       onFiltersChange({ ...filters, dateFrom: e.target.value || null })
                     }
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                   />
                 </div>
                 <div>
@@ -323,7 +323,7 @@ export default function BlobFilters({
                     onChange={(e) =>
                       onFiltersChange({ ...filters, dateTo: e.target.value || null })
                     }
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                   />
                 </div>
               </div>

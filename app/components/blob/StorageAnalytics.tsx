@@ -35,7 +35,7 @@ export default function StorageAnalytics({ table, onClose }: StorageAnalyticsPro
 
   const getFileTypeCategory = (contentType: string): { icon: string; label: string; color: string } => {
     if (contentType.startsWith('image/')) return { icon: '🖼️', label: 'Images', color: 'bg-blue-500' };
-    if (contentType.startsWith('video/')) return { icon: '🎬', label: 'Videos', color: 'bg-purple-500' };
+    if (contentType.startsWith('video/')) return { icon: '🎬', label: 'Videos', color: 'bg-blue-500' };
     if (contentType.startsWith('audio/')) return { icon: '🎵', label: 'Audio', color: 'bg-pink-500' };
     if (contentType.includes('pdf')) return { icon: '📄', label: 'PDFs', color: 'bg-red-500' };
     if (contentType.includes('word') || contentType.includes('document')) return { icon: '📝', label: 'Documents', color: 'bg-blue-600' };
@@ -54,7 +54,7 @@ export default function StorageAnalytics({ table, onClose }: StorageAnalyticsPro
         {/* Header */}
         <div className="mb-6 flex items-center justify-between border-b border-gray-200 pb-4 dark:border-gray-700">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-blue-500">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-500">
               <Database className="h-6 w-6 text-white" />
             </div>
             <div>
@@ -72,7 +72,7 @@ export default function StorageAnalytics({ table, onClose }: StorageAnalyticsPro
 
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <div className="h-12 w-12 animate-spin rounded-full border-4 border-purple-200 border-t-purple-600"></div>
+            <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600"></div>
           </div>
         ) : analytics ? (
           <div className="space-y-6">

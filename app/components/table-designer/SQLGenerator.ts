@@ -5,183 +5,146 @@ import { TableDesign, ColumnDefinition } from './TableDesignerWizard';
  */
 export function generateCreateTableSQL(design: TableDesign): string {
   const parts: string[] = [];
+  const schema = design.schema_name;
+  const table  = design.table_name;
 
-  // Start CREATE TABLE
-  parts.push(`CREATE TABLE IF NOT EXISTS ${design.schema_name}.${design.table_name} (`);
+  // Header
+  parts.push(`CREATE TABLE IF NOT EXISTS "${schema}"."${table}" (`);
 
-  // Generate column definitions
-  const columnDefs = design.columns.map((col) => generateColumnDefinition(col));
-  parts.push('  ' + columnDefs.join(',\n  '));
+  // ── Column definitions ────────────────────────────────────────────────
+  const pkCols = design.columns.filter(c => c.constraints.includes('PRIMARY KEY') && c.name.trim());
+  const compositePk = pkCols.length > 1;
 
-  parts.push(')');
+  const colDefs = design.columns.map(col => '  ' + generateColumnDef(col, compositePk));
 
-  // Add PARTITIONED BY clause if enabled
-  if (design.partition_config?.enabled && design.partition_config?.partition_column) {
-    parts.push(`PARTITIONED BY (${design.partition_config.partition_column})`);
+  // Composite PK table-level constraint (only when > 1 PK column)
+  if (compositePk) {
+    colDefs.push(`  PRIMARY KEY (${pkCols.map(c => `"${c.name.trim()}"`).join(', ')})`);
   }
 
-  // Add CLUSTERED clause
+  parts.push(colDefs.join(',\n'));
+  parts.push(')');
+
+  // ── PARTITIONED BY ────────────────────────────────────────────────────
+  if (design.partition_config?.enabled && design.partition_config?.partition_column) {
+    parts.push(`PARTITIONED BY ("${design.partition_config.partition_column}")`);
+  }
+
+  // ── CLUSTERED ─────────────────────────────────────────────────────────
   const shardCount = design.sharding_config?.shard_count || 6;
   if (design.sharding_config?.clustering_column) {
-    parts.push(
-      `CLUSTERED BY (${design.sharding_config.clustering_column}) INTO ${shardCount} SHARDS`
-    );
+    parts.push(`CLUSTERED BY ("${design.sharding_config.clustering_column}") INTO ${shardCount} SHARDS`);
   } else {
     parts.push(`CLUSTERED INTO ${shardCount} SHARDS`);
   }
 
-  // Add WITH clause for table parameters
+  // ── WITH clause ───────────────────────────────────────────────────────
   const withParams: string[] = [];
 
-  // Replication configuration
-  const replicas = design.replication_config?.number_of_replicas ?? 2;
+  const replicas = design.replication_config?.number_of_replicas ?? 1;
   withParams.push(`number_of_replicas = '${replicas}'`);
 
-  // Add other table parameters
-  withParams.push(`refresh_interval = 1000`); // Default 1 second refresh
+  const refreshInterval = design.refresh_interval ?? 1000;
+  withParams.push(`refresh_interval = ${refreshInterval}`);
 
-  if (withParams.length > 0) {
-    parts.push(`WITH (${withParams.join(', ')})`);
+  if (design.column_policy && design.column_policy !== 'strict') {
+    withParams.push(`column_policy = '${design.column_policy}'`);
   }
+
+  parts.push(`WITH (${withParams.join(', ')})`);
 
   return parts.join('\n');
 }
 
 /**
- * Sanitize default value based on column type
- * Note: This function assumes value is non-empty after trimming
+ * Generate a single column definition SQL fragment
  */
-function sanitizeDefaultValue(value: string, columnType: string): string {
-  const trimmedValue = value.trim();
-  const upperType = columnType.toUpperCase();
-
-  // Check if it's already a function call (contains parentheses)
-  if (trimmedValue.includes('(') && trimmedValue.includes(')')) {
-    return trimmedValue; // NOW(), CURRENT_TIMESTAMP(), gen_random_uuid(), etc.
-  }
-
-  // Check if it's a number
-  if (/^-?\d+(\.\d+)?$/.test(trimmedValue)) {
-    return trimmedValue; // 0, 123, -45.67, etc.
-  }
-
-  // Check if it's a boolean
-  if (trimmedValue.toLowerCase() === 'true' || trimmedValue.toLowerCase() === 'false') {
-    return trimmedValue.toUpperCase(); // TRUE or FALSE
-  }
-
-  // Check if it's NULL
-  if (trimmedValue.toUpperCase() === 'NULL') {
-    return 'NULL';
-  }
-
-  // Check if it's already quoted
-  if (
-    (trimmedValue.startsWith("'") && trimmedValue.endsWith("'")) ||
-    (trimmedValue.startsWith('"') && trimmedValue.endsWith('"'))
-  ) {
-    // Already quoted, ensure single quotes
-    return `'${trimmedValue.slice(1, -1).replace(/'/g, "''")}'`;
-  }
-
-  // For TEXT, VARCHAR, CHAR types, add quotes
-  if (
-    upperType.includes('TEXT') ||
-    upperType.includes('VARCHAR') ||
-    upperType.includes('CHAR') ||
-    upperType.includes('STRING')
-  ) {
-    return `'${trimmedValue.replace(/'/g, "''")}'`;
-  }
-
-  // For TIMESTAMP/DATE types, check for special keywords
-  if (
-    upperType.includes('TIMESTAMP') ||
-    upperType.includes('DATE') ||
-    upperType.includes('TIME')
-  ) {
-    const upperValue = trimmedValue.toUpperCase();
-    if (
-      upperValue === 'NOW' ||
-      upperValue === 'CURRENT_TIMESTAMP' ||
-      upperValue === 'CURRENT_DATE' ||
-      upperValue === 'CURRENT_TIME'
-    ) {
-      return `${upperValue}()`;
-    }
-    // Otherwise treat as string literal
-    return `'${trimmedValue.replace(/'/g, "''")}'`;
-  }
-
-  // For other types, if it looks like a string, quote it
-  if (/^[a-zA-Z_]/.test(trimmedValue)) {
-    // Looks like an identifier or keyword, quote it as string
-    return `'${trimmedValue.replace(/'/g, "''")}'`;
-  }
-
-  // Default: return as-is
-  return trimmedValue;
-}
-
-/**
- * Generate column definition SQL
- */
-function generateColumnDefinition(col: ColumnDefinition): string {
+function generateColumnDef(col: ColumnDefinition, compositePk: boolean): string {
   const parts: string[] = [];
+  const name = col.name.trim();
 
-  // Column name and type (trim name to handle any whitespace)
-  const columnName = col.name.trim();
-  parts.push(`${columnName} ${col.column_type}`);
+  // name + type
+  parts.push(`"${name}" ${col.column_type}`);
 
-  // Generated column
-  if (col.generated_expression) {
-    parts.push(`GENERATED ALWAYS AS (${col.generated_expression})`);
+  // Generated column (mutually exclusive with DEFAULT)
+  if (col.generated_expression && col.generated_expression.trim()) {
+    parts.push(`GENERATED ALWAYS AS (${col.generated_expression.trim()})`);
+  } else if (col.default_value && col.default_value.trim()) {
+    const sanitized = sanitizeDefaultValue(col.default_value, col.column_type);
+    parts.push(`DEFAULT ${sanitized}`);
   }
 
-  // Default value (only if not generated and has meaningful value)
-  if (col.default_value && col.default_value.trim() && !col.generated_expression) {
-    const sanitizedDefault = sanitizeDefaultValue(col.default_value, col.column_type);
-    parts.push(`DEFAULT ${sanitizedDefault}`);
-  }
-
-  // Constraints
-  if (col.constraints.includes('PRIMARY KEY')) {
+  // Inline PRIMARY KEY (only for single-PK tables — composite goes table-level)
+  if (!compositePk && col.constraints.includes('PRIMARY KEY')) {
     parts.push('PRIMARY KEY');
   }
 
+  // NOT NULL (skip when PRIMARY KEY already implies it)
   if (col.constraints.includes('NOT NULL') && !col.constraints.includes('PRIMARY KEY')) {
     parts.push('NOT NULL');
   }
 
-  if (col.constraints.includes('NULL')) {
+  // NULL explicit
+  if (col.constraints.includes('NULL') && !col.constraints.includes('PRIMARY KEY')) {
     parts.push('NULL');
   }
 
+  // UNIQUE (syntactically valid in MonkDB but not enforced at DB level)
   if (col.constraints.includes('UNIQUE')) {
     parts.push('UNIQUE');
   }
 
-  // Index configuration
-  if (col.constraints.includes('INDEX OFF')) {
+  // Index method
+  if (col.index_method === 'OFF') {
     parts.push('INDEX OFF');
-  } else if (col.constraints.includes('INDEX PLAIN')) {
+  } else if (col.index_method === 'PLAIN') {
     parts.push('INDEX USING PLAIN');
-  } else if (col.constraints.includes('INDEX FULLTEXT')) {
+  } else if (col.index_method === 'FULLTEXT') {
     const analyzer = col.index_analyzer || 'standard';
     parts.push(`INDEX USING FULLTEXT WITH (analyzer = '${analyzer}')`);
   }
 
-  // Check constraint
-  if (col.constraints.includes('CHECK') && col.check_expression) {
-    parts.push(`CHECK (${col.check_expression})`);
+  // CHECK constraint
+  if (col.constraints.includes('CHECK') && col.check_expression && col.check_expression.trim()) {
+    parts.push(`CHECK (${col.check_expression.trim()})`);
   }
 
   return parts.join(' ');
 }
 
 /**
- * Validate table design
+ * Sanitize a default value for SQL output
  */
+function sanitizeDefaultValue(value: string, columnType: string): string {
+  const v  = value.trim();
+  const ut = columnType.toUpperCase();
+
+  if (v.includes('(') && v.includes(')')) return v; // function call
+  if (/^-?\d+(\.\d+)?$/.test(v)) return v;           // number
+  if (v.toLowerCase() === 'true' || v.toLowerCase() === 'false') return v.toUpperCase();
+  if (v.toUpperCase() === 'NULL') return 'NULL';
+
+  // Already quoted
+  if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) {
+    return `'${v.slice(1, -1).replace(/'/g, "''")}'`;
+  }
+
+  if (ut.includes('TEXT') || ut.includes('VARCHAR') || ut.includes('CHAR') || ut.includes('STRING')) {
+    return `'${v.replace(/'/g, "''")}'`;
+  }
+
+  if (ut.includes('TIMESTAMP') || ut.includes('DATE') || ut.includes('TIME')) {
+    const uv = v.toUpperCase();
+    if (['NOW', 'CURRENT_TIMESTAMP', 'CURRENT_DATE', 'CURRENT_TIME'].includes(uv)) return `${uv}()`;
+    return `'${v.replace(/'/g, "''")}'`;
+  }
+
+  if (/^[a-zA-Z_]/.test(v)) return `'${v.replace(/'/g, "''")}'`;
+
+  return v;
+}
+
+// ─── Validation ───────────────────────────────────────────────────────────────
 export interface ValidationResult {
   valid: boolean;
   errors: string[];
@@ -195,180 +158,103 @@ export function validateTableDesign(
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  // Validate schema name
-  if (!design.schema_name || !design.schema_name.trim()) {
-    errors.push('Schema name is required');
-  }
+  if (!design.schema_name?.trim()) errors.push('Schema name is required');
 
-  // Validate table name
-  if (!design.table_name || !design.table_name.trim()) {
+  if (!design.table_name?.trim()) {
     errors.push('Table name is required');
-  } else if (existingTables && existingTables.length > 0) {
-    const alreadyExists = existingTables.some(
+  } else if (existingTables?.length) {
+    const exists = existingTables.some(
       t =>
         t.schema.toLowerCase() === design.schema_name.toLowerCase() &&
         t.name.toLowerCase() === design.table_name.trim().toLowerCase(),
     );
-    if (alreadyExists) {
-      warnings.push(
-        `Table "${design.schema_name}.${design.table_name}" already exists — this will fail if you create it`,
-      );
-    }
+    if (exists) warnings.push(`Table "${design.schema_name}.${design.table_name}" already exists`);
   }
 
-  // Validate columns
-  if (design.columns.length === 0) {
-    errors.push('At least one column is required');
-  }
+  if (design.columns.length === 0) errors.push('At least one column is required');
 
-  // Check for duplicate column names
+  // Duplicate column names
   const nameCount: Record<string, number> = {};
   for (const col of design.columns) {
     const n = col.name?.trim();
-    if (n && n.length > 0) {
-      const key = n.toLowerCase();
-      nameCount[key] = (nameCount[key] ?? 0) + 1;
-    }
+    if (n) nameCount[n.toLowerCase()] = (nameCount[n.toLowerCase()] ?? 0) + 1;
   }
-  const dupNames = Object.keys(nameCount).filter(k => nameCount[k] > 1);
-  if (dupNames.length > 0) {
-    errors.push(
-      `Duplicate column name${dupNames.length > 1 ? 's' : ''}: ${dupNames.join(', ')}`,
-    );
-  }
+  const dups = Object.keys(nameCount).filter(k => nameCount[k] > 1);
+  if (dups.length > 0) errors.push(`Duplicate column name${dups.length > 1 ? 's' : ''}: ${dups.join(', ')}`);
 
   design.columns.forEach((col, idx) => {
-    const trimmedName = col.name?.trim() || '';
-    if (!trimmedName) {
-      errors.push(`Column ${idx + 1}: Column name is required`);
-    } else if (col.name !== trimmedName) {
-      warnings.push(
-        `Column "${col.name}": Column name has leading or trailing whitespace. It will be trimmed to "${trimmedName}"`
-      );
+    const n = col.name?.trim() || '';
+    if (!n) errors.push(`Column ${idx + 1}: name is required`);
+    if (!col.column_type) errors.push(`Column "${n || idx + 1}": type is required`);
+
+    if (col.column_type === 'FLOAT_VECTOR') {
+      warnings.push(`Column "${n}": specify a dimension, e.g. FLOAT_VECTOR(384)`);
     }
 
-    if (!col.column_type) {
-      errors.push(`Column "${trimmedName}": Column type is required`);
+    if (col.generated_expression?.trim() && col.default_value?.trim()) {
+      errors.push(`Column "${n}": cannot combine GENERATED ALWAYS AS with DEFAULT`);
     }
 
-    // Validate generated column
-    if (col.generated_expression && col.default_value) {
-      errors.push(
-        `Column "${trimmedName}": Cannot have both generated expression and default value`
-      );
+    if (col.constraints.includes('CHECK') && !col.check_expression?.trim()) {
+      errors.push(`Column "${n}": CHECK constraint requires an expression`);
     }
 
-    // Validate default value
-    if (col.default_value && !col.generated_expression) {
-      const trimmedDefault = col.default_value.trim();
+    if (col.index_method === 'FULLTEXT' && !col.index_analyzer) {
+      warnings.push(`Column "${n}": no analyzer for FULLTEXT — using 'standard'`);
+    }
 
-      // Warn if default looks like it might be trying to reference a column
-      if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(trimmedDefault)) {
-        // It's a single identifier without quotes or parentheses
-        if (
-          !['true', 'false', 'null', 'now', 'current_timestamp', 'current_date', 'current_time'].includes(
-            trimmedDefault.toLowerCase()
-          )
-        ) {
-          warnings.push(
-            `Column "${trimmedName}": Default value "${trimmedDefault}" looks like an identifier. If you meant a string, use quotes: '${trimmedDefault}'. If you meant a function, use parentheses: ${trimmedDefault}()`
-          );
+    if (col.default_value?.trim() && !col.generated_expression?.trim()) {
+      const dv = col.default_value.trim();
+      if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(dv)) {
+        const reserved = ['true', 'false', 'null', 'now', 'current_timestamp', 'current_date', 'current_time'];
+        if (!reserved.includes(dv.toLowerCase())) {
+          warnings.push(`Column "${n}": default "${dv}" — did you mean '${dv}' (string) or ${dv}() (function)?`);
         }
       }
     }
-
-    // Validate check constraint
-    if (col.constraints.includes('CHECK') && !col.check_expression) {
-      errors.push(`Column "${trimmedName}": CHECK constraint requires an expression`);
-    }
-
-    // Validate fulltext index
-    if (col.constraints.includes('INDEX FULLTEXT') && !col.index_analyzer) {
-      warnings.push(`Column "${trimmedName}": No analyzer specified for FULLTEXT index, using default`);
-    }
   });
 
-  // Validate primary key
-  const primaryKeyColumns = design.columns.filter((col) =>
-    col.constraints.includes('PRIMARY KEY')
-  );
-  if (primaryKeyColumns.length === 0) {
-    warnings.push(
-      'No primary key defined. Consider adding a primary key for better performance and data integrity'
-    );
-  }
-  if (primaryKeyColumns.length > 1) {
-    errors.push(
-      'Multiple PRIMARY KEY constraints found. Use a composite primary key or select only one column'
-    );
+  // PK validation — composite PKs are fully valid in MonkDB
+  const pkCols = design.columns.filter(c => c.constraints.includes('PRIMARY KEY') && c.name.trim());
+  if (pkCols.length === 0) {
+    warnings.push('No primary key — consider adding one for performance and data integrity');
+  } else if (pkCols.length > 1) {
+    warnings.push(`Composite PK across ${pkCols.length} columns: ${pkCols.map(c => c.name.trim()).join(', ')}`);
   }
 
-  // Validate sharding
-  const shardCount = design.sharding_config?.shard_count || 6;
-  if (shardCount < 1) {
-    errors.push('Shard count must be at least 1');
-  }
-  if (shardCount > 32) {
-    warnings.push(
-      'Shard count exceeds 32. This may impact performance and increase overhead'
-    );
-  }
+  // Sharding
+  const sc = design.sharding_config?.shard_count || 6;
+  if (sc < 1) errors.push('Shard count must be at least 1');
+  if (sc > 32) warnings.push('Shard count > 32 may increase overhead');
 
-  // Validate clustering column
   if (design.sharding_config?.clustering_column) {
-    const clusteringCol = design.columns.find(
-      (col) => col.name.trim() === design.sharding_config?.clustering_column
-    );
-    if (!clusteringCol) {
-      errors.push(
-        `Clustering column "${design.sharding_config.clustering_column}" not found in column definitions`
-      );
-    }
+    const found = design.columns.some(c => c.name.trim() === design.sharding_config?.clustering_column);
+    if (!found) errors.push(`Clustering column "${design.sharding_config.clustering_column}" not found`);
   }
 
-  // Validate partitioning
+  // Partitioning
   if (design.partition_config?.enabled) {
     if (!design.partition_config.partition_column) {
       errors.push('Partition column is required when partitioning is enabled');
     } else {
-      const partitionCol = design.columns.find(
-        (col) => col.name.trim() === design.partition_config?.partition_column
-      );
-      if (!partitionCol) {
-        errors.push(
-          `Partition column "${design.partition_config.partition_column}" not found in column definitions`
-        );
+      const pc = design.columns.find(c => c.name.trim() === design.partition_config?.partition_column);
+      if (!pc) {
+        errors.push(`Partition column "${design.partition_config.partition_column}" not found`);
+      } else if (/^(OBJECT|ARRAY)/.test(pc.column_type.toUpperCase())) {
+        errors.push(`Partition column "${pc.name.trim()}" cannot be OBJECT or ARRAY type`);
       }
     }
   }
 
-  // Validate replication
-  const replicas = design.replication_config?.number_of_replicas ?? 2;
-  if (replicas < 0) {
-    errors.push('Number of replicas cannot be negative');
-  }
-  if (replicas > 5) {
-    warnings.push('Number of replicas exceeds 5. This may increase storage and network overhead');
-  }
-  if (replicas === 0) {
-    warnings.push(
-      'Zero replicas configured. This provides no fault tolerance. Production recommendation: minimum 2 replicas'
-    );
-  }
+  // Replication
+  const rep = design.replication_config?.number_of_replicas ?? 1;
+  if (rep < 0) errors.push('Replicas cannot be negative');
+  if (rep === 0) warnings.push('Zero replicas — no fault tolerance');
+  if (rep > 5) warnings.push('> 5 replicas increases storage and network overhead');
 
-  return {
-    valid: errors.length === 0,
-    errors,
-    warnings,
-  };
+  return { valid: errors.length === 0, errors, warnings };
 }
 
-/**
- * Format SQL for display
- */
 export function formatSQL(sql: string): string {
-  return sql
-    .split('\n')
-    .map((line) => line.trimEnd())
-    .join('\n');
+  return sql.split('\n').map(l => l.trimEnd()).join('\n');
 }

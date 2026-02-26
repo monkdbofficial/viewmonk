@@ -167,42 +167,42 @@ export default function VectorSearchPanel({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Vector Input */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          Vector Array ({collection.dimension} dimensions)
+        <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+          Vector Array <span className="normal-case font-normal text-gray-400">({collection.dimension} dimensions)</span>
         </label>
         <textarea
           value={manualVector}
           onChange={(e) => setManualVector(e.target.value)}
           placeholder={`[0.1, 0.2, 0.3, ... ${collection.dimension} numbers total]`}
-          className="w-full h-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+          className="w-full h-20 resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 font-mono text-xs text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:placeholder-gray-500"
           disabled={searching}
         />
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
           Paste a JSON array of {collection.dimension} numbers
         </p>
       </div>
 
-      {/* Search Options */}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+      {/* Search Options + Button in one row */}
+      <div className="flex items-end gap-3">
+        <div className="flex-1">
+          <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
             Search Type
           </label>
           <select
             value={searchType}
             onChange={(e) => setSearchType(e.target.value as 'knn' | 'similarity')}
             disabled={searching}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
           >
             <option value="knn">KNN Match</option>
             <option value="similarity">Vector Similarity</option>
           </select>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+        <div className="w-24">
+          <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
             Top K
           </label>
           <input
@@ -212,91 +212,93 @@ export default function VectorSearchPanel({
             min="1"
             max="100"
             disabled={searching}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
           />
         </div>
+        {/* Search Button */}
+        <button
+          onClick={handleSearch}
+          disabled={searching || !manualVector.trim()}
+          className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+        >
+          {searching ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Searching...
+            </>
+          ) : (
+            <>
+              <Search className="h-4 w-4" />
+              Search
+            </>
+          )}
+        </button>
       </div>
-
-      {/* Search Button */}
-      <button
-        onClick={handleSearch}
-        disabled={searching || !manualVector.trim()}
-        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-      >
-        {searching ? (
-          <>
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Searching...
-          </>
-        ) : (
-          <>
-            <Search className="w-4 h-4" />
-            Search
-          </>
-        )}
-      </button>
 
       {/* Results */}
       {results.length > 0 && (
-        <div className="space-y-3">
+        <div className="space-y-2">
+          {/* Results toolbar */}
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Results ({results.length}) • {executionTime}ms
-            </span>
             <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                {results.length} results
+              </span>
+              <span className="text-xs text-gray-400">{executionTime}ms</span>
+            </div>
+            <div className="flex items-center gap-0.5">
               <button
                 onClick={copyResults}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700 transition-colors"
                 title="Copy to clipboard"
               >
                 {copied ? (
-                  <Check className="w-4 h-4 text-green-600" />
+                  <Check className="h-3.5 w-3.5 text-green-600" />
                 ) : (
-                  <Copy className="w-4 h-4 text-gray-500" />
+                  <Copy className="h-3.5 w-3.5" />
                 )}
               </button>
               <button
                 onClick={exportToCSV}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                title="Export to CSV"
+                className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700 transition-colors"
+                title="Export CSV"
               >
-                <Download className="w-4 h-4 text-gray-500" />
+                <Download className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={exportToJSON}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                title="Export to JSON"
+                className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700 transition-colors"
+                title="Export JSON"
               >
-                <Download className="w-4 h-4 text-gray-500" />
+                <Download className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
 
-          <div className="border border-gray-200 dark:border-gray-700 rounded-lg max-h-[500px] overflow-y-auto">
+          {/* Result rows */}
+          <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
             {results.map((result, idx) => (
               <div
                 key={idx}
-                className="p-4 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+                className="border-b border-gray-100 px-3 py-2.5 last:border-b-0 hover:bg-gray-50/60 dark:border-gray-700/60 dark:hover:bg-gray-700/30"
               >
-                <div className="flex items-start justify-between gap-3 mb-2">
-                  <span className="text-xs font-mono text-gray-600 dark:text-gray-400">
+                <div className="mb-1.5 flex items-center justify-between gap-3">
+                  <span className="truncate font-mono text-xs text-gray-500 dark:text-gray-400">
                     {result.id}
                   </span>
-                  <div className="flex items-center gap-2">
-                    <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full w-20 overflow-hidden">
+                  <div className="flex flex-shrink-0 items-center gap-2">
+                    <div className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
                       <div
-                        className="h-full bg-gradient-to-r from-green-500 to-blue-500"
-                        style={{ width: `${result.score * 100}%` }}
+                        className="h-full bg-blue-500"
+                        style={{ width: `${Math.min(result.score * 100, 100)}%` }}
                       />
                     </div>
-                    <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 min-w-[3rem] text-right">
+                    <span className="w-10 text-right text-xs font-semibold text-gray-700 dark:text-gray-300">
                       {(result.score * 100).toFixed(1)}%
                     </span>
                   </div>
                 </div>
-                <p className="text-sm text-gray-900 dark:text-gray-100">
-                  {result.content}
-                </p>
+                <p className="text-sm text-gray-800 dark:text-gray-200">{result.content}</p>
               </div>
             ))}
           </div>

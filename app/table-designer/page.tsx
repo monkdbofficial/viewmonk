@@ -29,10 +29,12 @@ export default function TableDesignerPage() {
   };
 
   return (
-    <TableDesignerWizard
-      connectionId={activeConnection.id}
-      onSuccess={handleSuccess}
-      onClose={handleClose}
-    />
+    <div className="-m-8 h-[calc(100vh-4rem)] overflow-hidden">
+      <TableDesignerWizard
+        connectionId={activeConnection.id}
+        onSuccess={handleSuccess}
+        onClose={handleClose}
+      />
+    </div>
   );
 }

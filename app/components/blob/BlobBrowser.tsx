@@ -225,7 +225,7 @@ export default function BlobBrowser({
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
-          <Loader2 className="mx-auto h-12 w-12 animate-spin text-purple-600" />
+          <Loader2 className="mx-auto h-12 w-12 animate-spin text-blue-600" />
           <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
             Loading files...
           </p>
@@ -256,20 +256,20 @@ export default function BlobBrowser({
       <div>
         {/* Batch Actions */}
         {selectedBlobs.size > 0 && (
-          <div className="mb-4 flex items-center justify-between rounded-lg border border-purple-200 bg-purple-50 p-3 dark:border-purple-800 dark:bg-purple-900/20">
-            <p className="text-sm font-medium text-purple-900 dark:text-purple-200">
+          <div className="mb-4 flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
+            <p className="text-sm font-medium text-blue-900 dark:text-blue-200">
               {selectedBlobs.size} file(s) selected
             </p>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setSelectedBlobs(new Set())}
-                className="text-sm text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300"
+                className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
               >
                 Clear Selection
               </button>
               <button
                 onClick={handleBatchDownloadZip}
-                className="flex items-center gap-1 rounded-lg bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-700"
+                className="flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
               >
                 <Archive className="h-4 w-4" />
                 Download as ZIP
@@ -314,7 +314,7 @@ export default function BlobBrowser({
                 onClick={() => toggleSelection(blob.id)}
                 className={`group relative cursor-pointer overflow-hidden rounded-lg border transition-all ${
                   isSelected
-                    ? 'border-purple-500 bg-purple-50 ring-2 ring-purple-500 dark:border-purple-400 dark:bg-purple-900/30'
+                    ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500 dark:border-blue-400 dark:bg-blue-900/30'
                     : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-md dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600'
                 }`}
               >
@@ -413,7 +413,7 @@ export default function BlobBrowser({
                       {blob.tags.slice(0, 3).map((tag, idx) => (
                         <span
                           key={idx}
-                          className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-800 dark:bg-purple-900/30 dark:text-purple-300"
+                          className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
                         >
                           {tag}
                         </span>
@@ -449,7 +449,7 @@ export default function BlobBrowser({
                     className="rounded-lg bg-white p-2 shadow-lg hover:bg-gray-50 dark:bg-gray-800 dark:hover:bg-gray-700"
                     title="Manage Tags"
                   >
-                    <Tag className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                    <Tag className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                   </button>
                   {isVideo && playingVideo !== blob.id && (
                     <button
@@ -514,7 +514,7 @@ export default function BlobBrowser({
 
                 {/* Selection Indicator - Bottom Left to not conflict with star */}
                 {isSelected && (
-                  <div className="absolute left-2 bottom-2 flex h-6 w-6 items-center justify-center rounded-full bg-purple-600 text-white shadow-lg z-10">
+                  <div className="absolute left-2 bottom-2 flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg z-10">
                     <svg
                       className="h-4 w-4"
                       fill="none"
@@ -607,7 +607,7 @@ export default function BlobBrowser({
                         setNewFilename('');
                       }
                     }}
-                    className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-900 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                     placeholder="Enter new filename"
                     autoFocus
                   />
@@ -626,7 +626,7 @@ export default function BlobBrowser({
                   <button
                     onClick={handleRename}
                     disabled={!newFilename.trim() || newFilename === renameDialogBlob.filename}
-                    className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-purple-500 dark:hover:bg-purple-600"
+                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
                   >
                     Rename
                   </button>
@@ -653,12 +653,12 @@ export default function BlobBrowser({
                     editingTags.map((tag, idx) => (
                       <span
                         key={idx}
-                        className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-3 py-1 text-sm font-medium text-purple-800 dark:bg-purple-900/30 dark:text-purple-300"
+                        className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-3 py-1 text-sm font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
                       >
                         {tag}
                         <button
                           onClick={() => handleRemoveTag(tag)}
-                          className="hover:text-purple-900 dark:hover:text-purple-200"
+                          className="hover:text-blue-900 dark:hover:text-blue-200"
                         >
                           <XIcon className="h-3 w-3" />
                         </button>
@@ -686,12 +686,12 @@ export default function BlobBrowser({
                         handleAddTag();
                       }
                     }}
-                    className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-900 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                     placeholder="Type tag name and press Enter"
                   />
                   <button
                     onClick={handleAddTag}
-                    className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600"
+                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
                   >
                     <Check className="h-4 w-4" />
                   </button>
@@ -707,7 +707,7 @@ export default function BlobBrowser({
                 </button>
                 <button
                   onClick={handleSaveTags}
-                  className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600"
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
                 >
                   Save Tags
                 </button>
@@ -725,20 +725,20 @@ export default function BlobBrowser({
     <div>
       {/* Batch Actions */}
       {selectedBlobs.size > 0 && (
-        <div className="mb-4 flex items-center justify-between rounded-lg border border-purple-200 bg-purple-50 p-3 dark:border-purple-800 dark:bg-purple-900/20">
-          <p className="text-sm font-medium text-purple-900 dark:text-purple-200">
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
+          <p className="text-sm font-medium text-blue-900 dark:text-blue-200">
             {selectedBlobs.size} file(s) selected
           </p>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setSelectedBlobs(new Set())}
-              className="text-sm text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300"
+              className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
             >
               Clear Selection
             </button>
             <button
               onClick={handleBatchDownloadZip}
-              className="flex items-center gap-1 rounded-lg bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-700"
+              className="flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
             >
               <Archive className="h-4 w-4" />
               Download as ZIP
@@ -770,7 +770,7 @@ export default function BlobBrowser({
                       setSelectedBlobs(new Set());
                     }
                   }}
-                  className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
               </th>
               <th className="w-12 px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -823,7 +823,7 @@ export default function BlobBrowser({
                   key={blob.id}
                   className={`transition-colors ${
                     isSelected
-                      ? 'bg-purple-50 dark:bg-purple-900/20'
+                      ? 'bg-blue-50 dark:bg-blue-900/20'
                       : 'hover:bg-gray-50 dark:hover:bg-gray-700'
                   }`}
                 >
@@ -832,7 +832,7 @@ export default function BlobBrowser({
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => toggleSelection(blob.id)}
-                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
                   </td>
                   <td className="px-4 py-3">
@@ -914,7 +914,7 @@ export default function BlobBrowser({
                           {blob.tags.slice(0, 2).map((tag, idx) => (
                             <span
                               key={idx}
-                              className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-800 dark:bg-purple-900/30 dark:text-purple-300"
+                              className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
                             >
                               {tag}
                             </span>
@@ -943,7 +943,7 @@ export default function BlobBrowser({
                     <div className="flex items-center justify-end gap-2">
                       <button
                         onClick={(e) => openTagsDialog(e, blob)}
-                        className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-purple-600 dark:hover:bg-gray-700 dark:hover:text-purple-400"
+                        className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-blue-600 dark:hover:bg-gray-700 dark:hover:text-blue-400"
                         title="Manage Tags"
                       >
                         <Tag className="h-4 w-4" />
@@ -1043,7 +1043,7 @@ export default function BlobBrowser({
                       setNewFilename('');
                     }
                   }}
-                  className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-900 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                   placeholder="Enter new filename"
                   autoFocus
                 />
@@ -1062,7 +1062,7 @@ export default function BlobBrowser({
                 <button
                   onClick={handleRename}
                   disabled={!newFilename.trim() || newFilename === renameDialogBlob.filename}
-                  className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-purple-500 dark:hover:bg-purple-600"
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
                 >
                   Rename
                 </button>
@@ -1089,12 +1089,12 @@ export default function BlobBrowser({
                   editingTags.map((tag, idx) => (
                     <span
                       key={idx}
-                      className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-3 py-1 text-sm font-medium text-purple-800 dark:bg-purple-900/30 dark:text-purple-300"
+                      className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-3 py-1 text-sm font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
                     >
                       {tag}
                       <button
                         onClick={() => handleRemoveTag(tag)}
-                        className="hover:text-purple-900 dark:hover:text-purple-200"
+                        className="hover:text-blue-900 dark:hover:text-blue-200"
                       >
                         <XIcon className="h-3 w-3" />
                       </button>
@@ -1122,12 +1122,12 @@ export default function BlobBrowser({
                       handleAddTag();
                     }
                   }}
-                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-900 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                   placeholder="Type tag name and press Enter"
                 />
                 <button
                   onClick={handleAddTag}
-                  className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600"
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
                 >
                   <Check className="h-4 w-4" />
                 </button>
@@ -1143,7 +1143,7 @@ export default function BlobBrowser({
               </button>
               <button
                 onClick={handleSaveTags}
-                className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600"
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
               >
                 Save Tags
               </button>

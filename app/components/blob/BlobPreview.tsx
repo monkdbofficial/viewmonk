@@ -684,10 +684,10 @@ export default function BlobPreview({ blob, allBlobs, onClose, onDelete }: BlobP
           </video>
         ) : isAudio && audioUrl ? (
           <div className="flex h-full items-center justify-center">
-            <div className="w-full max-w-2xl rounded-xl bg-gradient-to-br from-purple-50 to-white p-8 shadow-2xl dark:from-gray-800 dark:to-gray-900">
+            <div className="w-full max-w-2xl rounded-xl bg-gradient-to-br from-blue-50 to-white p-8 shadow-2xl dark:from-gray-800 dark:to-gray-900">
               {/* Audio Icon */}
-              <div className="mx-auto mb-6 flex h-32 w-32 items-center justify-center rounded-full bg-gradient-to-br from-purple-100 to-purple-200 dark:from-purple-900/30 dark:to-purple-800/30">
-                <svg className="h-16 w-16 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="mx-auto mb-6 flex h-32 w-32 items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-blue-200 dark:from-blue-900/30 dark:to-blue-800/30">
+                <svg className="h-16 w-16 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                 </svg>
               </div>
@@ -861,7 +861,7 @@ export default function BlobPreview({ blob, allBlobs, onClose, onDelete }: BlobP
             <p className="mt-2 text-sm text-gray-400">Preview not available for this file type</p>
             <button
               onClick={handleDownload}
-              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-purple-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-purple-700"
+              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
             >
               <Download className="h-4 w-4" />
               Download File

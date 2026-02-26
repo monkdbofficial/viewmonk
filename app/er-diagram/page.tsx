@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { Database, RefreshCw } from 'lucide-react';
+import { GitBranch, RefreshCw, Database } from 'lucide-react';
 import { useActiveConnection } from '../lib/monkdb-context';
 import { useSchemaMetadata } from '../lib/hooks/useSchemaMetadata';
 import { useToast } from '../components/ToastContext';
+import { useTheme } from '../components/ThemeProvider';
 import SimpleERDiagram from '../components/er-diagram/SimpleERDiagram';
 import ConnectionPrompt from '../components/common/ConnectionPrompt';
 
@@ -22,7 +22,24 @@ interface TableMetadata {
 }
 
 export default function ERDiagramPage() {
-  const router = useRouter();
+  const { theme } = useTheme();
+  const D = theme === 'dark';
+
+  const C = {
+    bgApp:         D ? '#0f1f30'   : '#f1f5f9',
+    bgHeader:      D ? '#0e1e2e'   : '#ffffff',
+    bgInput:       D ? '#1a3048'   : '#f1f5f9',
+    border:        D ? '#1a3050'   : '#e2e8f0',
+    textPrimary:   D ? '#d1d5db'   : '#1e293b',
+    textSecondary: D ? '#9ca3af'   : '#475569',
+    textMuted:     D ? '#6b7280'   : '#94a3b8',
+    accent:        '#3b82f6',
+    accentText:    D ? '#93c5fd'   : '#1d4ed8',
+    accentBg:      'rgba(59,130,246,0.12)',
+    accentBorder:  D ? 'rgba(59,130,246,0.35)' : 'rgba(59,130,246,0.3)',
+    hoverBg:       D ? 'rgba(148,163,184,0.07)' : 'rgba(0,0,0,0.04)',
+  };
+
   const activeConnection = useActiveConnection();
   const { schemas } = useSchemaMetadata();
   const { success, error: showError } = useToast();
@@ -38,157 +55,89 @@ export default function ERDiagramPage() {
   }, [schemas]);
 
   useEffect(() => {
-    if (selectedSchema) {
-      fetchSchemaMetadata();
-    }
+    if (selectedSchema) fetchSchemaMetadata();
   }, [selectedSchema]);
 
   const fetchSchemaMetadata = async () => {
     if (!activeConnection || !selectedSchema) return;
-
     setLoading(true);
     try {
-      // Fetch all tables in schema
-      const tablesResult = await activeConnection.client.query(`
-        SELECT table_name
-        FROM information_schema.tables
-        WHERE table_schema = ?
-          AND table_type = 'BASE TABLE'
-        ORDER BY table_name
-      `, [selectedSchema]);
-
+      const tablesResult = await activeConnection.client.query(
+        `SELECT table_name
+         FROM information_schema.tables
+         WHERE table_schema = ?
+           AND table_type = 'BASE TABLE'
+         ORDER BY table_name`,
+        [selectedSchema]
+      );
       const tableNames = tablesResult.rows.map((row: any[]) => row[0]);
-      console.log('📊 Found tables:', tableNames);
       const tableMetadata: TableMetadata[] = [];
 
-      // For each table, fetch columns and constraints
       for (const tableName of tableNames) {
-        console.log(`🔍 Fetching columns for table: ${selectedSchema}.${tableName}`);
-
-        // Try SHOW COLUMNS first, fallback to information_schema
         let columnsResult;
         let usingShowColumns = true;
-
         try {
-          // Get columns using SHOW COLUMNS (MonkDB-native command)
-          columnsResult = await activeConnection.client.query(`
-            SHOW COLUMNS FROM ${tableName} IN ${selectedSchema}
-          `);
-        } catch (err) {
-          console.warn(`SHOW COLUMNS failed for ${tableName}, trying information_schema:`, err);
+          columnsResult = await activeConnection.client.query(
+            `SHOW COLUMNS FROM ${tableName} IN ${selectedSchema}`
+          );
+        } catch {
           usingShowColumns = false;
-
-          // Fallback to information_schema.columns
-          columnsResult = await activeConnection.client.query(`
-            SELECT column_name, data_type, is_nullable
-            FROM information_schema.columns
-            WHERE table_schema = '${selectedSchema}'
-              AND table_name = '${tableName}'
-            ORDER BY ordinal_position
-          `);
+          columnsResult = await activeConnection.client.query(
+            `SELECT column_name, data_type, is_nullable
+             FROM information_schema.columns
+             WHERE table_schema = '${selectedSchema}'
+               AND table_name = '${tableName}'
+             ORDER BY ordinal_position`
+          );
         }
 
-        console.log(`📋 Columns result for ${tableName}:`, {
-          method: usingShowColumns ? 'SHOW COLUMNS' : 'information_schema',
-          cols: columnsResult.cols,
-          rowCount: columnsResult.rows.length,
-          firstRow: columnsResult.rows[0]
-        });
-
-        // Parse the Key column to identify primary keys
         const pkColumns = new Set<string>();
-
         if (usingShowColumns) {
-          // SHOW COLUMNS returns: Field, Type, Null, Key, Default, Extra
           columnsResult.rows.forEach((row: any[]) => {
-            const key = row[3]; // Key column
-            if (key && (key === 'PRI' || key.includes('PRI'))) {
-              pkColumns.add(row[0]); // Field column
-            }
+            const key = row[3];
+            if (key && (key === 'PRI' || key.includes('PRI'))) pkColumns.add(row[0]);
           });
         } else {
-          // For information_schema, assume 'id' column is primary key
           const hasIdColumn = columnsResult.rows.some((row: any[]) => row[0] === 'id');
-          if (hasIdColumn) {
-            pkColumns.add('id');
-          }
+          if (hasIdColumn) pkColumns.add('id');
         }
 
-        // Get foreign keys - MonkDB doesn't support full FK metadata in information_schema
-        // We'll use naming convention detection instead
         const fkMap = new Map<string, { table: string; column: string }>();
-
-        // Infer foreign keys from column names
-        // Common patterns: user_id -> users.id, product_id -> products.id
         columnsResult.rows.forEach((row: any[]) => {
           const columnName = row[0];
-
-          // Detect FK by naming convention: *_id or *Id
           if (columnName.endsWith('_id') || (columnName.endsWith('Id') && columnName !== 'id')) {
-            // Extract table name: user_id -> users, userId -> users
             let referencedTable = columnName.replace(/_id$/, '').replace(/Id$/, '');
-
-            // Pluralize if needed (simple pluralization)
             if (!tableNames.includes(referencedTable)) {
               const pluralized = referencedTable + 's';
-              if (tableNames.includes(pluralized)) {
-                referencedTable = pluralized;
-              }
+              if (tableNames.includes(pluralized)) referencedTable = pluralized;
             }
-
-            // If we found the referenced table, add to FK map
             if (tableNames.includes(referencedTable)) {
               fkMap.set(columnName, { table: referencedTable, column: 'id' });
             }
           }
         });
 
-        // Map columns based on which query method was used
         const columns = columnsResult.rows.map((row: any[]) => {
-          let columnName, dataType, isNullable;
-
-          if (usingShowColumns) {
-            // SHOW COLUMNS format: [Field, Type, Null, Key, Default, Extra]
-            columnName = row[0]; // Field
-            dataType = row[1]; // Type
-            isNullable = row[2]; // Null
-          } else {
-            // information_schema format: [column_name, data_type, is_nullable]
-            columnName = row[0];
-            dataType = row[1];
-            isNullable = row[2];
-          }
-
+          const columnName = row[0];
+          const dataType   = row[1];
+          const isNullable = row[2];
           const references = fkMap.get(columnName);
-
           return {
             name: columnName,
             type: dataType,
             nullable: isNullable === 'YES',
             isPrimaryKey: pkColumns.has(columnName),
             isForeignKey: references !== undefined,
-            references
+            references,
           };
         });
 
-        console.log(`✅ Processed ${columns.length} columns for ${tableName}`);
-
-        tableMetadata.push({
-          name: tableName,
-          columns
-        });
+        tableMetadata.push({ name: tableName, columns });
       }
-
-      console.log(`🎉 Successfully loaded ${tableMetadata.length} tables:`, tableMetadata.map(t => ({
-        name: t.name,
-        columnCount: t.columns.length,
-        columns: t.columns.map(c => c.name)
-      })));
 
       setTables(tableMetadata);
       success('Schema Loaded', `Loaded ${tableMetadata.length} tables`);
     } catch (err: any) {
-      console.error('Failed to fetch schema metadata:', err);
       showError('Failed to Load Schema', err.message);
     } finally {
       setLoading(false);
@@ -196,81 +145,83 @@ export default function ERDiagramPage() {
   };
 
   if (!activeConnection) {
-    return <ConnectionPrompt onConnect={() => router.push('/connections')} />;
+    return (
+      <div style={{ margin: '-2rem', height: 'calc(100vh - 4rem)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bgApp }}>
+        <ConnectionPrompt onConnect={() => {}} />
+      </div>
+    );
   }
 
   return (
-    <div className="flex h-full flex-col bg-white dark:bg-gray-950">
-      {/* Minimal Header */}
-      <div className="border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-6 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Database className="h-7 w-7 text-blue-500" />
-            <div>
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-                ER Diagram
-              </h1>
-              <p className="text-xs text-gray-600 dark:text-gray-400">
-                Visual database schema explorer
-              </p>
-            </div>
-          </div>
+    <div style={{ margin: '-2rem', height: 'calc(100vh - 4rem)', display: 'flex', flexDirection: 'column', background: C.bgApp, fontFamily: 'var(--font-geist-sans), system-ui, sans-serif' }}>
 
-          <div className="flex items-center gap-3">
-            {/* Schema Selector */}
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', background: C.bgHeader, borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: C.accentBg, border: `1px solid ${C.accentBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <GitBranch style={{ width: 15, height: 15, color: C.accentText }} />
+          </div>
+          <div>
+            <p style={{ fontSize: 14, fontWeight: 700, color: C.textPrimary, lineHeight: 1.2 }}>ER Diagram</p>
+            <p style={{ fontSize: 11, color: C.textMuted }}>Visual schema explorer</p>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Schema selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Database style={{ width: 13, height: 13, color: C.textMuted }} />
             <select
               value={selectedSchema}
-              onChange={(e) => setSelectedSchema(e.target.value)}
-              className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              onChange={e => setSelectedSchema(e.target.value)}
+              style={{ background: C.bgInput, border: `1px solid ${C.border}`, borderRadius: 7, color: C.textPrimary, fontSize: 13, padding: '5px 10px', outline: 'none', cursor: 'pointer' }}
             >
-              {schemas.map(schema => (
-                <option key={schema.name} value={schema.name}>
-                  {schema.name}
-                </option>
+              {schemas.map(s => (
+                <option key={s.name} value={s.name}>{s.name}</option>
               ))}
             </select>
-
-            {/* Refresh Button */}
-            <button
-              onClick={fetchSchemaMetadata}
-              disabled={loading}
-              className="flex items-center gap-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
           </div>
+
+          {/* Refresh */}
+          <button
+            onClick={fetchSchemaMetadata}
+            disabled={loading}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 7, background: 'transparent', border: `1px solid ${C.border}`, color: loading ? C.textMuted : C.textSecondary, fontSize: 13, fontWeight: 500, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}
+            onMouseEnter={e => { if (!loading) e.currentTarget.style.background = C.hoverBg; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+          >
+            <RefreshCw style={{ width: 13, height: 13, animation: loading ? 'spin 1s linear infinite' : 'none' }} />
+            Refresh
+          </button>
         </div>
       </div>
 
       {/* Canvas */}
-      <div className="flex-1 overflow-hidden">
+      <div style={{ flex: 1, overflow: 'hidden' }}>
         {loading && tables.length === 0 ? (
-          <div className="flex h-full items-center justify-center bg-white dark:bg-gray-950">
-            <div className="text-center">
-              <RefreshCw className="mx-auto h-12 w-12 animate-spin text-blue-500" />
-              <p className="mt-4 text-gray-600 dark:text-gray-400">Loading schema...</p>
+          <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', background: C.bgApp }}>
+            <div style={{ textAlign: 'center' }}>
+              <RefreshCw style={{ width: 40, height: 40, color: C.accent, animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
+              <p style={{ color: C.textSecondary, fontSize: 14 }}>Loading schema…</p>
             </div>
           </div>
         ) : tables.length === 0 ? (
-          <div className="flex h-full items-center justify-center bg-white dark:bg-gray-950">
-            <div className="text-center">
-              <Database className="mx-auto h-16 w-16 text-gray-400 dark:text-gray-600" />
-              <p className="mt-4 text-lg text-gray-700 dark:text-gray-400">No tables found</p>
-              <p className="text-sm text-gray-500 dark:text-gray-500">
-                Select a different schema or create some tables
-              </p>
+          <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', background: C.bgApp }}>
+            <div style={{ textAlign: 'center' }}>
+              <Database style={{ width: 48, height: 48, color: C.textMuted, margin: '0 auto 16px' }} />
+              <p style={{ fontSize: 16, color: C.textSecondary, marginBottom: 6 }}>No tables found</p>
+              <p style={{ fontSize: 13, color: C.textMuted }}>Select a schema or create some tables</p>
             </div>
           </div>
         ) : (
           <SimpleERDiagram
             tables={tables}
-            onTableClick={(tableName) => {
-              console.log('Clicked table:', tableName);
-            }}
+            onTableClick={() => {}}
           />
         )}
       </div>
+
+      <style>{`@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }`}</style>
     </div>
   );
 }

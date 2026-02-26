@@ -1,6 +1,6 @@
 'use client';
 
-import { Database, FileText, Search, TrendingUp, Loader2 } from 'lucide-react';
+import { Database, FileText, Search, TrendingUp } from 'lucide-react';
 import { useVectorStats } from '@/app/hooks/useVectorStats';
 
 export default function VectorStatsCards() {
@@ -8,8 +8,8 @@ export default function VectorStatsCards() {
 
   const formatNumber = (num: number) => {
     if (num === 0) return '0';
-    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
+    if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
+    if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
     return num.toLocaleString();
   };
 
@@ -19,81 +19,34 @@ export default function VectorStatsCards() {
     return `${(ms / 1000).toFixed(2)}s`;
   };
 
-  const cards = [
-    {
-      title: 'Collections',
-      value: formatNumber(stats.totalCollections),
-      icon: Database,
-      gradient: 'from-blue-500 to-blue-600',
-      bgGradient: 'from-blue-50 to-blue-100 dark:from-blue-950/30 dark:to-blue-900/30',
-    },
-    {
-      title: 'Documents',
-      value: formatNumber(stats.totalDocuments),
-      icon: FileText,
-      gradient: 'from-green-500 to-green-600',
-      bgGradient: 'from-green-50 to-green-100 dark:from-green-950/30 dark:to-green-900/30',
-    },
-    {
-      title: 'Recent Searches',
-      value: stats.recentSearches.toString(),
-      subtitle: 'Last 24h',
-      icon: Search,
-      gradient: 'from-purple-500 to-purple-600',
-      bgGradient: 'from-purple-50 to-purple-100 dark:from-purple-950/30 dark:to-purple-900/30',
-    },
-    {
-      title: 'Avg Query Time',
-      value: formatTime(stats.avgExecutionTime),
-      icon: TrendingUp,
-      gradient: 'from-orange-500 to-orange-600',
-      bgGradient: 'from-orange-50 to-orange-100 dark:from-orange-950/30 dark:to-orange-900/30',
-    },
+  const items = [
+    { label: 'Collections', value: formatNumber(stats.totalCollections), icon: Database },
+    { label: 'Documents', value: formatNumber(stats.totalDocuments), icon: FileText },
+    { label: 'Searches (24h)', value: stats.recentSearches.toString(), icon: Search },
+    { label: 'Avg Query Time', value: formatTime(stats.avgExecutionTime), icon: TrendingUp },
   ];
 
-  if (stats.loading) {
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {[...Array(4)].map((_, idx) => (
-          <div
-            key={idx}
-            className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6"
-          >
-            <div className="flex items-center justify-center h-20">
-              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-      {cards.map((card, idx) => {
-        const Icon = card.icon;
+    <div className="flex items-stretch border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+      {items.map((item, idx) => {
+        const Icon = item.icon;
         return (
           <div
             key={idx}
-            className={`bg-gradient-to-br ${card.bgGradient} rounded-lg border border-gray-200 dark:border-gray-700 p-6 relative overflow-hidden`}
+            className={`flex items-center gap-3 px-5 py-2.5 ${
+              idx > 0 ? 'border-l border-gray-200 dark:border-gray-700' : ''
+            }`}
           >
-            <div className="relative z-10">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                  {card.title}
-                </span>
-                <div className={`p-2 rounded-lg bg-gradient-to-br ${card.gradient}`}>
-                  <Icon className="w-4 h-4 text-white" />
-                </div>
-              </div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-gray-100">
-                {card.value}
-              </div>
-              {card.subtitle && (
-                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {card.subtitle}
-                </div>
+            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-gray-100 dark:bg-gray-700">
+              <Icon className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
+            </div>
+            <div>
+              {stats.loading ? (
+                <div className="h-4 w-10 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+              ) : (
+                <p className="text-sm font-bold text-gray-900 dark:text-white">{item.value}</p>
               )}
+              <p className="text-xs text-gray-500 dark:text-gray-400">{item.label}</p>
             </div>
           </div>
         );

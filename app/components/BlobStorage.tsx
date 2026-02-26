@@ -444,8 +444,8 @@ function BlobStorageContent() {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="max-w-md rounded-xl border-2 border-dashed border-gray-300 bg-gray-50/50 p-12 text-center dark:border-gray-700 dark:bg-gray-800/50">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-purple-100 dark:bg-purple-900/30">
-            <Database className="h-10 w-10 text-purple-600 dark:text-purple-400" />
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30">
+            <Database className="h-10 w-10 text-blue-600 dark:text-blue-400" />
           </div>
           <h3 className="mt-6 text-xl font-bold text-gray-900 dark:text-white">
             No Active Connection
@@ -455,7 +455,7 @@ function BlobStorageContent() {
           </p>
           <a
             href="/connections"
-            className="mt-6 inline-block rounded-lg bg-purple-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600"
+            className="mt-6 inline-block rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-slate-900 dark:text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
           >
             Manage Connections
           </a>
@@ -465,25 +465,25 @@ function BlobStorageContent() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-[#0D1B2A]">
+    <div className="flex h-full flex-col overflow-hidden bg-slate-100 dark:bg-[#0D1B2A]">
       {/* ── Header ── */}
-      <div className="border-b border-white/5 bg-[#0A1929] px-6 py-4">
+      <div className="border-b border-slate-200 dark:border-white/5 bg-white dark:bg-[#0A1929] px-6 py-4">
         <div className="flex items-center justify-between">
           {/* Left: title + breadcrumb */}
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-600/20 ring-1 ring-purple-500/30">
-              <FolderOpen className="h-5 w-5 text-purple-400" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600/20 ring-1 ring-blue-500/30">
+              <FolderOpen className="h-5 w-5 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
-              <h1 className="text-base font-semibold text-white leading-tight">BLOB Storage</h1>
+              <h1 className="text-base font-semibold text-slate-900 dark:text-white leading-tight">BLOB Storage</h1>
               <p className="text-xs leading-tight">
                 {currentTable ? (
                   <span className="flex items-center gap-1">
-                    <span className="text-white/30">Table</span>
-                    <span className="text-white/30">/</span>
-                    <span className="text-purple-400 font-medium">{currentTable}</span>
+                    <span className="text-slate-400 dark:text-white/30">Table</span>
+                    <span className="text-slate-400 dark:text-white/30">/</span>
+                    <span className="text-blue-600 dark:text-blue-400 font-medium">{currentTable}</span>
                   </span>
-                ) : <span className="text-white/30">Select a table to get started</span>}
+                ) : <span className="text-slate-400 dark:text-white/30">Select a table to get started</span>}
               </p>
             </div>
           </div>
@@ -491,17 +491,17 @@ function BlobStorageContent() {
           {/* Right: actions */}
           <div className="flex items-center gap-2">
             {/* Secondary actions */}
-            <div className="flex items-center gap-1 rounded-lg bg-white/5 p-1 ring-1 ring-white/10">
+            <div className="flex items-center gap-1 rounded-lg bg-white dark:bg-white/5 p-1 ring-1 ring-slate-300 dark:ring-white/10">
               <button
                 onClick={() => setShowSqlGuideModal(true)}
-                className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-white/50 hover:bg-white/10 hover:text-white transition-colors"
+                className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-slate-500 dark:text-white/50 hover:bg-slate-50 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white transition-colors"
               >
                 <BookOpen className="h-3.5 w-3.5" />
                 SQL Guide
               </button>
               <button
                 onClick={() => setShowSupportedTypesModal(true)}
-                className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-white/50 hover:bg-white/10 hover:text-white transition-colors"
+                className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-slate-500 dark:text-white/50 hover:bg-slate-50 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white transition-colors"
               >
                 <Info className="h-3.5 w-3.5" />
                 File Types
@@ -509,7 +509,7 @@ function BlobStorageContent() {
               {currentTable && (
                 <button
                   onClick={() => router.push(`/blob-analytics?table=${currentTable}`)}
-                  className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-white/50 hover:bg-white/10 hover:text-white transition-colors"
+                  className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-slate-500 dark:text-white/50 hover:bg-slate-50 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white transition-colors"
                 >
                   <BarChart3 className="h-3.5 w-3.5" />
                   Analytics
@@ -518,7 +518,7 @@ function BlobStorageContent() {
             </div>
 
             {/* Divider */}
-            {currentTable && <div className="h-6 w-px bg-white/10" />}
+            {currentTable && <div className="h-6 w-px bg-slate-200 dark:bg-white/10" />}
 
             {/* Table-level actions */}
             {currentTable && (
@@ -528,7 +528,7 @@ function BlobStorageContent() {
                   className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
                     showTrashed
                       ? 'border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20'
-                      : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white'
+                      : 'border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 text-slate-600 dark:text-white/50 hover:bg-slate-50 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -537,7 +537,7 @@ function BlobStorageContent() {
 
                 <button
                   onClick={() => setShowMigrateDialog(true)}
-                  className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/50 hover:bg-white/10 hover:text-white transition-colors"
+                  className="flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-white/50 hover:bg-slate-50 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white transition-colors"
                 >
                   <Wrench className="h-3.5 w-3.5" />
                   Manage
@@ -548,7 +548,7 @@ function BlobStorageContent() {
                     await loadBlobTables();
                     if (currentTable) loadBlobs(currentTable, currentFolder || undefined);
                   }}
-                  className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/50 hover:bg-white/10 hover:text-white transition-colors"
+                  className="flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-white/50 hover:bg-slate-50 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white transition-colors"
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
                   Refresh
@@ -558,7 +558,7 @@ function BlobStorageContent() {
 
             <button
               onClick={() => setShowCreateTableDialog(true)}
-              className="flex items-center gap-2 rounded-lg border border-dashed border-purple-500/40 bg-purple-600/10 px-3 py-1.5 text-xs font-medium text-purple-400 hover:bg-purple-600/20 hover:border-purple-400 transition-colors"
+              className="flex items-center gap-2 rounded-lg border border-dashed border-blue-300 dark:border-blue-500/40 bg-blue-50 dark:bg-blue-600/10 px-3 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-600/20 hover:border-blue-400 transition-colors"
             >
               <Plus className="h-3.5 w-3.5" />
               New Table
@@ -574,33 +574,33 @@ function BlobStorageContent() {
               onClick={() => tables.length === 0 ? setShowCreateTableDialog(true) : setShowTableDropdown(!showTableDropdown)}
               className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm transition-all ${
                 showTableDropdown
-                  ? 'border-purple-500/60 bg-[#0D1B2A] ring-2 ring-purple-500/20'
-                  : 'border-white/10 bg-[#0D1B2A] hover:border-white/20'
+                  ? 'border-blue-500/60 bg-white dark:bg-[#0D1B2A] ring-2 ring-blue-500/20'
+                  : 'border-slate-300 dark:border-white/10 bg-white dark:bg-[#0D1B2A] hover:border-slate-400 dark:hover:border-white/20'
               }`}
             >
               <div className="flex items-center gap-2 min-w-0">
-                <Database className="h-3.5 w-3.5 shrink-0 text-purple-400" />
-                <span className="truncate text-sm font-medium text-white">
+                <Database className="h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
+                <span className="truncate text-sm font-medium text-slate-900 dark:text-white">
                   {tables.length === 0 ? 'Create a table' : (currentTable || 'Select table')}
                 </span>
               </div>
-              <ChevronDown className={`h-4 w-4 shrink-0 text-white/30 transition-transform ${showTableDropdown ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 dark:text-white/30 transition-transform ${showTableDropdown ? 'rotate-180' : ''}`} />
             </button>
 
             {/* Dropdown */}
             {showTableDropdown && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setShowTableDropdown(false)} />
-                <div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-xl border border-white/10 bg-[#0A1929] shadow-2xl shadow-black/60">
-                  <div className="p-2 border-b border-white/5">
+                <div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0A1929] shadow-2xl shadow-black/60">
+                  <div className="p-2 border-b border-slate-200 dark:border-white/5">
                     <div className="relative">
-                      <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/30" />
+                      <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-white/30" />
                       <input
                         type="text"
                         value={tableSearchQuery}
                         onChange={(e) => setTableSearchQuery(e.target.value)}
                         placeholder="Search tables..."
-                        className="w-full rounded-lg border border-white/10 bg-[#0D1B2A] py-1.5 pl-8 pr-3 text-sm text-white placeholder-white/25 focus:border-purple-500/60 focus:outline-none focus:ring-1 focus:ring-purple-500/20"
+                        className="w-full rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-[#0D1B2A] py-1.5 pl-8 pr-3 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-white/25 focus:border-blue-500/60 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                         autoFocus
                       />
                     </div>
@@ -609,16 +609,16 @@ function BlobStorageContent() {
                   <div className="max-h-64 overflow-y-auto py-1">
                     {filteredTables.length > 0 ? filteredTables.map((table) => (
                       <div key={table} className={`group mx-1 flex items-center justify-between rounded-lg px-3 py-2 transition-colors ${
-                        currentTable === table ? 'bg-purple-600/15' : 'hover:bg-white/5'
+                        currentTable === table ? 'bg-blue-50 dark:bg-blue-600/15' : 'hover:bg-slate-50 dark:hover:bg-white/5'
                       }`}>
                         <button
                           onClick={() => handleTableSelect(table)}
                           className="flex flex-1 items-center gap-2.5 text-left min-w-0"
                         >
-                          <Database className={`h-4 w-4 shrink-0 ${currentTable === table ? 'text-purple-400' : 'text-white/30'}`} />
+                          <Database className={`h-4 w-4 shrink-0 ${currentTable === table ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-white/30'}`} />
                           <div className="min-w-0">
-                            <p className={`truncate text-sm font-medium ${currentTable === table ? 'text-purple-300' : 'text-white/80'}`}>{table}</p>
-                            <p className="text-[10px] text-white/25">{tableFeatures[table] ? 'Enterprise' : 'Standard'}</p>
+                            <p className={`truncate text-sm font-medium ${currentTable === table ? 'text-blue-700 dark:text-blue-300' : 'text-slate-800 dark:text-white/80'}`}>{table}</p>
+                            <p className="text-[10px] text-slate-400 dark:text-white/25">{tableFeatures[table] ? 'Enterprise' : 'Standard'}</p>
                           </div>
                           {tableFeatures[table] && (
                             <span className="ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20">Pro</span>
@@ -631,7 +631,7 @@ function BlobStorageContent() {
                             setDeleteConfirmText('');
                             setShowTableDropdown(false);
                           }}
-                          className="ml-2 shrink-0 rounded p-1 text-white/20 opacity-0 group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-400 transition-all"
+                          className="ml-2 shrink-0 rounded p-1 text-slate-400 dark:text-white/20 opacity-0 group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-400 transition-all"
                           title="Delete table"
                         >
                           <Trash className="h-3.5 w-3.5" />
@@ -639,17 +639,17 @@ function BlobStorageContent() {
                       </div>
                     )) : (
                       <div className="px-3 py-6 text-center">
-                        <p className="text-sm text-white/30">
+                        <p className="text-sm text-slate-400 dark:text-white/30">
                           {tableSearchQuery ? `No results for "${tableSearchQuery}"` : 'No tables yet'}
                         </p>
                       </div>
                     )}
                   </div>
 
-                  <div className="border-t border-white/5 p-2">
+                  <div className="border-t border-slate-200 dark:border-white/5 p-2">
                     <button
                       onClick={() => { setShowCreateTableDialog(true); setShowTableDropdown(false); }}
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-purple-400 hover:bg-purple-600/10 transition-colors"
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-600/10 transition-colors"
                     >
                       <Plus className="h-4 w-4" />
                       New table
@@ -664,13 +664,13 @@ function BlobStorageContent() {
           {currentTable && (
             <>
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/30" />
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-white/30" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search files..."
-                  className="w-full rounded-lg border border-white/10 bg-[#0D1B2A] py-2 pl-9 pr-4 text-sm text-white placeholder-white/25 focus:border-purple-500/60 focus:outline-none focus:ring-1 focus:ring-purple-500/20"
+                  className="w-full rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0D1B2A] py-2 pl-9 pr-4 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-white/25 focus:border-blue-500/60 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                 />
               </div>
 
@@ -682,7 +682,7 @@ function BlobStorageContent() {
                   setSortBy(by);
                   setSortOrder(order);
                 }}
-                className="rounded-lg border border-white/10 bg-[#0D1B2A] px-3 py-2 text-sm text-white/70 focus:border-purple-500/60 focus:outline-none focus:ring-1 focus:ring-purple-500/20"
+                className="rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0D1B2A] px-3 py-2 text-sm text-slate-700 dark:text-white/70 focus:border-blue-500/60 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
               >
                 <option value="date-desc">Newest First</option>
                 <option value="date-asc">Oldest First</option>
@@ -693,17 +693,17 @@ function BlobStorageContent() {
               </select>
 
               {/* View toggle */}
-              <div className="flex items-center rounded-lg border border-white/10 bg-[#0D1B2A] p-1">
+              <div className="flex items-center rounded-lg border border-slate-300 dark:border-white/10 bg-white dark:bg-[#0D1B2A] p-1">
                 <button
                   onClick={() => setViewMode('grid')}
-                  className={`rounded p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-purple-600 text-white' : 'text-white/30 hover:text-white/70'}`}
+                  className={`rounded p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-blue-600 text-white' : 'text-slate-400 dark:text-white/30 hover:text-slate-700 dark:text-white/70'}`}
                   title="Grid View"
                 >
                   <Grid className="h-4 w-4" />
                 </button>
                 <button
                   onClick={() => setViewMode('list')}
-                  className={`rounded p-1.5 transition-colors ${viewMode === 'list' ? 'bg-purple-600 text-white' : 'text-white/30 hover:text-white/70'}`}
+                  className={`rounded p-1.5 transition-colors ${viewMode === 'list' ? 'bg-blue-600 text-white' : 'text-slate-400 dark:text-white/30 hover:text-slate-700 dark:text-white/70'}`}
                   title="List View"
                 >
                   <List className="h-4 w-4" />
@@ -713,7 +713,7 @@ function BlobStorageContent() {
               {/* Upload — primary CTA */}
               <button
                 onClick={() => setShowUploader(true)}
-                className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-500 active:bg-purple-700 transition-colors shadow-lg shadow-purple-900/40"
+                className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 active:bg-blue-700 transition-colors shadow-lg shadow-blue-900/40"
               >
                 <Upload className="h-4 w-4" />
                 Upload Files
@@ -725,26 +725,26 @@ function BlobStorageContent() {
 
       {/* ── Stats Bar ── */}
       {currentTable && tableStats !== null && (
-        <div className="border-b border-white/5 bg-[#0A1929]/60 px-6 py-2.5">
+        <div className="border-b border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-[#0A1929]/60 px-6 py-2.5">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
-              <Files className="h-3.5 w-3.5 text-white/25" />
-              <span className="text-xs text-white/40">Total files</span>
-              <span className="text-xs font-semibold text-white">{tableStats.totalFiles.toLocaleString()}</span>
+              <Files className="h-3.5 w-3.5 text-slate-400 dark:text-white/25" />
+              <span className="text-xs text-slate-500 dark:text-white/40">Total files</span>
+              <span className="text-xs font-semibold text-slate-900 dark:text-white">{tableStats.totalFiles.toLocaleString()}</span>
             </div>
-            <div className="h-3 w-px bg-white/10" />
+            <div className="h-3 w-px bg-slate-200 dark:bg-white/10" />
             <div className="flex items-center gap-2">
-              <HardDrive className="h-3.5 w-3.5 text-white/25" />
-              <span className="text-xs text-white/40">Storage used</span>
-              <span className="text-xs font-semibold text-white">{formatBytes(tableStats.totalSize)}</span>
+              <HardDrive className="h-3.5 w-3.5 text-slate-400 dark:text-white/25" />
+              <span className="text-xs text-slate-500 dark:text-white/40">Storage used</span>
+              <span className="text-xs font-semibold text-slate-900 dark:text-white">{formatBytes(tableStats.totalSize)}</span>
             </div>
-            <div className="h-3 w-px bg-white/10" />
+            <div className="h-3 w-px bg-slate-200 dark:bg-white/10" />
             <div className="flex items-center gap-2">
-              <Star className="h-3.5 w-3.5 text-white/25" />
-              <span className="text-xs text-white/40">Favourites</span>
-              <span className="text-xs font-semibold text-white">{tableStats.favorites.toLocaleString()}</span>
+              <Star className="h-3.5 w-3.5 text-slate-400 dark:text-white/25" />
+              <span className="text-xs text-slate-500 dark:text-white/40">Favourites</span>
+              <span className="text-xs font-semibold text-slate-900 dark:text-white">{tableStats.favorites.toLocaleString()}</span>
             </div>
-            <div className="ml-auto text-[10px] text-white/20">
+            <div className="ml-auto text-[10px] text-slate-400 dark:text-white/20">
               Drag &amp; drop files anywhere to upload
             </div>
           </div>
@@ -753,7 +753,7 @@ function BlobStorageContent() {
 
       {/* Content */}
       <div
-        className="relative flex-1 overflow-auto bg-[#0D1B2A] p-6"
+        className="relative flex-1 overflow-auto bg-slate-100 dark:bg-[#0D1B2A] p-6"
         onDragEnter={currentTable ? handleDragEnter : undefined}
         onDragLeave={currentTable ? handleDragLeave : undefined}
         onDragOver={currentTable ? handleDragOver : undefined}
@@ -761,10 +761,10 @@ function BlobStorageContent() {
       >
         {/* Drag-and-drop overlay */}
         {isDragOver && (
-          <div className="pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-purple-500 bg-purple-600/10 backdrop-blur-sm">
-            <Upload className="h-14 w-14 text-purple-400" />
-            <p className="mt-4 text-xl font-semibold text-purple-300">Drop files to upload</p>
-            <p className="mt-1 text-sm text-purple-400/70">to table: {currentTable}</p>
+          <div className="pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-blue-500 bg-blue-600/10 backdrop-blur-sm">
+            <Upload className="h-14 w-14 text-blue-400" />
+            <p className="mt-4 text-xl font-semibold text-blue-300">Drop files to upload</p>
+            <p className="mt-1 text-sm text-blue-400/70">to table: {currentTable}</p>
           </div>
         )}
 
@@ -772,18 +772,18 @@ function BlobStorageContent() {
           <div className="flex h-full items-center justify-center">
             {tables.length === 0 ? (
               <div className="text-center">
-                <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-purple-600/10 ring-1 ring-purple-500/20">
-                  <Database className="h-12 w-12 text-purple-400" />
+                <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-blue-600/10 ring-1 ring-blue-500/20">
+                  <Database className="h-12 w-12 text-blue-400" />
                 </div>
-                <h3 className="mt-6 text-xl font-bold text-white">
+                <h3 className="mt-6 text-xl font-bold text-slate-900 dark:text-white">
                   No Blob Tables Yet
                 </h3>
-                <p className="mt-2 text-sm text-white/40">
+                <p className="mt-2 text-sm text-slate-500 dark:text-white/40">
                   Create your first blob table to start storing files.
                 </p>
                 <button
                   onClick={() => setShowCreateTableDialog(true)}
-                  className="mt-6 flex items-center gap-2 mx-auto rounded-lg bg-purple-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600"
+                  className="mt-6 flex items-center gap-2 mx-auto rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-slate-900 dark:text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
                 >
                   <Plus className="h-4 w-4" />
                   Create your first table
@@ -791,11 +791,11 @@ function BlobStorageContent() {
               </div>
             ) : (
               <div className="text-center">
-                <FolderOpen className="mx-auto h-16 w-16 text-white/20" />
-                <h3 className="mt-4 text-lg font-medium text-white">
+                <FolderOpen className="mx-auto h-16 w-16 text-slate-400 dark:text-white/20" />
+                <h3 className="mt-4 text-lg font-medium text-slate-900 dark:text-white">
                   Select a Table
                 </h3>
-                <p className="mt-2 text-sm text-white/40">
+                <p className="mt-2 text-sm text-slate-500 dark:text-white/40">
                   Choose a table above to manage your BLOBs
                 </p>
               </div>
@@ -1113,7 +1113,7 @@ INSERT INTO my_files_blob_metadata (
               {/* SELECT (Read) */}
               <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
                 <div className="mb-3 flex items-center gap-2">
-                  <span className="rounded bg-purple-100 px-2 py-1 text-xs font-semibold text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
+                  <span className="rounded bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
                     SELECT
                   </span>
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Query BLOB Metadata</h3>
@@ -1202,7 +1202,7 @@ DROP TABLE my_files_blob_metadata;`}
               </div>
 
               {/* Tips */}
-              <div className="rounded-lg bg-gradient-to-r from-purple-50 to-blue-50 p-4 dark:from-purple-900/20 dark:to-blue-900/20">
+              <div className="rounded-lg bg-gradient-to-r from-blue-50 to-blue-50 p-4 dark:from-blue-900/20 dark:to-blue-900/20">
                 <h3 className="mb-2 flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
                   <span>💡</span> Pro Tips
                 </h3>
@@ -1287,7 +1287,7 @@ DROP TABLE my_files_blob_metadata;`}
                   }
                 }}
                 disabled={deleteConfirmText !== showDeleteDialog}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 dark:bg-red-500 dark:hover:bg-red-600"
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-slate-900 dark:text-white hover:bg-red-700 disabled:opacity-50 dark:bg-red-500 dark:hover:bg-red-600"
               >
                 Delete Permanently
               </button>

@@ -8,14 +8,16 @@ import {
   PanelLeft, Layout, Command,
 } from 'lucide-react';
 import ELK from 'elkjs/lib/elk.bundled.js';
+import { useTheme } from '../ThemeProvider';
 
-// ─── Design tokens (mirroring liam-hq Dark/variables.css) ────────────────────
-// Primary accent:  #1ded83
-// Node bg:         #141616
-// Header bg:       #232526
-// Node border:     rgba(255,255,255,0.2)
-// Edge (normal):   rgba(255,255,255,0.2)   → turns #1ded83 on highlight
-// Glow:            rgba(29,237,131,0.4)
+// ─── Design tokens (app dark navy palette) ────────────────────────────────────
+// Primary accent:  #3b82f6  (blue)
+// Node bg:         #0f1f30  (bgApp)
+// Card header:     #1a3048  (bgInput)
+// Panel bg:        #0e1e2e  (bgHeader)
+// Node border:     rgba(255,255,255,0.15)
+// Edge (normal):   rgba(255,255,255,0.2)   → turns #3b82f6 on highlight
+// Glow:            rgba(59,130,246,0.35)
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TABLE_W    = 280;
@@ -58,9 +60,23 @@ function shortType(t: string) {
     .replace(/character varying(\(\d+\))?/g, 'varchar')
     .replace('timestamp without time zone', 'timestamp')
     .replace('timestamp with time zone', 'timestamptz')
-    .replace('double precision', 'float')
+    .replace('double precision', 'double')
     .replace('boolean', 'bool')
     .replace(/\(\d+\)$/, '');
+}
+
+/** Return a per-category accent color for a MonkDB column type */
+function typeColor(t: string): string {
+  const s = shortType(t);
+  if (/^(integer|bigint|smallint|short|byte|int)$/.test(s)) return '#f59e0b';  // amber  — integers
+  if (/^(float|double|real)$/.test(s))                       return '#a78bfa';  // violet — floats
+  if (/^(text|varchar|char|string)$/.test(s))                return '#34d399';  // emerald — text
+  if (/^bool$/.test(s))                                       return '#f472b6';  // pink   — boolean
+  if (/^(timestamp|timestamptz|date|time)$/.test(s))         return '#22d3ee';  // cyan   — temporal
+  if (/^(object|array)/.test(s))                             return '#2dd4bf';  // teal   — nested
+  if (/^geo_/.test(s))                                        return '#38bdf8';  // sky    — geo
+  if (/^float_vector/.test(s))                               return '#c084fc';  // purple — vectors
+  return '#93c5fd';                                                              // default blue
 }
 
 /** Build a smooth Bezier SVG path between two table columns */
@@ -89,6 +105,80 @@ function bezierPath(
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagramProps) {
+  const { theme } = useTheme();
+  const D = theme === 'dark';
+
+  // ─── Color tokens (light / dark) ───────────────────────────────────────────
+  const C = {
+    // Canvas
+    canvasBg:       D ? '#060f1a'   : '#f1f5f9',
+    canvasDot:      D ? 'rgba(148,163,184,0.12)' : 'rgba(71,85,105,0.1)',
+    // Toolbar / panels / sidebars
+    toolbarBg:      D ? '#0e1e2e'   : '#ffffff',
+    toolbarBorder:  D ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)',
+    panelBg:        D ? '#0e1e2e'   : '#ffffff',
+    panelBorder:    D ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+    panelRowBorder: D ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)',
+    // Node
+    nodeBg:         D ? '#0d2038'   : '#ffffff',
+    nodeHeaderBg:   D ? '#162840'   : '#f8fafc',
+    nodeHeaderSel:  D ? '#1a3a60'   : '#eff6ff',
+    nodeHeaderHov:  D ? '#162e50'   : '#f0f9ff',
+    nodeHeaderSep:  D ? 'rgba(148,163,184,0.15)' : 'rgba(0,0,0,0.08)',
+    nodeBorder:     D ? 'rgba(148,163,184,0.22)' : 'rgba(0,0,0,0.1)',
+    nodeRowSep:     D ? 'rgba(148,163,184,0.13)' : 'rgba(0,0,0,0.06)',
+    nodeRowHov:     D ? 'rgba(255,255,255,0.04)'  : 'rgba(0,0,0,0.03)',
+    // Text
+    textPrimary:    D ? 'rgba(255,255,255,0.92)' : '#1e293b',
+    textSecondary:  D ? 'rgba(255,255,255,0.65)' : '#475569',
+    textMuted:      D ? 'rgba(255,255,255,0.35)' : '#94a3b8',
+    textDim:        D ? 'rgba(255,255,255,0.2)'  : '#cbd5e1',
+    textSelected:   D ? '#93c5fd' : '#1d4ed8',
+    textHovered:    D ? '#bfdbfe' : '#2563eb',
+    // Accent
+    accent:         '#3b82f6',
+    accentBg:       D ? 'rgba(59,130,246,0.12)' : 'rgba(59,130,246,0.08)',
+    accentBorder:   D ? 'rgba(59,130,246,0.25)' : 'rgba(59,130,246,0.35)',
+    accentText:     D ? '#93c5fd' : '#1d4ed8',
+    // Toolbar inputs
+    inputBg:        D ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+    inputBorder:    D ? 'rgba(255,255,255,0.1)'  : 'rgba(0,0,0,0.12)',
+    inputText:      D ? 'rgba(255,255,255,0.85)' : '#1e293b',
+    inputPlaceholder: D ? 'rgba(255,255,255,0.35)' : '#94a3b8',
+    // Table icon
+    tableIcon:      D ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.35)',
+    // Column icons
+    colIconNullable: D ? 'rgba(148,163,184,0.5)'  : 'rgba(100,116,139,0.6)',
+    colIconRequired: D ? 'rgba(148,163,184,0.6)'  : 'rgba(71,85,105,0.7)',
+    // FK ref hint
+    fkHint:          D ? 'rgba(96,165,250,0.7)'  : 'rgba(37,99,235,0.6)',
+    fkDot:           D ? 'rgba(96,165,250,0.45)' : 'rgba(59,130,246,0.5)',
+    fkDotActive:     D ? '#93c5fd' : '#3b82f6',
+    fkDotHov:        D ? '#93c5fd' : '#2563eb',
+    // Edges
+    edgeNormal:      D ? 'rgba(96,165,250,0.28)' : 'rgba(59,130,246,0.35)',
+    edgeMarker:      D ? 'rgba(96,165,250,0.45)' : 'rgba(59,130,246,0.55)',
+    // Command palette
+    cmdBg:           D ? '#112233' : '#ffffff',
+    cmdFooterBg:     D ? '#060f1a' : '#f8fafc',
+    cmdItemHovBg:    D ? 'rgba(59,130,246,0.1)' : 'rgba(59,130,246,0.07)',
+    cmdSectionBg:    D ? '#112233' : '#f8fafc',
+    // Scrollbar / section headers
+    sectionBg:       D ? '#0e1e2e' : '#f8fafc',
+    // Misc
+    divider:         D ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+    statBg:          D ? 'rgba(59,130,246,0.06)'  : 'rgba(59,130,246,0.06)',
+    statBorder:      D ? 'rgba(59,130,246,0.2)'   : 'rgba(59,130,246,0.25)',
+    minimapBg:       D ? 'rgba(10,20,36,0.97)'   : 'rgba(255,255,255,0.97)',
+    minimapBorder:   D ? 'rgba(59,130,246,0.2)'  : 'rgba(59,130,246,0.2)',
+    minimapCanvas:   D ? 'rgba(6,15,26,0.8)'     : 'rgba(241,245,249,0.9)',
+    minimapCanvasBorder: D ? 'rgba(96,165,250,0.15)' : 'rgba(59,130,246,0.15)',
+    minimapNode:     D ? 'rgba(255,255,255,0.2)'  : 'rgba(59,130,246,0.25)',
+    kbdBg:           D ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)',
+    kbdText:         D ? 'rgba(255,255,255,0.4)'  : '#64748b',
+    overlayBg:       'rgba(0,0,0,0.6)',
+  } as const;
+
   const containerRef  = useRef<HTMLDivElement>(null);
   const searchRef     = useRef<HTMLInputElement>(null);
   const cmdRef        = useRef<HTMLInputElement>(null);
@@ -383,13 +473,13 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
 <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${vx} ${vy} ${W} ${H}">
 <defs>
   <marker id="ex-many" viewBox="0 0 20 20" refX="0" refY="10" markerWidth="14" markerHeight="14" orient="auto">
-    <path d="M 0 2 L 12 10 M 0 10 L 12 10 M 0 18 L 12 10" stroke="#1ded83" stroke-width="1.5" fill="none"/>
+    <path d="M 0 2 L 12 10 M 0 10 L 12 10 M 0 18 L 12 10" stroke="#3b82f6" stroke-width="1.5" fill="none"/>
   </marker>
   <marker id="ex-one" viewBox="0 0 10 20" refX="10" refY="10" markerWidth="10" markerHeight="14" orient="auto">
-    <line x1="9" y1="2" x2="9" y2="18" stroke="#1ded83" stroke-width="2"/>
+    <line x1="9" y1="2" x2="9" y2="18" stroke="#3b82f6" stroke-width="2"/>
   </marker>
 </defs>
-<rect x="${vx}" y="${vy}" width="${W}" height="${H}" fill="#0a0e1a"/>
+<rect x="${vx}" y="${vy}" width="${W}" height="${H}" fill="#0a1929"/>
 <g id="edges">`;
 
     displayedTables.forEach(t => {
@@ -410,14 +500,14 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
       const p = positions.get(t.name); if (!p) return;
       const h = HEADER_H + t.columns.length * ROW_H + 8;
       svg += `\n  <g transform="translate(${p.x},${p.y})">
-    <rect width="${TABLE_W}" height="${h}" rx="8" fill="#0a0e1a" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
-    <rect width="${TABLE_W}" height="${HEADER_H}" rx="8" fill="#0d1b2a"/>
-    <rect y="${HEADER_H - 8}" width="${TABLE_W}" height="8" fill="#0d1b2a"/>
+    <rect width="${TABLE_W}" height="${h}" rx="8" fill="#0a1929" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
+    <rect width="${TABLE_W}" height="${HEADER_H}" rx="8" fill="#0e1e2e"/>
+    <rect y="${HEADER_H - 8}" width="${TABLE_W}" height="8" fill="#0e1e2e"/>
     <line x1="0" y1="${HEADER_H}" x2="${TABLE_W}" y2="${HEADER_H}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
     <text x="12" y="27" fill="rgba(255,255,255,0.7)" font-size="12" font-weight="500" font-family="system-ui,sans-serif">${t.name}</text>`;
       t.columns.forEach((c, i) => {
         const y = HEADER_H + i * ROW_H;
-        const nameColor = c.isPrimaryKey ? '#1ded83' : c.isForeignKey ? '#1ded83' : 'rgba(255,255,255,0.9)';
+        const nameColor = c.isPrimaryKey ? '#3b82f6' : c.isForeignKey ? '#3b82f6' : 'rgba(255,255,255,0.9)';
         if (i > 0) svg += `\n    <line x1="0" y1="${y}" x2="${TABLE_W}" y2="${y}" stroke="rgba(255,255,255,0.07)" stroke-width="0.5"/>`;
         svg += `\n    <text x="36" y="${y + 20}" fill="${nameColor}" font-size="11" font-family="system-ui,sans-serif">${c.name}</text>`;
         svg += `\n    <text x="${TABLE_W - 8}" y="${y + 20}" text-anchor="end" fill="rgba(255,255,255,0.4)" font-size="10" font-family="monospace">${shortType(c.type)}</text>`;
@@ -450,7 +540,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
     const ctx = canvas.getContext('2d')!;
     const img = new Image();
     img.onload = () => {
-      ctx.fillStyle = '#141616'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#0f1f30'; ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       canvas.toBlob(blob => {
         if (!blob) return;
@@ -580,7 +670,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
       {/* ════════════════════ TOOLBAR ════════════════════ */}
       <div
         className="flex items-center justify-between gap-3 px-3 py-1.5 flex-shrink-0 border-b"
-        style={{ background: '#0d1117', borderColor: 'rgba(255,255,255,0.08)', minHeight: 44 }}
+        style={{ background: C.toolbarBg, borderColor: C.toolbarBorder, minHeight: 44 }}
       >
         {/* Left */}
         <div className="flex items-center gap-2">
@@ -591,30 +681,31 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
             onClick={() => setShowLeftPanel(v => !v)}
             icon={<PanelLeft className="h-3.5 w-3.5" />}
             label="Tables"
+          C={C}
           />
 
           {/* Divider */}
-          <div className="h-4 w-px" style={{ background: 'rgba(255,255,255,0.1)' }} />
+          <div className="h-4 w-px" style={{ background: C.divider }} />
 
           {/* Command palette trigger */}
           <button
             onClick={() => { setShowCommandPalette(true); setCommandSearch(''); setCmdIndex(0); }}
             className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs transition-colors"
-            style={{ border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.4)', background: 'transparent' }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
+            style={{ border: `1px solid ${C.inputBorder}`, color: C.textMuted, background: 'transparent' }}
+            onMouseEnter={e => (e.currentTarget.style.background = C.inputBg)}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
           >
             <Command className="h-3.5 w-3.5" />
             <span>Search…</span>
-            <kbd className="rounded px-1 py-0.5 text-[9px] font-mono" style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.35)' }}>⌘K</kbd>
+            <kbd className="rounded px-1 py-0.5 text-[9px] font-mono" style={{ background: C.kbdBg, color: C.kbdText }}>⌘K</kbd>
           </button>
 
           {/* Divider */}
-          <div className="h-4 w-px" style={{ background: 'rgba(255,255,255,0.1)' }} />
+          <div className="h-4 w-px" style={{ background: C.divider }} />
 
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 pointer-events-none" style={{ color: 'rgba(255,255,255,0.35)' }} />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 pointer-events-none" style={{ color: C.textMuted }} />
             <input
               ref={searchRef}
               type="text"
@@ -623,22 +714,22 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
               onChange={e => setSearchTerm(e.target.value)}
               className="w-44 rounded-md py-1.5 pl-8 pr-6 text-xs focus:outline-none transition-colors"
               style={{
-                background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-                color: 'rgba(255,255,255,0.85)',
+                background: C.inputBg, border: `1px solid ${C.inputBorder}`,
+                color: C.inputText,
               }}
             />
             {searchTerm && (
-              <button onClick={() => setSearchTerm('')} className="absolute right-1.5 top-1/2 -translate-y-1/2" style={{ color: 'rgba(255,255,255,0.4)' }}>
+              <button onClick={() => setSearchTerm('')} className="absolute right-1.5 top-1/2 -translate-y-1/2" style={{ color: C.textMuted }}>
                 <X className="h-3 w-3" />
               </button>
             )}
           </div>
 
           {/* Divider */}
-          <div className="h-4 w-px" style={{ background: 'rgba(255,255,255,0.1)' }} />
+          <div className="h-4 w-px" style={{ background: C.divider }} />
 
           {/* Zoom */}
-          <div className="flex items-center rounded-md overflow-hidden text-xs" style={{ border: '1px solid rgba(255,255,255,0.1)' }}>
+          <div className="flex items-center rounded-md overflow-hidden text-xs" style={{ border: `1px solid ${C.inputBorder}` }}>
             {[
               { icon: <ZoomOut className="h-3.5 w-3.5" />, fn: zoomOut, title: 'Zoom out' },
               { label: `${Math.round(scale * 100)}%`, fn: resetView, title: 'Reset zoom (⌘0)' },
@@ -650,8 +741,8 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                 title={btn.title}
                 className="px-2 py-1.5 transition-colors"
                 style={{
-                  color: 'rgba(255,255,255,0.55)',
-                  borderLeft: i > 0 ? '1px solid rgba(255,255,255,0.1)' : undefined,
+                  color: C.textSecondary,
+                  borderLeft: i > 0 ? `1px solid ${C.divider}` : undefined,
                   minWidth: btn.label ? 50 : undefined,
                   textAlign: 'center',
                   fontFamily: 'monospace',
@@ -659,7 +750,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                   fontSize: 11,
                   background: 'transparent',
                 }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
+                onMouseEnter={e => (e.currentTarget.style.background = C.inputBg)}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
               >
                 {btn.label ?? btn.icon}
@@ -668,19 +759,19 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
           </div>
 
           {/* Divider */}
-          <div className="h-4 w-px" style={{ background: 'rgba(255,255,255,0.1)' }} />
+          <div className="h-4 w-px" style={{ background: C.divider }} />
 
           {/* All / Keys / Name toggle */}
-          <div className="flex items-center rounded-md overflow-hidden text-xs" style={{ border: '1px solid rgba(255,255,255,0.1)' }}>
+          <div className="flex items-center rounded-md overflow-hidden text-xs" style={{ border: `1px solid ${C.inputBorder}` }}>
             {(['all', 'keys', 'name'] as const).map((m, i) => (
               <button
                 key={m}
                 onClick={() => setShowMode(m)}
                 className="px-3 py-1.5 font-medium transition-colors"
                 style={{
-                  background: showMode === m ? '#1ded83' : 'transparent',
-                  color: showMode === m ? '#141616' : 'rgba(255,255,255,0.55)',
-                  borderLeft: i > 0 ? '1px solid rgba(255,255,255,0.1)' : undefined,
+                  background: showMode === m ? '#3b82f6' : 'transparent',
+                  color: showMode === m ? '#ffffff' : C.textSecondary,
+                  borderLeft: i > 0 ? `1px solid ${C.divider}` : undefined,
                 }}
               >
                 {m === 'all' ? 'All' : m === 'keys' ? 'Keys' : 'Name'}
@@ -689,28 +780,31 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
           </div>
 
           {/* Divider */}
-          <div className="h-4 w-px" style={{ background: 'rgba(255,255,255,0.1)' }} />
+          <div className="h-4 w-px" style={{ background: C.divider }} />
 
           {/* Edges toggle */}
           <ToolbarToggle
             active={showEdges} onClick={() => setShowEdges(v => !v)}
             icon={showEdges ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
             label="Links"
+          C={C}
           />
           {/* Minimap toggle */}
           <ToolbarToggle
             active={showMinimap} onClick={() => setShowMinimap(v => !v)}
             icon={<Grid3x3 className="h-3.5 w-3.5" />}
             label="Map"
+          C={C}
           />
           {/* Fit to screen */}
-          <ToolbarBtn onClick={fitToScreen} icon={<RotateCcw className="h-3.5 w-3.5" />} label="Fit" title="Fit to screen" />
+          <ToolbarBtn onClick={fitToScreen} icon={<RotateCcw className="h-3.5 w-3.5" />} label="Fit" title="Fit to screen" C={C} />
           {/* Tidy Up */}
           <ToolbarBtn
             onClick={tidyUp}
             icon={<Layout className={`h-3.5 w-3.5 ${isComputing ? 'animate-spin' : ''}`} />}
             label="Tidy"
             title="Tidy up layout"
+            C={C}
           />
 
           {/* Related only — only when table selected */}
@@ -719,29 +813,30 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
               active={relatedOnly} onClick={() => setRelatedOnly(v => !v)}
               icon={<Filter className="h-3.5 w-3.5" />}
               label="Related"
-            />
+          C={C}
+          />
           )}
         </div>
 
         {/* Right */}
         <div className="flex items-center gap-2">
           {/* Stats */}
-          <div className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs" style={{ border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.55)' }}>
-            <span className="h-1.5 w-1.5 rounded-full inline-block" style={{ background: '#1ded83' }} />
-            <span style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 600 }}>{displayedTables.length}</span>
-            <span>/ {tables.length}</span>
-            {isComputing && <span style={{ color: '#1ded83' }} className="ml-1">· computing…</span>}
+          <div className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs" style={{ border: `1px solid ${C.statBorder}`, background: C.statBg, color: C.textSecondary }}>
+            <span className="h-1.5 w-1.5 rounded-full inline-block" style={{ background: '#3b82f6' }} />
+            <span style={{ color: C.accentText, fontWeight: 600 }}>{displayedTables.length}</span>
+            <span style={{ color: C.textMuted }}>/ {tables.length}</span>
+            {isComputing && <span style={{ color: '#60a5fa' }} className="ml-1">· computing…</span>}
           </div>
-          <div className="h-4 w-px" style={{ background: 'rgba(255,255,255,0.1)' }} />
-          <ToolbarBtn onClick={toggleFullscreen} icon={<Maximize className="h-3.5 w-3.5" />} label={isFullscreen ? 'Exit' : 'Full'} />
-          <ToolbarBtn onClick={exportPNG} icon={<Download className="h-3.5 w-3.5" />} label="PNG" />
+          <div className="h-4 w-px" style={{ background: C.divider }} />
+          <ToolbarBtn onClick={toggleFullscreen} icon={<Maximize className="h-3.5 w-3.5" />} label={isFullscreen ? 'Exit' : 'Full'} C={C} />
+          <ToolbarBtn onClick={exportPNG} icon={<Download className="h-3.5 w-3.5" />} label="PNG" C={C} />
           {/* SVG = primary CTA */}
           <button
             onClick={exportSVG}
             className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors"
-            style={{ background: '#1ded83', color: '#141616' }}
-            onMouseEnter={e => (e.currentTarget.style.background = '#4af19c')}
-            onMouseLeave={e => (e.currentTarget.style.background = '#1ded83')}
+            style={{ background: '#3b82f6', color: '#ffffff' }}
+            onMouseEnter={e => (e.currentTarget.style.background = '#60a5fa')}
+            onMouseLeave={e => (e.currentTarget.style.background = '#3b82f6')}
           >
             <Download className="h-3.5 w-3.5" /> SVG
           </button>
@@ -757,21 +852,21 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
             className="flex flex-col flex-shrink-0 overflow-hidden"
             style={{
               width: 220,
-              borderRight: '1px solid rgba(255,255,255,0.08)',
-              background: '#0d1117',
+              borderRight: `1px solid ${C.panelBorder}`,
+              background: C.panelBg,
             }}
           >
             {/* Panel header */}
-            <div className="flex items-center justify-between px-3 py-2.5 flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-              <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.35)' }}>Tables</span>
+            <div className="flex items-center justify-between px-3 py-2.5 flex-shrink-0" style={{ borderBottom: `1px solid ${C.panelBorder}` }}>
+              <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: C.textSecondary }}>Tables</span>
               <div className="flex gap-1">
                 <button
                   onClick={() => setHiddenTables(new Set())}
                   title="Show all"
                   className="flex items-center justify-center rounded px-1.5 py-0.5 text-[9px] font-semibold transition-colors"
-                  style={{ color: 'rgba(255,255,255,0.3)', border: '1px solid rgba(255,255,255,0.08)', background: 'transparent' }}
-                  onMouseEnter={e => { (e.currentTarget.style.color = '#1ded83'); (e.currentTarget.style.borderColor = 'rgba(29,237,131,0.3)'); }}
-                  onMouseLeave={e => { (e.currentTarget.style.color = 'rgba(255,255,255,0.3)'); (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'); }}
+                  style={{ color: C.textMuted, border: `1px solid ${C.inputBorder}`, background: 'transparent' }}
+                  onMouseEnter={e => { (e.currentTarget.style.color = '#3b82f6'); (e.currentTarget.style.borderColor = 'rgba(59,130,246,0.4)'); }}
+                  onMouseLeave={e => { (e.currentTarget.style.color = C.textMuted); (e.currentTarget.style.borderColor = C.inputBorder); }}
                 >
                   All
                 </button>
@@ -779,9 +874,9 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                   onClick={() => setHiddenTables(new Set(tables.map(t => t.name)))}
                   title="Hide all"
                   className="flex items-center justify-center rounded px-1.5 py-0.5 text-[9px] font-semibold transition-colors"
-                  style={{ color: 'rgba(255,255,255,0.3)', border: '1px solid rgba(255,255,255,0.08)', background: 'transparent' }}
-                  onMouseEnter={e => { (e.currentTarget.style.color = 'rgba(247,80,73,0.8)'); (e.currentTarget.style.borderColor = 'rgba(247,80,73,0.2)'); }}
-                  onMouseLeave={e => { (e.currentTarget.style.color = 'rgba(255,255,255,0.3)'); (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'); }}
+                  style={{ color: C.textMuted, border: `1px solid ${C.inputBorder}`, background: 'transparent' }}
+                  onMouseEnter={e => { (e.currentTarget.style.color = 'rgba(248,113,113,0.9)'); (e.currentTarget.style.borderColor = 'rgba(248,113,113,0.3)'); }}
+                  onMouseLeave={e => { (e.currentTarget.style.color = C.textMuted); (e.currentTarget.style.borderColor = C.inputBorder); }}
                 >
                   None
                 </button>
@@ -789,9 +884,9 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
             </div>
 
             {/* Search within panel */}
-            <div className="px-2 py-2 flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="px-2 py-2 flex-shrink-0" style={{ borderBottom: `1px solid ${C.panelBorder}` }}>
               <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 pointer-events-none" style={{ color: 'rgba(255,255,255,0.25)' }} />
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 pointer-events-none" style={{ color: C.textMuted }} />
                 <input
                   type="text"
                   placeholder="Filter…"
@@ -799,19 +894,20 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                   onChange={e => setLeftPanelSearch(e.target.value)}
                   className="w-full rounded py-1 pl-6 pr-2 text-[11px] focus:outline-none"
                   style={{
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    color: 'rgba(255,255,255,0.7)',
+                    background: C.inputBg,
+                    border: `1px solid ${C.inputBorder}`,
+                    color: C.inputText,
                   }}
                 />
               </div>
             </div>
 
             {/* Visibility stats */}
-            <div className="flex items-center gap-2 px-3 py-1.5 flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#1ded83' }} />
-              <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.35)' }}>
-                {tables.length - hiddenTables.size} visible · {hiddenTables.size} hidden
+            <div className="flex items-center gap-2 px-3 py-1.5 flex-shrink-0" style={{ borderBottom: `1px solid ${C.panelBorder}` }}>
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#3b82f6' }} />
+              <span className="text-[10px]" style={{ color: C.textSecondary }}>
+                <span style={{ color: C.accentText, fontWeight: 600 }}>{tables.length - hiddenTables.size}</span> visible
+                {hiddenTables.size > 0 && <span style={{ color: D ? 'rgba(248,113,113,0.7)' : '#ef4444' }}> · {hiddenTables.size} hidden</span>}
               </span>
             </div>
 
@@ -828,12 +924,11 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                     key={t.name}
                     className="group flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors"
                     style={{
-                      borderBottom: '1px solid rgba(255,255,255,0.04)',
+                      borderBottom: `1px solid ${C.panelRowBorder}`,
                       background: isSel
-                        ? 'rgba(29,237,131,0.1)'
-                        : isHovered
-                        ? 'rgba(255,255,255,0.04)'
+                        ? C.accentBg
                         : 'transparent',
+                      borderLeft: isSel ? '2px solid #3b82f6' : '2px solid transparent',
                       opacity: isHidden ? 0.4 : 1,
                     }}
                     onClick={() => {
@@ -843,7 +938,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                       focusTable(t.name);
                     }}
                     onMouseEnter={e => {
-                      if (!isSel) (e.currentTarget.style.background = 'rgba(255,255,255,0.04)');
+                      if (!isSel) (e.currentTarget.style.background = C.inputBg);
                     }}
                     onMouseLeave={e => {
                       if (!isSel) (e.currentTarget.style.background = 'transparent');
@@ -853,7 +948,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                     <span
                       className="h-1.5 w-1.5 rounded-full flex-shrink-0"
                       style={{
-                        background: isSel ? '#1ded83' : isConn ? 'rgba(29,237,131,0.6)' : isHidden ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.3)',
+                        background: isSel ? '#3b82f6' : isConn ? 'rgba(59,130,246,0.6)' : isHidden ? C.textDim : C.textMuted,
                       }}
                     />
 
@@ -861,8 +956,8 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                     <span
                       className="flex-1 min-w-0 truncate text-[11px]"
                       style={{
-                        color: isSel ? '#1ded83' : isConn ? 'rgba(29,237,131,0.85)' : isHidden ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.65)',
-                        fontWeight: isSel ? 600 : 400,
+                        color: isSel ? C.textSelected : isConn ? C.accent : isHidden ? C.textDim : C.textPrimary,
+                        fontWeight: isSel ? 700 : 400,
                         textDecoration: isHidden ? 'line-through' : 'none',
                       }}
                     >
@@ -870,7 +965,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                     </span>
 
                     {/* Column count */}
-                    <span className="text-[9px] flex-shrink-0" style={{ color: 'rgba(255,255,255,0.2)' }}>
+                    <span className="text-[9px] flex-shrink-0 rounded-full px-1" style={{ color: C.accentText, background: C.accentBg }}>
                       {t.columns.length}
                     </span>
 
@@ -878,7 +973,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                     <button
                       onClick={e => { e.stopPropagation(); toggleHidden(t.name); }}
                       className="flex items-center justify-center rounded flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                      style={{ color: isHidden ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.4)', width: 16, height: 16 }}
+                      style={{ color: C.textMuted, width: 16, height: 16 }}
                       title={isHidden ? 'Show table' : 'Hide table'}
                     >
                       {isHidden
@@ -903,15 +998,15 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
           style={{
             cursor: isPanning ? 'grabbing' : dragging ? 'grabbing' : 'grab',
             userSelect: 'none', WebkitUserSelect: 'none',
-            background: '#141616',
-            backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)',
+            background: C.canvasBg,
+            backgroundImage: `radial-gradient(circle, ${C.canvasDot} 1px, transparent 1px)`,
             backgroundSize: '24px 24px',
             backgroundPosition: `${translate.x % 24}px ${translate.y % 24}px`,
           }}
         >
           {/* Loading fade-out overlay */}
           {isComputing && (
-            <div className="absolute inset-0 z-50 pointer-events-none transition-opacity" style={{ opacity: 0.4, background: '#141616' }} />
+            <div className="absolute inset-0 z-50 pointer-events-none transition-opacity" style={{ opacity: 0.5, background: C.canvasBg }} />
           )}
 
           <div
@@ -934,23 +1029,23 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                   </filter>
 
                   <linearGradient id="pgrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stopColor="#1ded83" stopOpacity="0" />
-                    <stop offset="40%" stopColor="#1ded83" stopOpacity="1" />
-                    <stop offset="100%" stopColor="#4af19c" stopOpacity="0.8" />
+                    <stop offset="0%" stopColor="#3b82f6" stopOpacity="0" />
+                    <stop offset="40%" stopColor="#3b82f6" stopOpacity="1" />
+                    <stop offset="100%" stopColor="#60a5fa" stopOpacity="0.8" />
                   </linearGradient>
 
                   <marker id="erd-many"   viewBox="0 0 20 20" refX="0"  refY="10" markerWidth="14" markerHeight="14" orient="auto">
-                    <path d="M 0 2 L 14 10 M 0 10 L 14 10 M 0 18 L 14 10" stroke="rgba(255,255,255,0.3)" strokeWidth="1.3" fill="none"/>
+                    <path d="M 0 2 L 14 10 M 0 10 L 14 10 M 0 18 L 14 10" stroke={C.edgeMarker} strokeWidth="1.3" fill="none"/>
                   </marker>
                   <marker id="erd-many-h" viewBox="0 0 20 20" refX="0"  refY="10" markerWidth="14" markerHeight="14" orient="auto">
-                    <path d="M 0 2 L 14 10 M 0 10 L 14 10 M 0 18 L 14 10" stroke="#1ded83" strokeWidth="1.6" fill="none"/>
+                    <path d="M 0 2 L 14 10 M 0 10 L 14 10 M 0 18 L 14 10" stroke="#60a5fa" strokeWidth="1.8" fill="none"/>
                   </marker>
 
                   <marker id="erd-one"   viewBox="0 0 10 20" refX="10" refY="10" markerWidth="10" markerHeight="14" orient="auto">
-                    <line x1="9" y1="2" x2="9" y2="18" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5"/>
+                    <line x1="9" y1="2" x2="9" y2="18" stroke={C.edgeMarker} strokeWidth="1.5"/>
                   </marker>
                   <marker id="erd-one-h" viewBox="0 0 10 20" refX="10" refY="10" markerWidth="10" markerHeight="14" orient="auto">
-                    <line x1="9" y1="2" x2="9" y2="18" stroke="#1ded83" strokeWidth="2"/>
+                    <line x1="9" y1="2" x2="9" y2="18" stroke="#60a5fa" strokeWidth="2.2"/>
                   </marker>
                 </defs>
 
@@ -994,8 +1089,8 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
 
                           <path
                             d={pathD}
-                            stroke={isHov || isHlt ? '#1ded83' : 'rgba(255,255,255,0.25)'}
-                            strokeWidth={isHov ? 1.8 : isHlt ? 1.4 : 1}
+                            stroke={isHov || isHlt ? '#3b82f6' : C.edgeNormal}
+                            strokeWidth={isHov ? 2 : isHlt ? 1.5 : 1}
                             fill="none" opacity={opacity}
                             strokeLinecap="square" strokeLinejoin="miter"
                             markerStart={isHov || isHlt ? 'url(#erd-many-h)' : 'url(#erd-many)'}
@@ -1028,9 +1123,9 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                             return (
                             <g style={{ pointerEvents: 'none' }}>
                               <rect x={cx - labelW / 2} y={cy - 13} width={labelW} height="26" rx="6"
-                                fill="#141616" stroke="#1ded83" strokeWidth="1" opacity="0.96" />
+                                fill="#0d2038" stroke="#3b82f6" strokeWidth="1" opacity="0.96" />
                               <text x={cx} y={cy + 4}
-                                textAnchor="middle" fill="#1ded83" fontSize="11" fontWeight="500" fontFamily="monospace">
+                                textAnchor="middle" fill="#3b82f6" fontSize="11" fontWeight="500" fontFamily="monospace">
                                 {labelText}
                               </text>
                             </g>
@@ -1073,17 +1168,21 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                     zIndex: isSel || isDrag ? 50 : 2,
                     cursor: isDrag ? 'grabbing' : 'grab',
                     userSelect: 'none', WebkitUserSelect: 'none',
-                    background: '#141616',
-                    border: isSel || isHoverSel
-                      ? '2px solid #1ded83'
+                    background: C.nodeBg,
+                    border: isSel
+                      ? '2px solid #3b82f6'
+                      : isHoverSel
+                      ? '1.5px solid rgba(59,130,246,0.75)'
                       : isConn || isHoverConn
-                      ? '1px solid rgba(29,237,131,0.45)'
-                      : '1px solid rgba(255,255,255,0.15)',
-                    boxShadow: isSel || isHoverSel
-                      ? '0 0 0 0px transparent, 0 0 20px rgba(29,237,131,0.4)'
+                      ? '1px solid rgba(59,130,246,0.5)'
+                      : `1px solid ${C.nodeBorder}`,
+                    boxShadow: isSel
+                      ? D ? '0 0 0 3px rgba(59,130,246,0.2), 0 0 32px rgba(59,130,246,0.55)' : '0 0 0 3px rgba(59,130,246,0.15), 0 4px 24px rgba(59,130,246,0.2)'
+                      : isHoverSel
+                      ? D ? '0 0 0 2px rgba(59,130,246,0.12), 0 0 18px rgba(59,130,246,0.35)' : '0 0 0 2px rgba(59,130,246,0.1), 0 4px 16px rgba(59,130,246,0.15)'
                       : isDrag
-                      ? '0 20px 40px rgba(0,0,0,0.6)'
-                      : '0 0 20px rgba(0,0,0,0.4)',
+                      ? D ? '0 20px 40px rgba(0,0,0,0.7)' : '0 12px 32px rgba(0,0,0,0.15)'
+                      : D ? '0 4px 16px rgba(0,0,0,0.5)' : '0 2px 8px rgba(0,0,0,0.08)',
                     opacity: isDimmed ? 0.18 : 1,
                     transition: 'opacity 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
                     willChange: isDrag ? 'transform' : 'auto',
@@ -1098,22 +1197,22 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                     className="flex items-center justify-between gap-2 px-3"
                     style={{
                       height: HEADER_H, minHeight: HEADER_H,
-                      background: '#232526',
-                      borderBottom: bodyHidden ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                      background: isSel ? C.nodeHeaderSel : isHoverSel ? C.nodeHeaderHov : C.nodeHeaderBg,
+                      borderBottom: bodyHidden ? 'none' : `1px solid ${isSel ? C.accentBorder : C.nodeHeaderSep}`,
                     }}
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
-                        <rect x="0.5" y="0.5" width="13" height="4" rx="1" stroke="rgba(255,255,255,0.4)" strokeWidth="1"/>
-                        <rect x="0.5" y="5.5" width="6" height="8" rx="1" stroke="rgba(255,255,255,0.4)" strokeWidth="1"/>
-                        <rect x="7.5" y="5.5" width="6" height="8" rx="1" stroke="rgba(255,255,255,0.4)" strokeWidth="1"/>
+                        <rect x="0.5" y="0.5" width="13" height="4" rx="1" stroke={C.tableIcon} strokeWidth="1"/>
+                        <rect x="0.5" y="5.5" width="6" height="8" rx="1" stroke={C.tableIcon} strokeWidth="1"/>
+                        <rect x="7.5" y="5.5" width="6" height="8" rx="1" stroke={C.tableIcon} strokeWidth="1"/>
                       </svg>
-                      <span className="text-sm font-medium truncate" style={{ color: isSel || isHoverSel ? '#1ded83' : 'rgba(255,255,255,0.7)', fontSize: 12, transition: 'color 0.15s ease' }}>
+                      <span className="text-sm font-medium truncate" style={{ color: isSel ? C.textSelected : isHoverSel ? C.textHovered : C.textPrimary, fontSize: 12, fontWeight: isSel ? 700 : 600, transition: 'color 0.15s ease' }}>
                         {table.name}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <span className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold" style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.45)' }}>
+                      <span className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold" style={{ background: isSel ? 'rgba(59,130,246,0.22)' : 'rgba(59,130,246,0.12)', color: isSel ? '#93c5fd' : 'rgba(147,197,253,0.6)', border: `1px solid ${isSel ? 'rgba(59,130,246,0.4)' : 'rgba(59,130,246,0.18)'}` }}>
                         {table.columns.length}
                       </span>
                       {/* Collapse toggle (not shown in NAME mode since body is always hidden) */}
@@ -1121,9 +1220,9 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                         <button
                           onClick={e => toggleCollapse(table.name, e)}
                           className="flex items-center justify-center rounded transition-colors"
-                          style={{ color: 'rgba(255,255,255,0.3)', width: 16, height: 16 }}
-                          onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.7)')}
-                          onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.3)')}
+                          style={{ color: C.textMuted, width: 16, height: 16 }}
+                          onMouseEnter={e => (e.currentTarget.style.color = C.textSecondary)}
+                          onMouseLeave={e => (e.currentTarget.style.color = C.textMuted)}
                           title={isCollapsed ? 'Expand' : 'Collapse'}
                         >
                           {isCollapsed
@@ -1138,7 +1237,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                   {!bodyHidden && (
                     <div className="overflow-y-auto overflow-x-hidden" style={{ maxHeight: 280 }}>
                       {cols.length === 0 ? (
-                        <div className="px-3 py-3 text-[11px] italic" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                        <div className="px-3 py-3 text-[11px] italic" style={{ color: C.textDim }}>
                           No key columns
                         </div>
                       ) : (
@@ -1150,7 +1249,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                           const isRelHlt = !!relKey && (selectedTable === table.name || selectedTable === col.references?.table);
 
                           const rowBg = isRelHov || isRelHlt
-                            ? 'rgba(29,237,131,0.1)'
+                            ? 'rgba(59,130,246,0.1)'
                             : 'transparent';
 
                           const isHighlightedTable = isSel || isConn || isHoverSel || isHoverConn;
@@ -1163,10 +1262,10 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                                 height: ROW_H, display: 'grid', gridTemplateColumns: 'auto 1fr auto',
                                 alignItems: 'center', gap: 6,
                                 paddingLeft: 8, paddingRight: col.isForeignKey ? 12 : 8,
-                                borderBottom: !isLast ? '1px solid rgba(255,255,255,0.06)' : undefined,
+                                borderBottom: !isLast ? `1px solid ${C.nodeRowSep}` : undefined,
                                 background: rowBg,
                               }}
-                              onMouseEnter={e => { if (!isRelHov && !isRelHlt) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.04)'; }}
+                              onMouseEnter={e => { if (!isRelHov && !isRelHlt) (e.currentTarget as HTMLDivElement).style.background = C.nodeRowHov; }}
                               onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = rowBg; }}
                             >
                               {/* FK dot connector */}
@@ -1174,8 +1273,8 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                                 <div
                                   className="absolute right-0 top-1/2 h-2.5 w-2.5 rounded-full border transition-all"
                                   style={{
-                                    borderColor: '#141616',
-                                    background: isRelHov ? '#1ded83' : isRelHlt ? 'rgba(29,237,131,0.7)' : 'rgba(255,255,255,0.2)',
+                                    borderColor: C.canvasBg,
+                                    background: isRelHov ? C.fkDotHov : isRelHlt ? C.fkDotActive : C.fkDot,
                                     transform: 'translate(50%, -50%)',
                                     zIndex: 10,
                                     transition: 'background 0.15s ease',
@@ -1186,16 +1285,16 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                               {/* Column icon */}
                               <div style={{ width: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                 {col.isPrimaryKey ? (
-                                  <Key className="h-3.5 w-3.5" style={{ color: '#1ded83' }} />
+                                  <Key className="h-3.5 w-3.5" style={{ color: '#fbbf24' }} />
                                 ) : col.isForeignKey ? (
-                                  <Link className="h-3.5 w-3.5" style={{ color: '#1ded83' }} />
+                                  <Link className="h-3.5 w-3.5" style={{ color: '#60a5fa' }} />
                                 ) : col.nullable ? (
                                   <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                                    <path d="M 5 1 L 9 5 L 5 9 L 1 5 Z" stroke="rgba(255,255,255,0.4)" strokeWidth="1.2" fill="none" />
+                                    <path d="M 5 1 L 9 5 L 5 9 L 1 5 Z" stroke={C.colIconNullable} strokeWidth="1.2" fill="none" />
                                   </svg>
                                 ) : (
                                   <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                                    <path d="M 5 1 L 9 5 L 5 9 L 1 5 Z" fill="rgba(255,255,255,0.45)" />
+                                    <path d="M 5 1 L 9 5 L 5 9 L 1 5 Z" fill={C.colIconRequired} />
                                   </svg>
                                 )}
                               </div>
@@ -1203,26 +1302,27 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                               {/* Column name + FK hint */}
                               <div className="min-w-0 flex flex-col justify-center">
                                 <span className="text-xs truncate" style={{
-                                  color: col.isPrimaryKey || col.isForeignKey ? '#1ded83' : 'rgba(255,255,255,0.85)',
-                                  fontWeight: col.isPrimaryKey ? 600 : 400,
+                                  color: col.isPrimaryKey ? (D ? '#fde68a' : '#b45309') : col.isForeignKey ? C.textSelected : C.textPrimary,
+                                  fontWeight: col.isPrimaryKey ? 700 : 400,
                                   fontSize: 11,
                                 }}>
                                   {col.name}
                                 </span>
                                 {col.isForeignKey && col.references && (
-                                  <span className="text-[9px] truncate" style={{ color: 'rgba(29,237,131,0.55)', lineHeight: 1 }}>
-                                    → {col.references.table}.{col.references.column}
+                                  <span className="text-[9px] truncate" style={{ color: C.fkHint, lineHeight: 1 }}>
+                                    ↗ {col.references.table}
                                   </span>
                                 )}
                               </div>
 
-                              {/* Column type — visible only on highlighted table */}
+                              {/* Column type badge — colored per type category */}
                               <span
-                                className="text-[10px] font-mono flex-shrink-0 transition-opacity"
+                                className="text-[10px] font-mono flex-shrink-0 rounded px-1"
                                 style={{
-                                  color: 'rgba(255,255,255,0.45)',
-                                  opacity: isHighlightedTable || isRelHov ? 1 : 0,
-                                  transition: 'opacity 0.25s ease',
+                                  color: isHighlightedTable || isRelHov ? typeColor(col.type) : typeColor(col.type) + '88',
+                                  background: isHighlightedTable || isRelHov ? typeColor(col.type) + '18' : 'transparent',
+                                  transition: 'color 0.2s ease, background 0.2s ease',
+                                  border: isHighlightedTable || isRelHov ? `1px solid ${typeColor(col.type)}30` : '1px solid transparent',
                                 }}
                               >
                                 {shortType(col.type)}
@@ -1243,21 +1343,22 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
             <div
               className="absolute bottom-5 right-5 rounded-xl p-2.5 shadow-2xl"
               style={{
-                background: 'rgba(20,22,22,0.94)',
-                border: '1px solid rgba(255,255,255,0.12)',
-                backdropFilter: 'blur(8px)',
+                background: C.minimapBg,
+                border: `1px solid ${C.minimapBorder}`,
+                backdropFilter: 'blur(12px)',
+                boxShadow: D ? '0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(59,130,246,0.06)' : '0 4px 16px rgba(0,0,0,0.12), 0 0 0 1px rgba(59,130,246,0.1)',
               }}
             >
               <div className="flex items-center justify-between mb-2">
-                <p className="text-[9px] font-bold tracking-widest uppercase" style={{ color: 'rgba(255,255,255,0.3)' }}>OVERVIEW</p>
+                <p className="text-[9px] font-bold tracking-widest uppercase" style={{ color: C.accentText }}>OVERVIEW</p>
                 <div className="flex gap-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full inline-block" style={{ background: '#1ded83' }} />
-                  <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                  <span className="h-1.5 w-1.5 rounded-full inline-block" style={{ background: '#3b82f6' }} />
+                  <span className="text-[9px]" style={{ color: C.textMuted }}>
                     {displayedTables.length} shown
                   </span>
                 </div>
               </div>
-              <div className="relative rounded-md overflow-hidden" style={{ width: 144, height: 104, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div className="relative rounded-md overflow-hidden" style={{ width: 144, height: 104, background: C.minimapCanvas, border: `1px solid ${C.minimapCanvasBorder}` }}>
                 {displayedTables.map(t => {
                   const p = positions.get(t.name); if (!p) return null;
                   const isTSel = selectedTable === t.name;
@@ -1270,14 +1371,14 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                       style={{
                         left: p.x * 0.038, top: p.y * 0.038,
                         width: 16, height: 9,
-                        background: isTSel || isTHov ? '#1ded83' : isTConn ? 'rgba(29,237,131,0.55)' : 'rgba(255,255,255,0.2)',
-                        boxShadow: isTSel || isTHov ? '0 0 6px rgba(29,237,131,0.6)' : 'none',
+                        background: isTSel || isTHov ? '#3b82f6' : isTConn ? 'rgba(59,130,246,0.55)' : C.minimapNode,
+                        boxShadow: isTSel || isTHov ? '0 0 6px rgba(59,130,246,0.6)' : 'none',
                       }}
                     />
                   );
                 })}
               </div>
-              <p className="text-center text-[9px] mt-1.5" style={{ color: 'rgba(255,255,255,0.2)' }}>⌘K palette · ⌘F search · ⌘0 reset</p>
+              <p className="text-center text-[9px] mt-1.5" style={{ color: C.textDim }}>⌘K palette · ⌘F search · ⌘0 reset</p>
             </div>
           )}
         </div>
@@ -1288,29 +1389,29 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
             className="flex flex-col flex-shrink-0 overflow-hidden"
             style={{
               width: 280,
-              borderLeft: '1px solid rgba(255,255,255,0.08)',
-              background: '#0d1117',
+              borderLeft: `1px solid ${C.panelBorder}`,
+              background: C.panelBg,
             }}
           >
             {/* Sidebar header */}
-            <div className="flex items-start justify-between gap-2 px-4 pt-4 pb-3 flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+            <div className="flex items-start justify-between gap-2 px-4 pt-4 pb-3 flex-shrink-0" style={{ borderBottom: `1px solid ${C.panelBorder}` }}>
               <div className="min-w-0">
-                <p className="text-[9px] uppercase tracking-widest mb-1" style={{ color: 'rgba(255,255,255,0.3)' }}>Table Inspector</p>
-                <h2 className="text-sm font-bold truncate" style={{ color: '#1ded83', fontSize: 13 }}>{selectedTable}</h2>
+                <p className="text-[9px] uppercase tracking-widest mb-1" style={{ color: C.textMuted }}>Table Inspector</p>
+                <h2 className="text-sm font-bold truncate" style={{ color: C.textSelected, fontSize: 13 }}>{selectedTable}</h2>
                 <div className="flex items-center gap-2 mt-1.5 flex-wrap" style={{ fontSize: 10 }}>
-                  <SidebarStat color="rgba(255,255,255,0.5)" label={`${selectedData.columns.length} cols`} />
-                  <SidebarStat color="#1ded83" label={`${selectedData.columns.filter(c => c.isPrimaryKey).length} PK`} />
-                  <SidebarStat color="rgba(29,237,131,0.6)" label={`${selectedData.columns.filter(c => c.isForeignKey).length} FK`} />
-                  <SidebarStat color="rgba(255,255,255,0.35)" label={`${selectedData.columns.filter(c => !c.nullable).length} req`} />
+                  <SidebarStat color={C.textSecondary} label={`${selectedData.columns.length} cols`} textColor={C.textMuted} />
+                  <SidebarStat color="#f59e0b" label={`${selectedData.columns.filter(c => c.isPrimaryKey).length} PK`} textColor={C.textMuted} />
+                  <SidebarStat color="#60a5fa" label={`${selectedData.columns.filter(c => c.isForeignKey).length} FK`} textColor={C.textMuted} />
+                  <SidebarStat color={C.textMuted} label={`${selectedData.columns.filter(c => !c.nullable).length} req`} textColor={C.textMuted} />
                 </div>
               </div>
               <div className="flex gap-1 flex-shrink-0 mt-0.5">
                 <button
                   onClick={() => focusTable(selectedTable)}
                   className="flex items-center justify-center rounded-md transition-colors"
-                  style={{ width: 24, height: 24, color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.06)' }}
-                  onMouseEnter={e => (e.currentTarget.style.color = '#1ded83')}
-                  onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.4)')}
+                  style={{ width: 24, height: 24, color: C.textMuted, background: C.inputBg }}
+                  onMouseEnter={e => (e.currentTarget.style.color = '#3b82f6')}
+                  onMouseLeave={e => (e.currentTarget.style.color = C.textMuted)}
                   title="Focus on table"
                 >
                   <Crosshair className="h-3.5 w-3.5" />
@@ -1318,9 +1419,9 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                 <button
                   onClick={() => { setSelectedTable(null); setRelatedOnly(false); }}
                   className="flex items-center justify-center rounded-md transition-colors"
-                  style={{ width: 24, height: 24, color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.06)' }}
-                  onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.8)')}
-                  onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.4)')}
+                  style={{ width: 24, height: 24, color: C.textMuted, background: C.inputBg }}
+                  onMouseEnter={e => (e.currentTarget.style.color = C.textPrimary)}
+                  onMouseLeave={e => (e.currentTarget.style.color = C.textMuted)}
                   title="Close (Esc)"
                 >
                   <X className="h-3.5 w-3.5" />
@@ -1329,21 +1430,21 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
             </div>
 
             {/* Related only toggle */}
-            <div className="px-4 py-2 flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="px-4 py-2 flex-shrink-0" style={{ borderBottom: `1px solid ${C.panelBorder}` }}>
               <button
                 onClick={() => setRelatedOnly(v => !v)}
                 className="w-full flex items-center justify-between gap-2 rounded-md px-3 py-2 text-xs transition-colors"
                 style={{
-                  background: relatedOnly ? 'rgba(29,237,131,0.12)' : 'rgba(255,255,255,0.05)',
-                  border: relatedOnly ? '1px solid rgba(29,237,131,0.35)' : '1px solid rgba(255,255,255,0.08)',
-                  color: relatedOnly ? '#1ded83' : 'rgba(255,255,255,0.5)',
+                  background: relatedOnly ? C.accentBg : C.inputBg,
+                  border: relatedOnly ? `1px solid ${C.accentBorder}` : `1px solid ${C.inputBorder}`,
+                  color: relatedOnly ? C.accent : C.textSecondary,
                 }}
               >
                 <div className="flex items-center gap-2">
                   <Filter className="h-3.5 w-3.5" />
                   <span className="font-medium">Show related only</span>
                 </div>
-                <span className="text-[9px] font-semibold rounded px-1.5 py-0.5" style={{ background: 'rgba(255,255,255,0.08)' }}>
+                <span className="text-[9px] font-semibold rounded px-1.5 py-0.5" style={{ background: C.kbdBg, color: C.textMuted }}>
                   {1 + connectedSet.size} tables
                 </span>
               </button>
@@ -1352,38 +1453,38 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
             {/* Scrollable content */}
             <div className="flex-1 overflow-y-auto" style={{ fontSize: 11 }}>
 
-              <SidebarSection label="Columns" count={selectedData.columns.length}>
+              <SidebarSection label="Columns" count={selectedData.columns.length} bg={C.sectionBg} border={C.panelBorder} textMuted={C.textMuted} accentText={C.accentText} accentBg={C.accentBg} accentBorder={C.accentBorder}>
                 {selectedData.columns.map(col => (
                   <div
                     key={col.name}
                     className="flex items-center gap-2 px-4 py-1.5 transition-colors"
-                    style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', minHeight: 30 }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
+                    style={{ borderBottom: `1px solid ${C.panelRowBorder}`, minHeight: 30 }}
+                    onMouseEnter={e => (e.currentTarget.style.background = C.inputBg)}
                     onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                   >
                     <div style={{ width: 14, flexShrink: 0 }}>
                       {col.isPrimaryKey ? (
-                        <Key className="h-3 w-3" style={{ color: '#1ded83' }} />
+                        <Key className="h-3 w-3" style={{ color: '#f59e0b' }} />
                       ) : col.isForeignKey ? (
-                        <Link className="h-3 w-3" style={{ color: '#1ded83' }} />
+                        <Link className="h-3 w-3" style={{ color: '#60a5fa' }} />
                       ) : col.nullable ? (
                         <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
-                          <path d="M4 0.5L7.5 4L4 7.5L0.5 4Z" stroke="rgba(255,255,255,0.3)" strokeWidth="1" fill="none"/>
+                          <path d="M4 0.5L7.5 4L4 7.5L0.5 4Z" stroke={C.colIconNullable} strokeWidth="1" fill="none"/>
                         </svg>
                       ) : (
                         <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
-                          <path d="M4 0.5L7.5 4L4 7.5L0.5 4Z" fill="rgba(255,255,255,0.35)"/>
+                          <path d="M4 0.5L7.5 4L4 7.5L0.5 4Z" fill={C.colIconRequired}/>
                         </svg>
                       )}
                     </div>
                     <span className="flex-1 min-w-0 truncate" style={{
-                      color: col.isPrimaryKey || col.isForeignKey ? '#1ded83' : 'rgba(255,255,255,0.75)',
+                      color: col.isPrimaryKey ? (D ? '#fde68a' : '#b45309') : col.isForeignKey ? C.textSelected : C.textPrimary,
                       fontWeight: col.isPrimaryKey ? 600 : 400,
                     }}>
                       {col.name}
-                      {!col.nullable && <span style={{ color: 'rgba(247,80,73,0.7)', marginLeft: 2 }}>*</span>}
+                      {!col.nullable && <span style={{ color: D ? 'rgba(251,146,60,0.8)' : '#ea580c', marginLeft: 2 }}>*</span>}
                     </span>
-                    <span className="font-mono flex-shrink-0" style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>
+                    <span className="font-mono flex-shrink-0 rounded px-1" style={{ color: typeColor(col.type), background: typeColor(col.type) + '18', border: `1px solid ${typeColor(col.type)}28`, fontSize: 10 }}>
                       {shortType(col.type)}
                     </span>
                   </div>
@@ -1391,14 +1492,14 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
               </SidebarSection>
 
               {outgoingFKs.length > 0 && (
-                <SidebarSection label="References" count={outgoingFKs.length}>
+                <SidebarSection label="References" count={outgoingFKs.length} bg={C.sectionBg} border={C.panelBorder} textMuted={C.textMuted} accentText={C.accentText} accentBg={C.accentBg} accentBorder={C.accentBorder}>
                   {outgoingFKs.map(r => (
                     <button
                       key={r.col}
                       className="w-full flex items-center gap-2 px-4 py-2 text-left transition-colors"
-                      style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+                      style={{ borderBottom: `1px solid ${C.panelRowBorder}` }}
                       onMouseEnter={e => {
-                        (e.currentTarget.style.background = 'rgba(29,237,131,0.06)');
+                        (e.currentTarget.style.background = C.accentBg);
                         setHoveredRel(`${selectedTable}.${r.col}->${r.toTable}`);
                       }}
                       onMouseLeave={e => {
@@ -1407,10 +1508,10 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                       }}
                       onClick={() => { setSelectedTable(r.toTable); onTableClick(r.toTable); }}
                     >
-                      <ArrowRight className="h-3 w-3 flex-shrink-0" style={{ color: '#1ded83' }} />
+                      <ArrowRight className="h-3 w-3 flex-shrink-0" style={{ color: C.accent }} />
                       <div className="min-w-0">
-                        <div className="truncate" style={{ color: '#1ded83', fontWeight: 500 }}>{r.toTable}</div>
-                        <div className="truncate text-[9px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                        <div className="truncate" style={{ color: C.accent, fontWeight: 500 }}>{r.toTable}</div>
+                        <div className="truncate text-[9px]" style={{ color: C.textMuted }}>
                           via {r.col} → {r.toCol}
                         </div>
                       </div>
@@ -1420,14 +1521,14 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
               )}
 
               {incomingFKs.length > 0 && (
-                <SidebarSection label="Referenced by" count={incomingFKs.length}>
+                <SidebarSection label="Referenced by" count={incomingFKs.length} bg={C.sectionBg} border={C.panelBorder} textMuted={C.textMuted} accentText={C.accentText} accentBg={C.accentBg} accentBorder={C.accentBorder}>
                   {incomingFKs.map((r, i) => (
                     <button
                       key={i}
                       className="w-full flex items-center gap-2 px-4 py-2 text-left transition-colors"
-                      style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+                      style={{ borderBottom: `1px solid ${C.panelRowBorder}` }}
                       onMouseEnter={e => {
-                        (e.currentTarget.style.background = 'rgba(29,237,131,0.06)');
+                        (e.currentTarget.style.background = C.accentBg);
                         setHoveredRel(`${r.fromTable}.${r.fromCol}->${selectedTable}`);
                       }}
                       onMouseLeave={e => {
@@ -1436,10 +1537,10 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                       }}
                       onClick={() => { setSelectedTable(r.fromTable); onTableClick(r.fromTable); }}
                     >
-                      <ArrowRight className="h-3 w-3 flex-shrink-0 rotate-180" style={{ color: 'rgba(29,237,131,0.6)' }} />
+                      <ArrowRight className="h-3 w-3 flex-shrink-0 rotate-180" style={{ color: 'rgba(59,130,246,0.65)' }} />
                       <div className="min-w-0">
-                        <div className="truncate" style={{ color: 'rgba(29,237,131,0.8)', fontWeight: 500 }}>{r.fromTable}</div>
-                        <div className="truncate text-[9px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                        <div className="truncate" style={{ color: D ? 'rgba(59,130,246,0.8)' : '#2563eb', fontWeight: 500 }}>{r.fromTable}</div>
+                        <div className="truncate text-[9px]" style={{ color: C.textMuted }}>
                           via {r.fromCol}
                         </div>
                       </div>
@@ -1463,14 +1564,14 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
             className="flex flex-col rounded-xl shadow-2xl overflow-hidden"
             style={{
               width: 560, maxHeight: '65vh',
-              background: '#1a1d1e',
-              border: '1px solid rgba(255,255,255,0.12)',
-              boxShadow: '0 32px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(29,237,131,0.08)',
+              background: C.cmdBg,
+              border: `1px solid ${C.inputBorder}`,
+              boxShadow: D ? '0 32px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(59,130,246,0.08)' : '0 16px 48px rgba(0,0,0,0.15), 0 0 0 1px rgba(59,130,246,0.12)',
             }}
           >
             {/* Search input */}
-            <div className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-              <Search className="h-4 w-4 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
+            <div className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: `1px solid ${C.panelBorder}` }}>
+              <Search className="h-4 w-4 flex-shrink-0" style={{ color: C.textMuted }} />
               <input
                 ref={cmdRef}
                 type="text"
@@ -1479,52 +1580,52 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                 onChange={e => setCommandSearch(e.target.value)}
                 onKeyDown={handleCmdKeyDown}
                 className="flex-1 bg-transparent text-sm focus:outline-none"
-                style={{ color: 'rgba(255,255,255,0.9)' }}
+                style={{ color: C.textPrimary }}
               />
               {commandSearch && (
-                <button onClick={() => setCommandSearch('')} style={{ color: 'rgba(255,255,255,0.3)' }}>
+                <button onClick={() => setCommandSearch('')} style={{ color: C.textMuted }}>
                   <X className="h-3.5 w-3.5" />
                 </button>
               )}
-              <kbd className="rounded px-1.5 py-0.5 text-[10px] font-mono" style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.3)' }}>Esc</kbd>
+              <kbd className="rounded px-1.5 py-0.5 text-[10px] font-mono" style={{ background: C.kbdBg, color: C.kbdText }}>Esc</kbd>
             </div>
 
             {/* Items */}
             <div ref={cmdListRef} className="overflow-y-auto flex-1">
               {/* Tables section header */}
               {commandItems.filter(i => i.category === 'table').length > 0 && (
-                <div className="px-4 py-2 sticky top-0" style={{ background: '#1a1d1e', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                  <span className="text-[9px] uppercase tracking-widest font-bold" style={{ color: 'rgba(255,255,255,0.3)' }}>Tables</span>
+                <div className="px-4 py-2 sticky top-0" style={{ background: C.cmdSectionBg, borderBottom: `1px solid ${C.panelBorder}` }}>
+                  <span className="text-[9px] uppercase tracking-widest font-bold" style={{ color: C.textMuted }}>Tables</span>
                 </div>
               )}
-              {commandItems.filter(i => i.category === 'table').map((item, idx) => {
+              {commandItems.filter(i => i.category === 'table').map((item) => {
                 const isActive = cmdIndex === commandItems.indexOf(item);
                 return (
                   <button
                     key={item.id}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors"
                     style={{
-                      background: isActive ? 'rgba(29,237,131,0.1)' : 'transparent',
-                      borderLeft: isActive ? '2px solid #1ded83' : '2px solid transparent',
+                      background: isActive ? C.cmdItemHovBg : 'transparent',
+                      borderLeft: isActive ? '2px solid #3b82f6' : '2px solid transparent',
                     }}
                     onClick={item.action}
                     onMouseEnter={() => setCmdIndex(commandItems.indexOf(item))}
                   >
-                    <div style={{ color: isActive ? '#1ded83' : 'rgba(255,255,255,0.35)', flexShrink: 0 }}>
+                    <div style={{ color: isActive ? C.accent : C.textMuted, flexShrink: 0 }}>
                       {item.icon}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate" style={{ color: isActive ? '#1ded83' : 'rgba(255,255,255,0.85)' }}>
+                      <div className="text-sm font-medium truncate" style={{ color: isActive ? C.accent : C.textPrimary }}>
                         {item.label}
                       </div>
                       {item.description && (
-                        <div className="text-[10px] truncate" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                        <div className="text-[10px] truncate" style={{ color: C.textMuted }}>
                           {item.description}
                         </div>
                       )}
                     </div>
                     {isActive && (
-                      <kbd className="rounded px-1.5 py-0.5 text-[9px] font-mono flex-shrink-0" style={{ background: 'rgba(29,237,131,0.15)', color: '#1ded83' }}>↵</kbd>
+                      <kbd className="rounded px-1.5 py-0.5 text-[9px] font-mono flex-shrink-0" style={{ background: C.accentBg, color: C.accent }}>↵</kbd>
                     )}
                   </button>
                 );
@@ -1532,8 +1633,8 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
 
               {/* Actions section header */}
               {commandItems.filter(i => i.category === 'action').length > 0 && (
-                <div className="px-4 py-2 sticky top-0 mt-1" style={{ background: '#1a1d1e', borderBottom: '1px solid rgba(255,255,255,0.06)', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                  <span className="text-[9px] uppercase tracking-widest font-bold" style={{ color: 'rgba(255,255,255,0.3)' }}>Commands</span>
+                <div className="px-4 py-2 sticky top-0 mt-1" style={{ background: C.cmdSectionBg, borderBottom: `1px solid ${C.panelBorder}`, borderTop: `1px solid ${C.panelBorder}` }}>
+                  <span className="text-[9px] uppercase tracking-widest font-bold" style={{ color: C.textMuted }}>Commands</span>
                 </div>
               )}
               {commandItems.filter(i => i.category === 'action').map((item) => {
@@ -1543,54 +1644,54 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
                     key={item.id}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors"
                     style={{
-                      background: isActive ? 'rgba(29,237,131,0.1)' : 'transparent',
-                      borderLeft: isActive ? '2px solid #1ded83' : '2px solid transparent',
+                      background: isActive ? C.cmdItemHovBg : 'transparent',
+                      borderLeft: isActive ? '2px solid #3b82f6' : '2px solid transparent',
                     }}
                     onClick={item.action}
                     onMouseEnter={() => setCmdIndex(commandItems.indexOf(item))}
                   >
-                    <div style={{ color: isActive ? '#1ded83' : 'rgba(255,255,255,0.35)', flexShrink: 0 }}>
+                    <div style={{ color: isActive ? C.accent : C.textMuted, flexShrink: 0 }}>
                       {item.icon}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate" style={{ color: isActive ? '#1ded83' : 'rgba(255,255,255,0.85)' }}>
+                      <div className="text-sm font-medium truncate" style={{ color: isActive ? C.accent : C.textPrimary }}>
                         {item.label}
                       </div>
                       {item.description && (
-                        <div className="text-[10px] truncate" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                        <div className="text-[10px] truncate" style={{ color: C.textMuted }}>
                           {item.description}
                         </div>
                       )}
                     </div>
                     {isActive && (
-                      <kbd className="rounded px-1.5 py-0.5 text-[9px] font-mono flex-shrink-0" style={{ background: 'rgba(29,237,131,0.15)', color: '#1ded83' }}>↵</kbd>
+                      <kbd className="rounded px-1.5 py-0.5 text-[9px] font-mono flex-shrink-0" style={{ background: C.accentBg, color: C.accent }}>↵</kbd>
                     )}
                   </button>
                 );
               })}
 
               {commandItems.length === 0 && (
-                <div className="px-4 py-8 text-center text-sm" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                <div className="px-4 py-8 text-center text-sm" style={{ color: C.textMuted }}>
                   No results for "{commandSearch}"
                 </div>
               )}
             </div>
 
             {/* Footer hints */}
-            <div className="flex items-center gap-4 px-4 py-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', background: '#141616' }}>
+            <div className="flex items-center gap-4 px-4 py-2" style={{ borderTop: `1px solid ${C.panelBorder}`, background: C.cmdFooterBg }}>
               {[
                 { keys: ['↑', '↓'], label: 'navigate' },
                 { keys: ['↵'], label: 'select' },
                 { keys: ['Esc'], label: 'close' },
               ].map(({ keys, label }) => (
-                <span key={label} className="flex items-center gap-1 text-[10px]" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                <span key={label} className="flex items-center gap-1 text-[10px]" style={{ color: C.textDim }}>
                   {keys.map(k => (
-                    <kbd key={k} className="rounded px-1 py-0.5 font-mono" style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.4)', fontSize: 9 }}>{k}</kbd>
+                    <kbd key={k} className="rounded px-1 py-0.5 font-mono" style={{ background: C.kbdBg, color: C.kbdText, fontSize: 9 }}>{k}</kbd>
                   ))}
                   {label}
                 </span>
               ))}
-              <span className="ml-auto text-[10px]" style={{ color: 'rgba(255,255,255,0.2)' }}>
+              <span className="ml-auto text-[10px]" style={{ color: C.textDim }}>
                 {commandItems.length} result{commandItems.length !== 1 ? 's' : ''}
               </span>
             </div>
@@ -1603,24 +1704,25 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
+type Colors = {
+  inputBorder: string; inputBg: string; textSecondary: string; textMuted: string; textPrimary: string;
+  accentBg: string; accentBorder: string; accentText: string; panelBg: string; panelBorder: string;
+};
+
 function ToolbarToggle({
-  active, onClick, icon, label
-}: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+  active, onClick, icon, label, C
+}: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string; C: Colors }) {
   return (
     <button
       onClick={onClick}
       className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all"
       style={{
-        background: active ? 'rgba(29,237,131,0.12)' : 'transparent',
-        border: active ? '1px solid rgba(29,237,131,0.35)' : '1px solid rgba(255,255,255,0.1)',
-        color: active ? '#1ded83' : 'rgba(255,255,255,0.5)',
+        background: active ? C.accentBg : 'transparent',
+        border: active ? `1px solid ${C.accentBorder}` : `1px solid ${C.inputBorder}`,
+        color: active ? '#3b82f6' : C.textSecondary,
       }}
-      onMouseEnter={e => {
-        if (!active) (e.currentTarget.style.background = 'rgba(255,255,255,0.07)');
-      }}
-      onMouseLeave={e => {
-        if (!active) (e.currentTarget.style.background = 'transparent');
-      }}
+      onMouseEnter={e => { if (!active) (e.currentTarget.style.background = C.inputBg); }}
+      onMouseLeave={e => { if (!active) (e.currentTarget.style.background = 'transparent'); }}
     >
       {icon} {label}
     </button>
@@ -1628,37 +1730,40 @@ function ToolbarToggle({
 }
 
 function ToolbarBtn({
-  onClick, icon, label, title
-}: { onClick: () => void; icon: React.ReactNode; label: string; title?: string }) {
+  onClick, icon, label, title, C
+}: { onClick: () => void; icon: React.ReactNode; label: string; title?: string; C: Colors }) {
   return (
     <button
       onClick={onClick}
       title={title}
       className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors"
-      style={{ color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent' }}
-      onMouseEnter={e => { (e.currentTarget.style.background = 'rgba(255,255,255,0.07)'); (e.currentTarget.style.color = 'rgba(255,255,255,0.85)'); }}
-      onMouseLeave={e => { (e.currentTarget.style.background = 'transparent'); (e.currentTarget.style.color = 'rgba(255,255,255,0.5)'); }}
+      style={{ color: C.textSecondary, border: `1px solid ${C.inputBorder}`, background: 'transparent' }}
+      onMouseEnter={e => { (e.currentTarget.style.background = C.inputBg); (e.currentTarget.style.color = C.textPrimary); }}
+      onMouseLeave={e => { (e.currentTarget.style.background = 'transparent'); (e.currentTarget.style.color = C.textSecondary); }}
     >
       {icon} {label}
     </button>
   );
 }
 
-function SidebarStat({ color, label }: { color: string; label: string }) {
+function SidebarStat({ color, label, textColor }: { color: string; label: string; textColor: string }) {
   return (
     <span className="flex items-center gap-1">
       <span className="h-1 w-1 rounded-full" style={{ background: color }} />
-      <span style={{ color: 'rgba(255,255,255,0.45)' }}>{label}</span>
+      <span style={{ color: textColor }}>{label}</span>
     </span>
   );
 }
 
-function SidebarSection({ label, count, children }: { label: string; count: number; children: React.ReactNode }) {
+function SidebarSection({ label, count, bg, border, textMuted, accentText, accentBg, accentBorder, children }: {
+  label: string; count: number; bg: string; border: string; textMuted: string;
+  accentText: string; accentBg: string; accentBorder: string; children: React.ReactNode
+}) {
   return (
     <div>
-      <div className="flex items-center gap-2 px-4 py-2 sticky top-0" style={{ background: '#0d1117', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <span className="text-[9px] uppercase tracking-widest font-bold" style={{ color: 'rgba(255,255,255,0.35)' }}>{label}</span>
-        <span className="rounded-full px-1.5 text-[9px] font-semibold" style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.4)' }}>{count}</span>
+      <div className="flex items-center gap-2 px-4 py-2 sticky top-0" style={{ background: bg, borderBottom: `1px solid ${border}` }}>
+        <span className="text-[9px] uppercase tracking-widest font-bold" style={{ color: textMuted }}>{label}</span>
+        <span className="rounded-full px-1.5 text-[9px] font-semibold" style={{ background: accentBg, color: accentText, border: `1px solid ${accentBorder}` }}>{count}</span>
       </div>
       {children}
     </div>

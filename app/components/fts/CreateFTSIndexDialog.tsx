@@ -1,582 +1,475 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { X, Plus, Loader2, ChevronRight, ChevronLeft, Check } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { X, Plus, Loader2, ChevronRight, ChevronLeft, Check, AlertTriangle, Copy, Terminal, Database } from 'lucide-react';
 import { useMonkDBClient } from '@/app/lib/monkdb-context';
 import { useAccessibleSchemas } from '@/app/hooks/useAccessibleSchemas';
 import { useAccessibleTables } from '@/app/hooks/useAccessibleTables';
 import { useToast } from '@/app/components/ToastContext';
+import { useTheme } from '../ThemeProvider';
 
+
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 interface CreateFTSIndexDialogProps {
   onClose: () => void;
   onSuccess: () => void;
 }
 
-type AnalyzerType = 'standard' | 'english' | 'keyword' | 'simple' | 'whitespace';
+type AnalyzerType = 'standard' | 'english';
 
-interface AnalyzerConfig {
-  type: AnalyzerType;
-  stopWords?: string[];
-  customStopWords?: boolean;
+interface ColDef {
+  name: string;
+  dataType: string;
+  isNullable: boolean;
+  isPrimaryKey: boolean;
+  isText: boolean;
 }
 
-const ANALYZER_OPTIONS: Array<{
-  value: AnalyzerType;
-  label: string;
-  description: string;
-}> = [
-  {
-    value: 'standard',
-    label: 'Standard',
-    description: 'Basic tokenization, no stemming or stop words. Good for code and IDs.',
-  },
-  {
-    value: 'english',
-    label: 'English',
-    description: 'English stemming and stop words. Best for English text.',
-  },
-  {
-    value: 'keyword',
-    label: 'Keyword',
-    description: 'Treats entire field as single token. For exact matching.',
-  },
-  {
-    value: 'simple',
-    label: 'Simple',
-    description: 'Lowercase and split on non-letters.',
-  },
-  {
-    value: 'whitespace',
-    label: 'Whitespace',
-    description: 'Split on whitespace only.',
-  },
+const ANALYZER_OPTIONS: Array<{ value: AnalyzerType; label: string; desc: string; badge: string }> = [
+  { value: 'english',  label: 'English',  badge: 'Recommended', desc: 'Stemming + stop-words (the, a, in…). Best for English prose.' },
+  { value: 'standard', label: 'Standard', badge: '',            desc: 'Basic tokenisation, no stemming. Good for code or mixed-language text.' },
 ];
 
-const DEFAULT_ENGLISH_STOP_WORDS = [
-  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'but', 'by', 'for', 'if', 'in', 'into',
-  'is', 'it', 'no', 'not', 'of', 'on', 'or', 'such', 'that', 'the', 'their', 'then',
-  'there', 'these', 'they', 'this', 'to', 'was', 'will', 'with',
-];
+const STEPS = ['Source Table', 'Columns & Name', 'Analyzer', 'Review'];
 
-export default function CreateFTSIndexDialog({
-  onClose,
-  onSuccess,
-}: CreateFTSIndexDialogProps) {
+// ─── Main component ────────────────────────────────────────────────────────────
+export default function CreateFTSIndexDialog({ onClose, onSuccess }: CreateFTSIndexDialogProps) {
   const client = useMonkDBClient();
   const { schemas } = useAccessibleSchemas();
   const toast = useToast();
+  const { theme } = useTheme();
+  const D = theme === 'dark';
+  const C = {
+    bgModal:  D ? '#112233' : '#ffffff',
+    bgHeader: D ? '#0e1e2e' : '#f8fafc',
+    bgInput:  D ? '#1a3048' : '#f8fafc',
+    bgSub:    D ? '#0d1b2a' : '#f1f5f9',
+    bgRowHov: D ? 'rgba(148,163,184,0.04)' : 'rgba(0,0,0,0.02)',
+    border:   D ? '#1a3050' : '#e2e8f0',
+    borderSub: D ? 'rgba(148,163,184,0.10)' : 'rgba(0,0,0,0.07)',
+    borderFocus: '#7c3aed',
+    textPrimary:  D ? '#d1d5db' : '#1e293b',
+    textSecondary: D ? '#9ca3af' : '#475569',
+    textMuted:    D ? '#6b7280' : '#94a3b8',
+    accent:      '#7c3aed',
+    accentText:  D ? '#c4b5fd' : '#6d28d9',
+    accentBg:    D ? 'rgba(124,58,237,0.12)' : 'rgba(124,58,237,0.07)',
+    accentBorder: D ? 'rgba(124,58,237,0.35)' : 'rgba(124,58,237,0.3)',
+    success:     '#4ade80',
+    successBg:   'rgba(74,222,128,0.10)',
+    successBorder:'rgba(74,222,128,0.3)',
+    warning:     '#fbbf24',
+    warningBg:   D ? 'rgba(251,191,36,0.08)' : 'rgba(251,191,36,0.05)',
+    warningBorder: D ? 'rgba(251,191,36,0.25)' : 'rgba(251,191,36,0.2)',
+  };
+  const inpSt: React.CSSProperties = {
+    width: '100%', background: C.bgInput, border: `1px solid ${C.border}`,
+    borderRadius: 7, color: C.textPrimary, fontSize: 13, padding: '7px 11px',
+    outline: 'none', fontFamily: 'var(--font-geist-mono), monospace', boxSizing: 'border-box',
+  };
+  const selSt: React.CSSProperties = {
+    width: '100%', background: C.bgInput, border: `1px solid ${C.border}`,
+    borderRadius: 7, color: C.textPrimary, fontSize: 13, padding: '7px 11px',
+    outline: 'none', cursor: 'pointer', appearance: 'auto' as any,
+  };
 
   const [step, setStep] = useState(1);
   const [schema, setSchema] = useState('');
-  const [tableName, setTableName] = useState('');
-  const [columns, setColumns] = useState<string[]>([]);
-  const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
+  const [sourceTable, setSourceTable] = useState('');
+  const [colDefs, setColDefs] = useState<ColDef[]>([]);
+  const [loadingCols, setLoadingCols] = useState(false);
+  const [selectedFTSCols, setSelectedFTSCols] = useState<string[]>([]);
+  const [newTableName, setNewTableName] = useState('');
   const [indexName, setIndexName] = useState('');
-  const [analyzerConfig, setAnalyzerConfig] = useState<AnalyzerConfig>({
-    type: 'english',
-    stopWords: DEFAULT_ENGLISH_STOP_WORDS,
-    customStopWords: false,
-  });
-  const [customStopWords, setCustomStopWords] = useState('');
+  const [analyzer, setAnalyzer] = useState<AnalyzerType>('english');
   const [creating, setCreating] = useState(false);
-  const [testQuery, setTestQuery] = useState('');
-  const [testResults, setTestResults] = useState<string[]>([]);
+  const [copied, setCopied] = useState(false);
 
   const { tables } = useAccessibleTables(schema);
 
-  // Fetch columns when table is selected
+  // Fetch column definitions when table selected
   useEffect(() => {
-    if (!client || !schema || !tableName) return;
-
-    const fetchColumns = async () => {
+    if (!client || !schema || !sourceTable) { setColDefs([]); return; }
+    setLoadingCols(true);
+    const run = async () => {
       try {
-        const query = `
-          SELECT column_name, data_type
-          FROM information_schema.columns
-          WHERE table_schema = $1 AND table_name = $2
-            AND data_type IN ('text', 'varchar', 'character varying')
-          ORDER BY ordinal_position
-        `;
-
-        const result = await client.query(query, [schema, tableName]);
-
-        const rows = result.rows.map((row: any[]) => {
-          const obj: any = {};
-          result.cols.forEach((col: string, idx: number) => {
-            obj[col] = row[idx];
-          });
-          return obj;
-        });
-
-        setColumns(rows.map((r: any) => r.column_name));
+        const colResult = await client.query(
+          `SELECT column_name, data_type, is_nullable
+           FROM information_schema.columns
+           WHERE table_schema = $1 AND table_name = $2
+           ORDER BY ordinal_position`,
+          [schema, sourceTable]
+        );
+        const pkResult = await client.query(
+          `SELECT column_name FROM information_schema.key_column_usage
+           WHERE table_schema = $1 AND table_name = $2
+             AND constraint_name LIKE '%_pkey'`,
+          [schema, sourceTable]
+        );
+        const pkSet = new Set(pkResult.rows.map((r: any[]) => r[0]));
+        const cols: ColDef[] = colResult.rows.map((r: any[]) => ({
+          name: r[0],
+          dataType: r[1],
+          isNullable: r[2] === 'YES',
+          isPrimaryKey: pkSet.has(r[0]),
+          isText: /^(text|varchar|character varying|char)/.test(String(r[1]).toLowerCase()),
+        }));
+        setColDefs(cols);
+        // Pre-select all text columns
+        setSelectedFTSCols(cols.filter(c => c.isText).map(c => c.name));
+        // Default new table name
+        setNewTableName(sourceTable + '_fts');
+        setIndexName(`idx_${sourceTable}_fts`);
       } catch (err) {
-        console.error('Failed to fetch columns:', err);
-      }
+        toast.error('Error', 'Failed to fetch columns');
+      } finally { setLoadingCols(false); }
     };
+    run();
+  }, [client, schema, sourceTable]);
 
-    fetchColumns();
-  }, [client, schema, tableName]);
+  // ── SQL preview (memoised) ────────────────────────────────────────────────
+  const generatedSQL = useMemo(() => {
+    if (!schema || !sourceTable || !newTableName || selectedFTSCols.length === 0) return '';
+    const finalIndex = indexName || `idx_${newTableName}_fts`;
+    const colList = colDefs.map(c => {
+      let line = `  "${c.name}" ${c.dataType.toUpperCase()}`;
+      if (c.isPrimaryKey) line += ' PRIMARY KEY';
+      else if (!c.isNullable) line += ' NOT NULL';
+      return line;
+    });
+    const indexLine = `  INDEX "${finalIndex}" USING FULLTEXT (${selectedFTSCols.join(', ')}) WITH (analyzer = '${analyzer}')`;
+    const createSQL = `CREATE TABLE "${schema}"."${newTableName}" (\n${[...colList, indexLine].join(',\n')}\n);`;
+    const insertSQL = `\nINSERT INTO "${schema}"."${newTableName}"\n  SELECT * FROM "${schema}"."${sourceTable}";`;
+    const refreshSQL = `\nREFRESH TABLE "${schema}"."${newTableName}";`;
+    return createSQL + insertSQL + refreshSQL;
+  }, [schema, sourceTable, newTableName, indexName, colDefs, selectedFTSCols, analyzer]);
 
-  const handleNext = () => {
-    if (step < 4) setStep(step + 1);
-  };
-
-  const handleBack = () => {
-    if (step > 1) setStep(step - 1);
-  };
-
-  const handleTestAnalyzer = () => {
-    if (!testQuery.trim()) return;
-
-    // Simulate analyzer tokenization (simplified)
-    let tokens = testQuery.toLowerCase().split(/\s+/);
-
-    // Apply analyzer rules
-    if (analyzerConfig.type === 'keyword') {
-      tokens = [testQuery];
-    } else if (analyzerConfig.type === 'simple') {
-      tokens = testQuery.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/);
-    } else if (analyzerConfig.type === 'whitespace') {
-      tokens = testQuery.split(/\s+/);
-    }
-
-    // Remove stop words for english analyzer
-    if (analyzerConfig.type === 'english' && analyzerConfig.stopWords) {
-      const stopWordsSet = new Set(analyzerConfig.stopWords);
-      tokens = tokens.filter(t => !stopWordsSet.has(t));
-    }
-
-    // Remove empty tokens
-    tokens = tokens.filter(t => t.length > 0);
-
-    setTestResults(tokens);
-  };
-
-  const handleCreate = async () => {
-    if (!client || !schema || !tableName || selectedColumns.length === 0) return;
-
-    setCreating(true);
-
-    try {
-      const finalIndexName = indexName || `fts_${tableName}_${selectedColumns.join('_')}`;
-
-      // Build analyzer configuration
-      let analyzerClause = `WITH (analyzer = '${analyzerConfig.type}'`;
-
-      if (analyzerConfig.type === 'english' && analyzerConfig.customStopWords && customStopWords) {
-        const stopWordsList = customStopWords.split(',').map(w => w.trim()).filter(w => w.length > 0);
-        analyzerClause += `, stopwords = ARRAY[${stopWordsList.map(w => `'${w}'`).join(', ')}]`;
-      }
-
-      analyzerClause += ')';
-
-      // Build CREATE INDEX query
-      const query = `
-        CREATE INDEX "${finalIndexName}"
-        ON "${schema}"."${tableName}"
-        USING FULLTEXT (${selectedColumns.join(', ')})
-        ${analyzerClause}
-      `;
-
-      await client.query(query);
-
-      toast.success('FTS Index Created', `Created index ${finalIndexName}`);
-      onSuccess();
-      onClose();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to create index';
-      toast.error('Creation Failed', message);
-    } finally {
-      setCreating(false);
-    }
-  };
-
+  // ── Navigation ────────────────────────────────────────────────────────────
   const canProceed = () => {
-    switch (step) {
-      case 1:
-        return schema && tableName;
-      case 2:
-        return selectedColumns.length > 0;
-      case 3:
-        return true;
-      case 4:
-        return true;
-      default:
-        return false;
-    }
+    if (step === 1) return !!schema && !!sourceTable && colDefs.length > 0;
+    if (step === 2) return selectedFTSCols.length > 0 && newTableName.trim().length > 0;
+    return true;
   };
 
-  const renderStep1 = () => (
-    <div className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          Schema
-        </label>
-        <select
-          value={schema}
-          onChange={(e) => {
-            setSchema(e.target.value);
-            setTableName('');
-            setColumns([]);
-            setSelectedColumns([]);
-          }}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        >
-          <option value="">Select schema...</option>
-          {schemas.map((s) => (
-            <option key={s.name} value={s.name}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          Table
-        </label>
-        <select
-          value={tableName}
-          onChange={(e) => {
-            setTableName(e.target.value);
-            setSelectedColumns([]);
-          }}
-          disabled={!schema}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-        >
-          <option value="">Select table...</option>
-          {tables.map((t) => (
-            <option key={t.name} value={t.name}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-      </div>
-    </div>
-  );
-
-  const renderStep2 = () => (
-    <div className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-          Select Columns to Index
-        </label>
-        {columns.length === 0 ? (
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            No TEXT columns found in this table
-          </p>
-        ) : (
-          <div className="space-y-2 max-h-64 overflow-y-auto">
-            {columns.map((col) => (
-              <label
-                key={col}
-                className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedColumns.includes(col)}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setSelectedColumns([...selectedColumns, col]);
-                    } else {
-                      setSelectedColumns(selectedColumns.filter((c) => c !== col));
-                    }
-                  }}
-                  className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                />
-                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                  {col}
-                </span>
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          Index Name (optional)
-        </label>
-        <input
-          type="text"
-          value={indexName}
-          onChange={(e) => setIndexName(e.target.value)}
-          placeholder={`fts_${tableName}_${selectedColumns.join('_')}`}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        />
-      </div>
-    </div>
-  );
-
-  const renderStep3 = () => (
-    <div className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-          Analyzer Type
-        </label>
-        <div className="space-y-2">
-          {ANALYZER_OPTIONS.map((option) => (
-            <label
-              key={option.value}
-              className={`flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                analyzerConfig.type === option.value
-                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30'
-                  : 'border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700'
-              }`}
-            >
-              <input
-                type="radio"
-                name="analyzer"
-                checked={analyzerConfig.type === option.value}
-                onChange={() => setAnalyzerConfig({ ...analyzerConfig, type: option.value })}
-                className="mt-1 w-4 h-4 text-blue-600"
-              />
-              <div className="flex-1">
-                <div className="font-medium text-gray-900 dark:text-gray-100 text-sm">
-                  {option.label}
-                </div>
-                <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                  {option.description}
-                </div>
-              </div>
-            </label>
-          ))}
-        </div>
-      </div>
-
-      {analyzerConfig.type === 'english' && (
-        <div>
-          <label className="flex items-center gap-2 mb-2">
-            <input
-              type="checkbox"
-              checked={analyzerConfig.customStopWords}
-              onChange={(e) =>
-                setAnalyzerConfig({ ...analyzerConfig, customStopWords: e.target.checked })
-              }
-              className="w-4 h-4 text-blue-600 rounded"
-            />
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Custom Stop Words
-            </span>
-          </label>
-          {analyzerConfig.customStopWords && (
-            <textarea
-              value={customStopWords}
-              onChange={(e) => setCustomStopWords(e.target.value)}
-              placeholder="a, an, and, are, as, at, be, but, by, for..."
-              className="w-full h-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-            />
-          )}
-        </div>
-      )}
-
-      {/* Analyzer Testing */}
-      <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          Test Analyzer
-        </label>
-        <div className="flex gap-2 mb-2">
-          <input
-            type="text"
-            value={testQuery}
-            onChange={(e) => setTestQuery(e.target.value)}
-            placeholder="Enter text to tokenize..."
-            className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-          <button
-            onClick={handleTestAnalyzer}
-            className="px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors"
-          >
-            Test
-          </button>
-        </div>
-        {testResults.length > 0 && (
-          <div className="p-3 bg-gray-100 dark:bg-gray-900 rounded-lg">
-            <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Tokens ({testResults.length}):
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {testResults.map((token, idx) => (
-                <span
-                  key={idx}
-                  className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xs rounded"
-                >
-                  {token}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  const renderStep4 = () => {
-    const finalIndexName = indexName || `fts_${tableName}_${selectedColumns.join('_')}`;
-
-    let analyzerClause = `WITH (analyzer = '${analyzerConfig.type}'`;
-    if (analyzerConfig.type === 'english' && analyzerConfig.customStopWords && customStopWords) {
-      const stopWordsList = customStopWords.split(',').map(w => w.trim()).filter(w => w.length > 0);
-      analyzerClause += `,\n      stopwords = ARRAY[${stopWordsList.map(w => `'${w}'`).join(', ')}]`;
-    }
-    analyzerClause += ')';
-
-    const sqlPreview = `CREATE INDEX "${finalIndexName}"
-ON "${schema}"."${tableName}"
-USING FULLTEXT (${selectedColumns.join(', ')})
-${analyzerClause};`;
-
-    return (
-      <div className="space-y-4">
-        <div>
-          <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-            Review Configuration
-          </h3>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-700">
-              <span className="text-gray-600 dark:text-gray-400">Schema:</span>
-              <span className="font-medium text-gray-900 dark:text-gray-100">{schema}</span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-700">
-              <span className="text-gray-600 dark:text-gray-400">Table:</span>
-              <span className="font-medium text-gray-900 dark:text-gray-100">{tableName}</span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-700">
-              <span className="text-gray-600 dark:text-gray-400">Columns:</span>
-              <span className="font-medium text-gray-900 dark:text-gray-100">
-                {selectedColumns.join(', ')}
-              </span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-700">
-              <span className="text-gray-600 dark:text-gray-400">Analyzer:</span>
-              <span className="font-medium text-gray-900 dark:text-gray-100">
-                {analyzerConfig.type}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            SQL Preview
-          </label>
-          <pre className="p-4 bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-xs font-mono text-gray-900 dark:text-gray-100 overflow-x-auto">
-            {sqlPreview}
-          </pre>
-        </div>
-      </div>
-    );
+  // ── Create ────────────────────────────────────────────────────────────────
+  const handleCreate = async () => {
+    if (!client || !generatedSQL) return;
+    setCreating(true);
+    try {
+      const finalIndex = indexName || `idx_${newTableName}_fts`;
+      const colList = colDefs.map(c => {
+        let line = `"${c.name}" ${c.dataType.toUpperCase()}`;
+        if (c.isPrimaryKey) line += ' PRIMARY KEY';
+        else if (!c.isNullable) line += ' NOT NULL';
+        return line;
+      });
+      const indexLine = `INDEX "${finalIndex}" USING FULLTEXT (${selectedFTSCols.join(', ')}) WITH (analyzer = '${analyzer}')`;
+      const createSQL = `CREATE TABLE "${schema}"."${newTableName}" (${[...colList, indexLine].join(', ')})`;
+      await client.query(createSQL);
+      await client.query(`INSERT INTO "${schema}"."${newTableName}" SELECT * FROM "${schema}"."${sourceTable}"`);
+      await client.query(`REFRESH TABLE "${schema}"."${newTableName}"`);
+      toast.success('FTS Table Created', `${schema}.${newTableName} created with full-text index on [${selectedFTSCols.join(', ')}]`);
+      onSuccess();
+    } catch (err) {
+      toast.error('Creation Failed', err instanceof Error ? err.message : 'Unknown error');
+    } finally { setCreating(false); }
   };
 
+  const handleCopySQL = () => {
+    navigator.clipboard.writeText(generatedSQL);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const toggleFTSCol = (name: string) =>
+    setSelectedFTSCols(prev => prev.includes(name) ? prev.filter(c => c !== name) : [...prev, name]);
+
+  // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.65)', fontFamily: 'var(--font-geist-sans), system-ui, sans-serif' }}
+      onClick={e => { if (e.target === e.currentTarget && !creating) onClose(); }}>
+      <div style={{ width: 600, maxWidth: '95vw', maxHeight: '90vh', background: C.bgModal, border: `1px solid ${C.border}`, borderRadius: 14, boxShadow: '0 28px 72px rgba(0,0,0,0.7)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              Create Full-Text Search Index
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Step {step} of 4
-            </p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', background: C.bgHeader, borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 30, height: 30, borderRadius: 7, background: C.accentBg, border: `1px solid ${C.accentBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Database style={{ width: 14, height: 14, color: C.accentText }} />
+            </div>
+            <div>
+              <p style={{ fontSize: 14, fontWeight: 700, color: C.textPrimary, lineHeight: 1.2 }}>Create Full-Text Search Table</p>
+              <p style={{ fontSize: 11, color: C.textMuted }}>Step {step} of {STEPS.length}</p>
+            </div>
           </div>
-          <button
-            onClick={onClose}
-            disabled={creating}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5 text-gray-500" />
+          <button onClick={() => !creating && onClose()}
+            style={{ padding: 6, borderRadius: 6, background: 'transparent', border: 'none', cursor: 'pointer', color: C.textSecondary, display: 'flex' }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(148,163,184,0.08)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+            <X style={{ width: 15, height: 15 }} />
           </button>
         </div>
 
-        {/* Steps Indicator */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          {['Select Table', 'Choose Columns', 'Configure Analyzer', 'Review'].map((label, idx) => (
-            <div key={idx} className="flex items-center">
-              <div
-                className={`flex items-center justify-center w-8 h-8 rounded-full ${
-                  step > idx + 1
-                    ? 'bg-green-500 text-white'
-                    : step === idx + 1
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-500'
-                }`}
-              >
-                {step > idx + 1 ? <Check className="w-4 h-4" /> : idx + 1}
+        {/* MonkDB note */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 20px', background: C.warningBg, borderBottom: `1px solid ${C.warningBorder}`, flexShrink: 0 }}>
+          <AlertTriangle style={{ width: 13, height: 13, color: C.warning, flexShrink: 0, marginTop: 1 }} />
+          <p style={{ fontSize: 11, color: '#fde68a', lineHeight: 1.5 }}>
+            <strong>MonkDB:</strong> FULLTEXT indexes must be defined at table creation time — there is no <code style={{ fontFamily: 'var(--font-geist-mono), monospace' }}>CREATE INDEX</code> command. This wizard creates a <strong>new FTS-enabled table</strong> and copies your data into it.
+          </p>
+        </div>
+
+        {/* Step indicators */}
+        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 20px', background: C.bgHeader, borderBottom: `1px solid ${C.border}`, flexShrink: 0, gap: 0 }}>
+          {STEPS.map((label, idx) => {
+            const n = idx + 1;
+            const done = step > n;
+            const active = step === n;
+            return (
+              <div key={n} style={{ display: 'flex', alignItems: 'center', flex: idx < STEPS.length - 1 ? 1 : 'none' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                  <div style={{ width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, background: done ? C.successBg : active ? C.accentBg : 'rgba(148,163,184,0.06)', border: `1.5px solid ${done ? C.successBorder : active ? C.accentBorder : C.borderSub}`, color: done ? C.success : active ? C.accentText : C.textMuted, flexShrink: 0 }}>
+                    {done ? <Check style={{ width: 12, height: 12 }} /> : n}
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: active ? 600 : 400, color: active ? C.textPrimary : C.textMuted, whiteSpace: 'nowrap' }}>{label}</span>
+                </div>
+                {idx < STEPS.length - 1 && (
+                  <div style={{ flex: 1, height: 1, background: step > n ? C.successBorder : C.borderSub, margin: '0 10px' }} />
+                )}
               </div>
-              <span
-                className={`ml-2 text-xs ${
-                  step === idx + 1
-                    ? 'text-gray-900 dark:text-gray-100 font-medium'
-                    : 'text-gray-500 dark:text-gray-400'
-                }`}
-              >
-                {label}
-              </span>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {step === 1 && renderStep1()}
-          {step === 2 && renderStep2()}
-          {step === 3 && renderStep3()}
-          {step === 4 && renderStep4()}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+
+          {/* ── Step 1: Source table ─────────────────────────────────────── */}
+          {step === 1 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <FLabel label="Schema" textPrimary={C.textPrimary} textMuted={C.textMuted}>
+                <select value={schema} onChange={e => { setSchema(e.target.value); setSourceTable(''); setColDefs([]); }}
+                  style={selSt}>
+                  <option value="">Select schema…</option>
+                  {schemas.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
+                </select>
+              </FLabel>
+
+              <FLabel label="Source Table" textPrimary={C.textPrimary} textMuted={C.textMuted}>
+                <select value={sourceTable} onChange={e => setSourceTable(e.target.value)} disabled={!schema}
+                  style={{ ...selSt, opacity: !schema ? 0.45 : 1, cursor: !schema ? 'not-allowed' : 'pointer' }}>
+                  <option value="">Select table…</option>
+                  {tables.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
+                </select>
+              </FLabel>
+
+              {loadingCols && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.textMuted, fontSize: 13 }}>
+                  <Loader2 style={{ width: 14, height: 14, animation: 'spin 1s linear infinite' }} /> Loading columns…
+                </div>
+              )}
+
+              {colDefs.length > 0 && (
+                <div style={{ background: C.bgSub, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                  <div style={{ padding: '8px 14px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: C.textMuted }}>{colDefs.length} columns found</span>
+                    <span style={{ fontSize: 10, color: C.textMuted }}>·</span>
+                    <span style={{ fontSize: 11, color: C.accentText }}>{colDefs.filter(c => c.isText).length} text columns eligible for FTS</span>
+                  </div>
+                  <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+                    {colDefs.map(c => (
+                      <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', borderBottom: `1px solid ${C.borderSub}` }}>
+                        <span style={{ fontFamily: 'var(--font-geist-mono), monospace', fontSize: 12, color: c.isPrimaryKey ? '#fde68a' : C.textPrimary, flex: 1 }}>{c.name}</span>
+                        <span style={{ fontSize: 10, fontWeight: 600, color: c.isText ? '#6ee7b7' : C.textMuted, background: c.isText ? 'rgba(52,211,153,0.08)' : 'rgba(148,163,184,0.06)', border: `1px solid ${c.isText ? 'rgba(52,211,153,0.2)' : C.borderSub}`, borderRadius: 4, padding: '1px 6px', fontFamily: 'var(--font-geist-mono), monospace' }}>
+                          {c.dataType}
+                        </span>
+                        {c.isPrimaryKey && <span style={{ fontSize: 10, color: '#fbbf24' }}>PK</span>}
+                        {c.isText && <span style={{ fontSize: 10, color: C.accentText, fontWeight: 600 }}>FTS-eligible</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Step 2: Columns & new table name ────────────────────────── */}
+          {step === 2 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <FLabel label="New Table Name" hint="A new table will be created with FTS enabled" textPrimary={C.textPrimary} textMuted={C.textMuted}>
+                <input type="text" value={newTableName} onChange={e => setNewTableName(e.target.value)}
+                  placeholder={sourceTable + '_fts'}
+                  style={inpSt}
+                  onFocus={e => e.currentTarget.style.borderColor = C.borderFocus}
+                  onBlur={e => e.currentTarget.style.borderColor = C.border}
+                />
+                {newTableName === sourceTable && (
+                  <p style={{ fontSize: 11, color: C.warning, marginTop: 4 }}>⚠ Must be different from source table name</p>
+                )}
+              </FLabel>
+
+              <FLabel label="Index Name" hint="Optional — auto-generated if left empty" textPrimary={C.textPrimary} textMuted={C.textMuted}>
+                <input type="text" value={indexName} onChange={e => setIndexName(e.target.value)}
+                  placeholder={`idx_${newTableName}_fts`}
+                  style={inpSt}
+                  onFocus={e => e.currentTarget.style.borderColor = C.borderFocus}
+                  onBlur={e => e.currentTarget.style.borderColor = C.border}
+                />
+              </FLabel>
+
+              <FLabel label="Select Columns for Full-Text Index" textPrimary={C.textPrimary} textMuted={C.textMuted}>
+                {colDefs.filter(c => c.isText).length === 0 ? (
+                  <p style={{ fontSize: 13, color: C.textMuted, padding: '10px 0' }}>No TEXT columns found in this table.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {colDefs.filter(c => c.isText).map(col => {
+                      const active = selectedFTSCols.includes(col.name);
+                      return (
+                        <label key={col.name}
+                          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: active ? C.accentBg : 'rgba(148,163,184,0.03)', border: `1px solid ${active ? C.accentBorder : C.border}`, borderRadius: 8, cursor: 'pointer', transition: 'all 0.1s' }}>
+                          <div style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${active ? C.accent : 'rgba(148,163,184,0.35)'}`, background: active ? C.accentBg : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            {active && <Check style={{ width: 11, height: 11, color: C.accentText }} />}
+                          </div>
+                          <input type="checkbox" checked={active} onChange={() => toggleFTSCol(col.name)} style={{ display: 'none' }} />
+                          <span style={{ fontFamily: 'var(--font-geist-mono), monospace', fontSize: 13, fontWeight: 500, color: active ? C.accentText : C.textPrimary, flex: 1 }}>{col.name}</span>
+                          <span style={{ fontSize: 10, color: '#6ee7b7', background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.2)', borderRadius: 4, padding: '1px 6px', fontFamily: 'var(--font-geist-mono), monospace' }}>{col.dataType}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </FLabel>
+
+              {colDefs.filter(c => !c.isText).length > 0 && (
+                <div style={{ padding: '8px 12px', background: 'rgba(148,163,184,0.04)', border: `1px solid ${C.borderSub}`, borderRadius: 7 }}>
+                  <p style={{ fontSize: 11, color: C.textMuted }}>
+                    <strong style={{ color: C.textSecondary }}>{colDefs.filter(c => !c.isText).length} non-text column{colDefs.filter(c => !c.isText).length !== 1 ? 's' : ''}</strong> ({colDefs.filter(c => !c.isText).map(c => c.name).join(', ')}) will be copied as-is.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Step 3: Analyzer ─────────────────────────────────────────── */}
+          {step === 3 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <p style={{ fontSize: 12, color: C.textMuted, marginBottom: 6 }}>Choose how text is tokenised before indexing.</p>
+              {ANALYZER_OPTIONS.map(opt => {
+                const active = analyzer === opt.value;
+                return (
+                  <label key={opt.value}
+                    style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', background: active ? C.accentBg : 'rgba(148,163,184,0.03)', border: `1px solid ${active ? C.accentBorder : C.border}`, borderRadius: 9, cursor: 'pointer', transition: 'all 0.1s' }}
+                    onMouseEnter={e => { if (!active) (e.currentTarget as HTMLLabelElement).style.borderColor = 'rgba(124,58,237,0.25)'; }}
+                    onMouseLeave={e => { if (!active) (e.currentTarget as HTMLLabelElement).style.borderColor = C.border; }}>
+                    <div style={{ width: 18, height: 18, marginTop: 1, borderRadius: '50%', border: `1.5px solid ${active ? C.accent : 'rgba(148,163,184,0.35)'}`, background: active ? C.accent : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      {active && <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#fff' }} />}
+                    </div>
+                    <input type="radio" name="analyzer" checked={active} onChange={() => setAnalyzer(opt.value)} style={{ display: 'none' }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: active ? C.accentText : C.textPrimary }}>{opt.label}</span>
+                        {opt.badge && <span style={{ fontSize: 10, fontWeight: 700, color: C.success, background: C.successBg, border: `1px solid ${C.successBorder}`, borderRadius: 4, padding: '1px 6px' }}>{opt.badge}</span>}
+                      </div>
+                      <p style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.5 }}>{opt.desc}</p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── Step 4: Review ───────────────────────────────────────────── */}
+          {step === 4 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* Summary */}
+              <div style={{ background: C.bgSub, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                {[
+                  ['Source Table', `${schema}.${sourceTable}`],
+                  ['New FTS Table', `${schema}.${newTableName}`],
+                  ['FTS Columns', selectedFTSCols.join(', ')],
+                  ['Analyzer', analyzer],
+                  ['Index Name', indexName || `idx_${newTableName}_fts`],
+                ].map(([k, v], i, arr) => (
+                  <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 14px', borderBottom: i < arr.length - 1 ? `1px solid ${C.borderSub}` : 'none' }}>
+                    <span style={{ fontSize: 12, color: C.textMuted }}>{k}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: C.textPrimary, fontFamily: 'var(--font-geist-mono), monospace', maxWidth: 280, textAlign: 'right', wordBreak: 'break-all' }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* SQL preview */}
+              <div style={{ background: C.bgSub, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', background: C.bgHeader, borderBottom: `1px solid ${C.border}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Terminal style={{ width: 12, height: 12, color: C.textMuted }} />
+                    <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: C.textMuted }}>SQL to execute</span>
+                  </div>
+                  <button onClick={handleCopySQL}
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px', background: copied ? C.successBg : C.accentBg, border: `1px solid ${copied ? C.successBorder : C.accentBorder}`, borderRadius: 5, color: copied ? C.success : C.accentText, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                    {copied ? <><Check style={{ width: 11, height: 11 }} /> Copied</> : <><Copy style={{ width: 11, height: 11 }} /> Copy</>}
+                  </button>
+                </div>
+                <pre style={{ margin: 0, padding: '12px 14px', fontFamily: 'var(--font-geist-mono), monospace', fontSize: 11, color: '#4ade80', whiteSpace: 'pre-wrap', lineHeight: 1.8, maxHeight: 260, overflowY: 'auto' }}>
+                  {generatedSQL}
+                </pre>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7, padding: '9px 12px', background: C.warningBg, border: `1px solid ${C.warningBorder}`, borderRadius: 7 }}>
+                <AlertTriangle style={{ width: 13, height: 13, color: C.warning, flexShrink: 0, marginTop: 1 }} />
+                <p style={{ fontSize: 11, color: '#fde68a', lineHeight: 1.6 }}>
+                  This will create a new table <strong>{schema}.{newTableName}</strong>, copy all rows from <strong>{schema}.{sourceTable}</strong>, then run REFRESH. The source table is not modified.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between p-6 border-t border-gray-200 dark:border-gray-700">
-          <button
-            onClick={handleBack}
-            disabled={step === 1 || creating}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <ChevronLeft className="w-4 h-4" />
-            Back
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', background: C.bgHeader, borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
+          <button onClick={() => step > 1 && setStep(s => s - 1)} disabled={step === 1 || creating}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 7, background: 'transparent', border: `1px solid ${C.border}`, color: step === 1 || creating ? C.textMuted : C.textSecondary, fontSize: 13, fontWeight: 500, cursor: step === 1 || creating ? 'not-allowed' : 'pointer', opacity: step === 1 ? 0.4 : 1 }}>
+            <ChevronLeft style={{ width: 14, height: 14 }} /> Back
           </button>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onClose}
-              disabled={creating}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-            >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button onClick={() => !creating && onClose()} disabled={creating}
+              style={{ padding: '6px 14px', borderRadius: 7, background: 'transparent', border: `1px solid ${C.border}`, color: C.textSecondary, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
               Cancel
             </button>
 
             {step < 4 ? (
-              <button
-                onClick={handleNext}
-                disabled={!canProceed() || creating}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Next
-                <ChevronRight className="w-4 h-4" />
+              <button onClick={() => canProceed() && setStep(s => s + 1)} disabled={!canProceed() || (step === 2 && newTableName === sourceTable)}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 16px', borderRadius: 7, background: canProceed() ? C.accentBg : 'rgba(148,163,184,0.05)', border: `1px solid ${canProceed() ? C.accentBorder : C.border}`, color: canProceed() ? C.accentText : C.textMuted, fontSize: 13, fontWeight: 700, cursor: canProceed() ? 'pointer' : 'not-allowed', transition: 'all 0.1s' }}>
+                Next <ChevronRight style={{ width: 13, height: 13 }} />
               </button>
             ) : (
-              <button
-                onClick={handleCreate}
-                disabled={creating}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {creating ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-4 h-4" />
-                    Create Index
-                  </>
-                )}
+              <button onClick={handleCreate} disabled={creating || !generatedSQL}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 18px', borderRadius: 7, background: creating ? C.successBg : 'rgba(74,222,128,0.14)', border: `1px solid ${C.successBorder}`, color: C.success, fontSize: 13, fontWeight: 700, cursor: creating ? 'not-allowed' : 'pointer', transition: 'all 0.1s' }}>
+                {creating
+                  ? <><Loader2 style={{ width: 13, height: 13, animation: 'spin 1s linear infinite' }} /> Creating…</>
+                  : <><Plus style={{ width: 13, height: 13 }} /> Create FTS Table</>
+                }
               </button>
             )}
           </div>
         </div>
       </div>
+      <style>{`@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }`}</style>
+    </div>
+  );
+}
+
+// ─── Small helpers ────────────────────────────────────────────────────────────
+function FLabel({ label, hint, children, textPrimary, textMuted }: {
+  label: string; hint?: string; children: React.ReactNode;
+  textPrimary: string; textMuted: string;
+}) {
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <label style={{ fontSize: 12, fontWeight: 700, color: textPrimary }}>{label}</label>
+        {hint && <span style={{ fontSize: 11, color: textMuted }}>{hint}</span>}
+      </div>
+      {children}
     </div>
   );
 }

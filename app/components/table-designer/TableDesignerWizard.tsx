@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  X, Plus, Trash2, Copy, Check,
-  AlertTriangle, CheckCircle2, XCircle, Loader2, Database, Table2, ChevronDown, Search,
+  X, Plus, Trash2, Copy, Check, ChevronDown, ChevronRight, Search,
+  AlertTriangle, CheckCircle2, XCircle, Loader2, Database, Table2, Info,
 } from 'lucide-react';
 import { generateCreateTableSQL, validateTableDesign } from './SQLGenerator';
 import { useActiveConnection } from '../../lib/monkdb-context';
@@ -12,7 +12,7 @@ import { useToast } from '../ToastContext';
 import { useSchema } from '../../contexts/schema-context';
 import { useSchemaMetadata } from '../../lib/hooks/useSchemaMetadata';
 
-// ─── Interfaces ───────────────────────────────────────────────────────────────
+// ─── Interfaces ────────────────────────────────────────────────────────────────
 export interface ColumnDefinition {
   name: string;
   column_type: string;
@@ -31,7 +31,6 @@ export interface ShardingConfig {
 }
 export interface PartitionConfig {
   enabled: boolean;
-  partition_type?: 'RANGE' | 'LIST' | 'HASH';
   partition_column?: string;
 }
 export interface ReplicationConfig {
@@ -45,6 +44,8 @@ export interface TableDesign {
   sharding_config?: ShardingConfig;
   partition_config?: PartitionConfig;
   replication_config?: ReplicationConfig;
+  column_policy?: 'strict' | 'dynamic';
+  refresh_interval?: number;
 }
 interface TableDesignerWizardProps {
   connectionId: string;
@@ -52,81 +53,60 @@ interface TableDesignerWizardProps {
   onSuccess: () => void;
 }
 
-// ─── Color tokens — match app's exact dark palette ────────────────────────────
-// App uses: #0A1929 (layout/sidebar), #0D1B2A (content), #001E2B (nav)
-const C = {
-  bgPanel:   '#112233',   // left sidebar + SQL panel
-  bgApp:     '#162840',   // center column grid
-  bgHeader:  '#0e1e2e',   // sticky column header / toolbars
-  bgInput:   '#1a3048',   // inputs & selects fill
-  bgDropdown:'#152d45',   // type-selector dropdown bg
-
-  // Borders — solid so they're always visible
-  border:    '#1a3050',
-  borderSub: '#112540',
-  borderFocus: '#2563eb',  // blue-700 focus ring
-
-  // Text — high-contrast grays matching app Tailwind classes
-  textPrimary:   '#d1d5db',  // gray-300  — main text (sidebar menu items use this)
-  textSecondary: '#9ca3af',  // gray-400  — secondary / descriptions
-  textLabel:     '#9ca3af',  // gray-400  — section labels, field labels
-  textMuted:     '#6b7280',  // gray-500  — faint hints, row numbers
-  textDisabled:  '#374151',  // gray-700  — truly disabled
-
-  // Blue accent — matches sidebar's blue-500/20 + blue-300 pattern
-  accent:      '#3b82f6',   // blue-500
-  accentHover: '#60a5fa',   // blue-400
-  accentText:  '#93c5fd',   // blue-300 (sidebar active text)
-  accentBg:    'rgba(59,130,246,0.14)',
-  accentBorder:'rgba(59,130,246,0.4)',
-
-  // Status
-  success:  '#4ade80',  // green-400
-  warning:  '#fbbf24',  // amber-400
-  error:    '#f87171',  // red-400
-  errorText:'#fca5a5',  // red-300
-};
-
-// ─── Column types ─────────────────────────────────────────────────────────────
+// ─── Column types (MonkDB-documented types only) ──────────────────────────────
 const COLUMN_TYPES = [
-  { group: 'Numeric',       types: ['INTEGER', 'BIGINT', 'SMALLINT', 'FLOAT', 'DOUBLE PRECISION', 'NUMERIC', 'DECIMAL', 'BYTE', 'SHORT', 'LONG'] },
-  { group: 'String',        types: ['TEXT', 'VARCHAR', 'CHAR'] },
-  { group: 'Boolean',       types: ['BOOLEAN'] },
-  { group: 'Date / Time',   types: ['TIMESTAMP WITH TIME ZONE', 'TIMESTAMP', 'DATE', 'TIME'] },
-  { group: 'JSON / Object', types: ['OBJECT', 'OBJECT(DYNAMIC)', 'OBJECT(STRICT)', 'OBJECT(IGNORED)'] },
-  { group: 'Array',         types: ['ARRAY(TEXT)', 'ARRAY(INTEGER)', 'ARRAY(FLOAT)', 'ARRAY(OBJECT)', 'ARRAY(BIGINT)'] },
-  { group: 'Geospatial',    types: ['GEO_POINT', 'GEO_SHAPE'] },
-  { group: 'Other',         types: ['IP', 'FLOAT_VECTOR', 'BIT', 'BINARY'] },
+  { group: 'Integer',      types: ['INTEGER', 'BIGINT', 'SMALLINT', 'BYTE'] },
+  { group: 'Floating',     types: ['FLOAT', 'DOUBLE PRECISION', 'REAL'] },
+  { group: 'String',       types: ['TEXT', 'VARCHAR', 'CHAR'] },
+  { group: 'Boolean',      types: ['BOOLEAN'] },
+  { group: 'Date / Time',  types: ['TIMESTAMP WITH TIME ZONE', 'TIMESTAMP', 'DATE', 'TIME'] },
+  { group: 'JSON / Object',types: ['OBJECT', 'OBJECT(DYNAMIC)', 'OBJECT(STRICT)'] },
+  { group: 'Array',        types: ['ARRAY(TEXT)', 'ARRAY(INTEGER)', 'ARRAY(BIGINT)', 'ARRAY(FLOAT)', 'ARRAY(BOOLEAN)', 'ARRAY(OBJECT)'] },
+  { group: 'Geospatial',   types: ['GEO_POINT', 'GEO_SHAPE'] },
+  { group: 'Vector / AI',  types: ['FLOAT_VECTOR'] },
 ];
 
-function typeBadge(t: string): { bg: string; text: string; border: string } {
-  if (/^(INTEGER|BIGINT|SMALLINT|FLOAT|DOUBLE|NUMERIC|DECIMAL|BYTE|SHORT|LONG)/.test(t))
-    return { bg: 'rgba(59,130,246,0.15)', text: '#93c5fd', border: 'rgba(59,130,246,0.3)' };
-  if (/^(TEXT|VARCHAR|CHAR)/.test(t))
-    return { bg: 'rgba(52,211,153,0.12)', text: '#6ee7b7', border: 'rgba(52,211,153,0.28)' };
-  if (/^(BOOLEAN)/.test(t))
-    return { bg: 'rgba(167,139,250,0.12)', text: '#c4b5fd', border: 'rgba(167,139,250,0.28)' };
-  if (/^(TIMESTAMP|DATE|TIME)/.test(t))
-    return { bg: 'rgba(251,191,36,0.12)', text: '#fde68a', border: 'rgba(251,191,36,0.28)' };
-  if (/^(OBJECT|ARRAY)/.test(t))
-    return { bg: 'rgba(251,146,60,0.12)', text: '#fed7aa', border: 'rgba(251,146,60,0.28)' };
-  return { bg: 'rgba(148,163,184,0.1)', text: '#94a3b8', border: 'rgba(148,163,184,0.25)' };
+const FULLTEXT_ANALYZERS = [
+  'standard', 'english', 'german', 'french', 'spanish', 'italian',
+  'portuguese', 'russian',
+];
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+function getTypeClasses(t: string): string {
+  const base = t.split('(')[0].toUpperCase().trim();
+  if (/^(INTEGER|BIGINT|SMALLINT|BYTE|FLOAT|DOUBLE|REAL|NUMERIC|DECIMAL)$/.test(base))
+    return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300';
+  if (/^(TEXT|VARCHAR|CHAR)$/.test(base))
+    return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300';
+  if (/^BOOLEAN$/.test(base))
+    return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300';
+  if (/^(TIMESTAMP|DATE|TIME)/.test(base))
+    return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300';
+  if (/^(OBJECT|ARRAY)/.test(base))
+    return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300';
+  if (/^(GEO_POINT|GEO_SHAPE)$/.test(base))
+    return 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300';
+  if (/^FLOAT_VECTOR$/.test(base))
+    return 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300';
+  if (/^(IP|BIT|BINARY)$/.test(base))
+    return 'bg-gray-100 text-gray-600 dark:bg-gray-700/50 dark:text-gray-400';
+  return 'bg-gray-100 text-gray-600 dark:bg-gray-700/50 dark:text-gray-400';
+}
+
+function getSqlLineClass(line: string): string {
+  const t = line.trim();
+  if (/^(CREATE TABLE|CLUSTERED|PARTITIONED|WITH|IF NOT EXISTS)\b/.test(t)) return 'text-blue-300';
+  if (/\b(PRIMARY KEY|NOT NULL|NULL|UNIQUE|DEFAULT|INDEX|GENERATED|CHECK|ALWAYS AS)\b/.test(line)) return 'text-yellow-300';
+  if (/^\s*\)/.test(line) || /^\s*--/.test(line)) return 'text-gray-500';
+  if (/^\s*(number_of_replicas|refresh_interval|column_policy)\b/.test(t)) return 'text-purple-300';
+  return 'text-gray-300';
 }
 
 function newColumn(): ColumnDefinition {
-  return { name: '', column_type: 'TEXT', constraints: [], default_value: '' };
+  return { name: '', column_type: 'TEXT', constraints: [] };
 }
 
-function sqlLineColor(line: string): string {
-  const t = line.trim();
-  if (/^(CREATE TABLE|CLUSTERED|PARTITIONED|WITH|IF NOT EXISTS)\b/.test(t)) return C.accentText;
-  if (/\b(PRIMARY KEY|NOT NULL|NULL|UNIQUE|DEFAULT|INDEX|GENERATED|CHECK|ALWAYS AS)\b/.test(line)) return '#fde68a';
-  if (/^\s*\)/.test(line) || /^\s*--/.test(line)) return C.textMuted;
-  if (/^\s*(number_of_replicas|refresh_interval)\b/.test(t)) return '#c4b5fd';
-  return C.textPrimary;
-}
-
-// ─── Searchable type selector ─────────────────────────────────────────────────
+// ─── TypeSelector ──────────────────────────────────────────────────────────────
 function TypeSelector({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -134,30 +114,25 @@ function TypeSelector({ value, onChange }: { value: string; onChange: (v: string
   const containerRef = useRef<HTMLDivElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const badge = typeBadge(value);
+
+  // The "base" type for list comparison (strip dimension from FLOAT_VECTOR(N))
+  const baseValue = value.startsWith('FLOAT_VECTOR') ? 'FLOAT_VECTOR' : value;
+  const cls = getTypeClasses(value);
 
   useEffect(() => {
     if (!open) return;
     const onMouseDown = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (!containerRef.current?.contains(t) && !dropRef.current?.contains(t)) {
+      if (!containerRef.current?.contains(e.target as Node) && !dropRef.current?.contains(e.target as Node)) {
         setOpen(false); setSearch('');
       }
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setOpen(false); setSearch(''); }
-    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setOpen(false); setSearch(''); } };
     document.addEventListener('mousedown', onMouseDown);
     document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKey);
-    };
+    return () => { document.removeEventListener('mousedown', onMouseDown); document.removeEventListener('keydown', onKey); };
   }, [open]);
 
-  useEffect(() => {
-    if (open) setTimeout(() => searchRef.current?.focus(), 0);
-  }, [open]);
+  useEffect(() => { if (open) setTimeout(() => searchRef.current?.focus(), 0); }, [open]);
 
   const handleToggle = () => {
     if (!open && containerRef.current) {
@@ -174,95 +149,88 @@ function TypeSelector({ value, onChange }: { value: string; onChange: (v: string
   const dropdown = open && (
     <div
       ref={dropRef}
-      style={{
-        position: 'fixed',
-        top: dropPos.top,
-        left: dropPos.left,
-        minWidth: dropPos.width,
-        width: 220,
-        zIndex: 9999,
-        background: C.bgDropdown,
-        border: `1px solid ${C.border}`,
-        borderRadius: 8,
-        boxShadow: '0 12px 32px rgba(0,0,0,0.6)',
-        overflow: 'hidden',
-      }}
+      style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, minWidth: Math.max(dropPos.width, 220), zIndex: 9999 }}
+      className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
     >
-      {/* Search input */}
-      <div style={{ padding: '8px 10px', borderBottom: `1px solid ${C.borderSub}`, display: 'flex', alignItems: 'center', gap: 6 }}>
-        <Search style={{ width: 13, height: 13, color: C.textMuted, flexShrink: 0 }} />
-        <input
-          ref={searchRef}
-          type="text"
-          placeholder="Search types…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{
-            flex: 1, background: 'transparent', border: 'none', outline: 'none',
-            color: C.textPrimary, fontSize: 13, padding: 0,
-          }}
-        />
+      <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2 dark:border-gray-700">
+        <Search className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+        <input ref={searchRef} type="text" placeholder="Search types…" value={search} onChange={e => setSearch(e.target.value)}
+          className="flex-1 bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none dark:text-gray-200" />
       </div>
-      {/* List */}
-      <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+      <div className="max-h-64 overflow-y-auto py-1">
         {filtered.length === 0 ? (
-          <div style={{ padding: 14, textAlign: 'center', color: C.textMuted, fontSize: 13 }}>No types found</div>
-        ) : (
-          filtered.map(g => (
-            <div key={g.group}>
-              <div style={{ padding: '5px 10px 2px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.textMuted }}>
-                {g.group}
-              </div>
-              {g.types.map(t => {
-                const b = typeBadge(t);
-                const isSelected = t === value;
-                return (
-                  <button
-                    key={t}
-                    onClick={() => { onChange(t); setOpen(false); setSearch(''); }}
-                    style={{
-                      width: '100%', textAlign: 'left',
-                      padding: '6px 10px',
-                      background: isSelected ? C.accentBg : 'transparent',
-                      border: 'none', cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      transition: 'background 0.08s',
-                    }}
-                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(148,163,184,0.06)'; }}
-                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    <span style={{ fontSize: 12, fontWeight: 500, color: b.text, fontFamily: 'var(--font-geist-mono), monospace' }}>{t}</span>
-                    {isSelected && <Check style={{ width: 11, height: 11, color: C.accentText, flexShrink: 0 }} />}
-                  </button>
-                );
-              })}
-            </div>
-          ))
-        )}
+          <div className="py-4 text-center text-sm text-gray-400">No types found</div>
+        ) : filtered.map(g => (
+          <div key={g.group}>
+            <div className="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">{g.group}</div>
+            {g.types.map(t => {
+              const tc = getTypeClasses(t);
+              const isSel = t === baseValue;
+              return (
+                <button key={t} onClick={() => { onChange(t); setOpen(false); setSearch(''); }}
+                  className={`flex w-full items-center justify-between px-3 py-1.5 text-left transition-colors ${isSel ? 'bg-blue-50 dark:bg-blue-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-700/40'}`}
+                >
+                  <div>
+                    <span className={`rounded px-1.5 py-0.5 font-mono text-xs font-semibold ${tc}`}>{t}</span>
+                    {t === 'FLOAT_VECTOR' && <span className="ml-2 text-xs text-gray-400">requires dimension</span>}
+                    {t === 'UNIQUE' && <span className="ml-2 text-xs text-amber-500">not enforced</span>}
+                  </div>
+                  {isSel && <Check className="h-3.5 w-3.5 flex-shrink-0 text-blue-600 dark:text-blue-400" />}
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </div>
     </div>
   );
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
-      {/* Trigger */}
-      <button
-        onClick={handleToggle}
-        style={{
-          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6,
-          background: badge.bg, border: `1px solid ${open ? C.borderFocus : badge.border}`,
-          borderRadius: 5, padding: '5px 8px', cursor: 'pointer', transition: 'border-color 0.1s',
-        }}
+    <div ref={containerRef} className="relative w-full">
+      <button onClick={handleToggle}
+        className={`flex w-full items-center justify-between gap-2 rounded-md border px-2 py-1.5 transition-all ${
+          open ? 'border-blue-500 bg-white ring-2 ring-blue-500/20 dark:bg-gray-700'
+               : 'border-gray-200 bg-white hover:border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:hover:border-gray-500'
+        }`}
       >
-        <span style={{ color: badge.text, fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-geist-mono), monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {value}
-        </span>
-        <ChevronDown style={{ width: 12, height: 12, color: badge.text, flexShrink: 0, transform: open ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.15s' }} />
+        <span className={`truncate rounded px-1.5 py-0.5 font-mono text-xs font-semibold ${cls}`}>{value}</span>
+        <ChevronDown className={`h-3.5 w-3.5 flex-shrink-0 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
-
-      {/* Dropdown — portal-rendered to escape overflow:hidden/auto ancestors */}
       {typeof document !== 'undefined' && dropdown && createPortal(dropdown, document.body)}
     </div>
+  );
+}
+
+// ─── ConstraintCheck ──────────────────────────────────────────────────────────
+function ConstraintCheck({ active, onClick, color, disabled = false }: {
+  active: boolean; onClick: () => void; color: 'blue' | 'amber' | 'purple'; disabled?: boolean;
+}) {
+  const activeClass = {
+    blue:   'border-blue-500 bg-blue-50 text-blue-600 dark:border-blue-400 dark:bg-blue-900/20 dark:text-blue-400',
+    amber:  'border-amber-500 bg-amber-50 text-amber-600 dark:border-amber-400 dark:bg-amber-900/20 dark:text-amber-400',
+    purple: 'border-purple-500 bg-purple-50 text-purple-600 dark:border-purple-400 dark:bg-purple-900/20 dark:text-purple-400',
+  }[color];
+  return (
+    <button onClick={onClick} disabled={disabled}
+      className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded border-[1.5px] transition-all ${
+        active ? activeClass : 'border-gray-300 bg-transparent hover:border-gray-400 dark:border-gray-500 dark:hover:border-gray-400'
+      } ${disabled ? 'cursor-not-allowed opacity-30' : 'cursor-pointer'}`}
+    >
+      {active && <Check className="h-3.5 w-3.5 stroke-[2.5]" />}
+    </button>
+  );
+}
+
+// ─── ToggleSwitch ─────────────────────────────────────────────────────────────
+function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button onClick={() => onChange(!checked)}
+      className={`relative h-5 w-9 flex-shrink-0 rounded-full border transition-all ${
+        checked ? 'border-blue-500 bg-blue-500' : 'border-gray-300 bg-gray-200 dark:border-gray-600 dark:bg-gray-700'
+      }`}
+    >
+      <span className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${checked ? 'left-[18px]' : 'left-0.5'}`} />
+    </button>
   );
 }
 
@@ -280,19 +248,22 @@ export default function TableDesignerWizard({ onClose, onSuccess }: TableDesigne
     sharding_config: { shard_count: 6 },
     partition_config: { enabled: false },
     replication_config: { number_of_replicas: 1, tier_allocation: 'hot' },
+    column_policy: 'strict',
+    refresh_interval: 1000,
   });
   const [creating, setCreating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [focusedRow, setFocusedRow] = useState<number | null>(null);
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
 
   const sql = useMemo(() => {
     if (!design.table_name.trim() || design.columns.length === 0) return '';
     try { return generateCreateTableSQL(design); } catch { return ''; }
   }, [design]);
+
   const validation = useMemo(() => validateTableDesign(design, existingTables), [design, existingTables]);
   const canCreate = validation.valid && !!design.table_name.trim() && design.columns.length > 0 && !creating;
 
-  // Can only add a new column once the last column has a name AND data type
   const lastCol = design.columns[design.columns.length - 1];
   const canAddColumn = lastCol.name.trim().length > 0 && !!lastCol.column_type;
 
@@ -302,8 +273,10 @@ export default function TableDesignerWizard({ onClose, onSuccess }: TableDesigne
     setTimeout(() => setFocusedRow(design.columns.length), 0);
   };
 
-  const removeColumn = (i: number) =>
+  const removeColumn = (i: number) => {
+    setExpandedRows(prev => { const s = new Set(prev); s.delete(i); return s; });
     setDesign(d => ({ ...d, columns: d.columns.filter((_, j) => j !== i) }));
+  };
 
   const updateColumn = (i: number, patch: Partial<ColumnDefinition>) =>
     setDesign(d => ({ ...d, columns: d.columns.map((c, j) => j === i ? { ...c, ...patch } : c) }));
@@ -315,6 +288,13 @@ export default function TableDesignerWizard({ onClose, onSuccess }: TableDesigne
     if (flag === 'PRIMARY KEY' && !has) next = [...new Set([...next, 'NOT NULL'])];
     updateColumn(i, { constraints: next });
   };
+
+  const toggleRowExpand = (i: number) =>
+    setExpandedRows(prev => {
+      const s = new Set(prev);
+      s.has(i) ? s.delete(i) : s.add(i);
+      return s;
+    });
 
   const handleCreate = async () => {
     if (!canCreate || !activeConnection) return;
@@ -337,429 +317,496 @@ export default function TableDesignerWizard({ onClose, onSuccess }: TableDesigne
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const pkCount = design.columns.filter(c => c.constraints.includes('PRIMARY KEY')).length;
+  const pkCount   = design.columns.filter(c => c.constraints.includes('PRIMARY KEY')).length;
   const filledCols = design.columns.filter(c => c.name.trim()).length;
   const partitionEnabled = design.partition_config?.enabled ?? false;
+  const sqlLines = sql.split('\n');
 
-  const inputSt: React.CSSProperties = {
-    width: '100%', background: C.bgInput,
-    border: `1px solid ${C.border}`, borderRadius: 6,
-    color: C.textPrimary, fontSize: 13, padding: '6px 10px',
-    outline: 'none', appearance: 'auto' as any,
-  };
-
-  const statusColor =
-    !design.table_name.trim() || validation.errors.length > 0 ? C.error :
-    validation.warnings.length > 0 ? C.warning :
-    filledCols === 0 ? C.textMuted : C.success;
+  const statusClass =
+    !design.table_name.trim() || validation.errors.length > 0 ? 'text-red-500 dark:text-red-400' :
+    validation.warnings.length > 0 ? 'text-amber-500 dark:text-amber-400' :
+    filledCols === 0 ? 'text-gray-400' : 'text-green-500 dark:text-green-400';
 
   const statusLabel =
     !design.table_name.trim() ? 'Unnamed' :
     validation.errors.length > 0 ? 'Has errors' :
-    validation.warnings.length > 0 ? 'Warnings' :
+    validation.warnings.length > 0 ? 'Has warnings' :
     filledCols === 0 ? 'No columns' : 'Ready';
 
   return (
-    <div style={{
-      display: 'flex', height: '100%',
-      background: C.bgApp,
-      fontFamily: 'var(--font-geist-sans), -apple-system, system-ui, sans-serif',
-      color: C.textPrimary, overflow: 'hidden',
-    }}>
+    <div className="flex h-full overflow-hidden bg-gray-50 dark:bg-gray-900">
 
-      {/* ══ LEFT SIDEBAR ════════════════════════════════════════════════════ */}
-      <div style={{
-        width: 236, flexShrink: 0,
-        background: C.bgPanel,
-        borderRight: `1px solid ${C.border}`,
-        display: 'flex', flexDirection: 'column', overflowY: 'auto',
-      }}>
-        {/* Brand + Close */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 30, height: 30, background: C.accentBg, border: `1px solid ${C.accentBorder}`, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Table2 style={{ width: 15, height: 15, color: C.accentText }} />
+      {/* ══ LEFT SIDEBAR ═════════════════════════════════════════════════════ */}
+      <div className="flex w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+
+        {/* Brand */}
+        <div className="flex flex-shrink-0 items-center justify-between border-b border-gray-200 px-4 py-3.5 dark:border-gray-700">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/30">
+              <Table2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
-              <p style={{ fontSize: 13, fontWeight: 600, color: C.textPrimary, lineHeight: 1.3 }}>Table Designer</p>
-              <p style={{ fontSize: 11, color: C.textMuted, lineHeight: 1.3 }}>MonkDB</p>
+              <p className="text-sm font-bold text-gray-900 dark:text-white">Table Designer</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">MonkDB</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            style={{ padding: 5, borderRadius: 6, color: C.textSecondary, background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex' }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(148,163,184,0.1)'; e.currentTarget.style.color = C.textPrimary; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.textSecondary; }}
-          >
-            <X style={{ width: 15, height: 15 }} />
+          <button onClick={onClose}
+            className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200">
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* TABLE IDENTITY */}
-        <SidebarSection label="Table Identity">
-          <SidebarField label="Schema">
-            <select value={design.schema_name} onChange={e => setDesign(d => ({ ...d, schema_name: e.target.value }))} style={inputSt}
-              onFocus={e => e.currentTarget.style.borderColor = C.borderFocus}
-              onBlur={e => e.currentTarget.style.borderColor = C.border}>
-              {schemas.length > 0
-                ? schemas.map(s => <option key={s.name} value={s.name}>{s.name}</option>)
-                : <option value={design.schema_name}>{design.schema_name}</option>}
-            </select>
-          </SidebarField>
-          <SidebarField label="Table Name">
-            <input type="text" placeholder="e.g. users" value={design.table_name}
-              onChange={e => setDesign(d => ({ ...d, table_name: e.target.value }))}
-              spellCheck={false}
-              style={{ ...inputSt, fontWeight: design.table_name ? 500 : 400 }}
-              onFocus={e => e.currentTarget.style.borderColor = C.borderFocus}
-              onBlur={e => e.currentTarget.style.borderColor = C.border}
-            />
-          </SidebarField>
-        </SidebarSection>
-
-        {/* STORAGE */}
-        <SidebarSection label="Storage">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            <SidebarField label="Shards">
-              <input type="number" min={1} max={32} value={design.sharding_config?.shard_count ?? 6}
-                onChange={e => setDesign(d => ({ ...d, sharding_config: { ...d.sharding_config!, shard_count: Math.max(1, Math.min(32, +e.target.value)) } }))}
-                style={inputSt}
-                onFocus={e => e.currentTarget.style.borderColor = C.borderFocus}
-                onBlur={e => e.currentTarget.style.borderColor = C.border}
-              />
-            </SidebarField>
-            <SidebarField label="Replicas">
-              <input type="number" min={0} max={5} value={design.replication_config?.number_of_replicas ?? 1}
-                onChange={e => setDesign(d => ({ ...d, replication_config: { ...d.replication_config!, number_of_replicas: Math.max(0, Math.min(5, +e.target.value)) } }))}
-                style={inputSt}
-                onFocus={e => e.currentTarget.style.borderColor = C.borderFocus}
-                onBlur={e => e.currentTarget.style.borderColor = C.border}
-              />
-            </SidebarField>
+        {/* Table Identity */}
+        <div className="border-b border-gray-200 px-4 py-4 dark:border-gray-700">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Table Identity</p>
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Schema</label>
+              <select value={design.schema_name} onChange={e => setDesign(d => ({ ...d, schema_name: e.target.value }))}
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                {schemas.length > 0
+                  ? schemas.map(s => <option key={s.name} value={s.name}>{s.name}</option>)
+                  : <option value={design.schema_name}>{design.schema_name}</option>}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Table Name</label>
+              <input type="text" placeholder="e.g. sensor_readings" value={design.table_name}
+                onChange={e => setDesign(d => ({ ...d, table_name: e.target.value }))} spellCheck={false}
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 font-mono text-sm text-gray-800 placeholder-gray-300 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:placeholder-gray-600" />
+            </div>
           </div>
-          <SidebarField label="Storage Tier">
-            <select value={design.replication_config?.tier_allocation ?? 'hot'}
-              onChange={e => setDesign(d => ({ ...d, replication_config: { ...d.replication_config!, tier_allocation: e.target.value as any } }))}
-              style={inputSt}>
-              <option value="hot">Hot (SSD)</option>
-              <option value="warm">Warm (HDD)</option>
-              <option value="cold">Cold (Archive)</option>
-            </select>
-          </SidebarField>
-          <SidebarField label="Clustering Column">
-            <select value={design.sharding_config?.clustering_column ?? ''}
-              onChange={e => setDesign(d => ({ ...d, sharding_config: { ...d.sharding_config!, clustering_column: e.target.value || undefined } }))}
-              style={inputSt}>
-              <option value="">Auto</option>
-              {design.columns.filter(c => c.name.trim()).map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-            </select>
-          </SidebarField>
-        </SidebarSection>
+        </div>
 
-        {/* PARTITIONING */}
-        <SidebarSection label="Partitioning">
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-            <ToggleSwitch checked={partitionEnabled} onChange={v => setDesign(d => ({ ...d, partition_config: { ...d.partition_config!, enabled: v } }))} />
-            <span style={{ fontSize: 13, color: partitionEnabled ? C.accentText : C.textSecondary }}>
-              {partitionEnabled ? 'Enabled' : 'Disabled'}
-            </span>
-          </label>
-          {partitionEnabled && (
-            <>
-              <SidebarField label="Type">
-                <select value={design.partition_config?.partition_type ?? 'RANGE'}
-                  onChange={e => setDesign(d => ({ ...d, partition_config: { ...d.partition_config!, partition_type: e.target.value as any } }))}
-                  style={inputSt}>
-                  <option value="RANGE">RANGE</option>
-                  <option value="LIST">LIST</option>
-                  <option value="HASH">HASH</option>
-                </select>
-              </SidebarField>
-              <SidebarField label="Column">
+        {/* Storage */}
+        <div className="border-b border-gray-200 px-4 py-4 dark:border-gray-700">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Storage</p>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Shards</label>
+                <input type="number" min={1} max={128} value={design.sharding_config?.shard_count ?? 6}
+                  onChange={e => setDesign(d => ({ ...d, sharding_config: { ...d.sharding_config!, shard_count: Math.max(1, +e.target.value) } }))}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Replicas</label>
+                <input type="number" min={0} max={10} value={design.replication_config?.number_of_replicas ?? 1}
+                  onChange={e => setDesign(d => ({ ...d, replication_config: { ...d.replication_config!, number_of_replicas: Math.max(0, +e.target.value) } }))}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
+              </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Storage Tier</label>
+              <select value={design.replication_config?.tier_allocation ?? 'hot'}
+                onChange={e => setDesign(d => ({ ...d, replication_config: { ...d.replication_config!, tier_allocation: e.target.value as any } }))}
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white">
+                <option value="hot">🔥 Hot (SSD)</option>
+                <option value="warm">💾 Warm (HDD)</option>
+                <option value="cold">❄️ Cold (Archive)</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Clustering Column</label>
+              <select value={design.sharding_config?.clustering_column ?? ''}
+                onChange={e => setDesign(d => ({ ...d, sharding_config: { ...d.sharding_config!, clustering_column: e.target.value || undefined } }))}
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white">
+                <option value="">Auto (default)</option>
+                {design.columns.filter(c => c.name.trim()).map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Partitioning */}
+        <div className="border-b border-gray-200 px-4 py-4 dark:border-gray-700">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Partitioning</p>
+          <div className="space-y-3">
+            <label className="flex cursor-pointer items-center gap-3">
+              <ToggleSwitch checked={partitionEnabled}
+                onChange={v => setDesign(d => ({ ...d, partition_config: { ...d.partition_config!, enabled: v } }))} />
+              <span className={`text-sm font-medium transition-colors ${partitionEnabled ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                {partitionEnabled ? 'Enabled' : 'Disabled'}
+              </span>
+            </label>
+            {partitionEnabled && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Partition By Column
+                </label>
                 <select value={design.partition_config?.partition_column ?? ''}
                   onChange={e => setDesign(d => ({ ...d, partition_config: { ...d.partition_config!, partition_column: e.target.value || undefined } }))}
-                  style={inputSt}>
-                  <option value="">— select —</option>
-                  {design.columns.filter(c => c.name.trim()).map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white">
+                  <option value="">— select column —</option>
+                  {design.columns
+                    .filter(c => c.name.trim() && !c.column_type.toUpperCase().startsWith('OBJECT') && !c.column_type.toUpperCase().startsWith('ARRAY'))
+                    .map(c => <option key={c.name} value={c.name}>{c.name} ({c.column_type})</option>)}
                 </select>
-              </SidebarField>
-            </>
-          )}
-        </SidebarSection>
+                <p className="mt-1 text-xs text-gray-400">Primitive types only (no OBJECT/ARRAY)</p>
+              </div>
+            )}
+          </div>
+        </div>
 
-        {/* SUMMARY */}
-        <div style={{ marginTop: 'auto', padding: '14px 16px', borderTop: `1px solid ${C.borderSub}` }}>
-          <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.textLabel, marginBottom: 10 }}>
-            Summary
-          </p>
-          <StatRow label="Columns" value={filledCols} valueColor={filledCols > 0 ? C.textPrimary : C.textMuted} />
-          <StatRow label="Primary Keys" value={pkCount} valueColor={pkCount > 0 ? C.accentText : C.textMuted} />
-          <StatRow label="Status" value={statusLabel} valueColor={statusColor} />
+        {/* Table Options */}
+        <div className="border-b border-gray-200 px-4 py-4 dark:border-gray-700">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Table Options</p>
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+                Column Policy
+                <span title="strict: rejects unknown columns on insert. dynamic: auto-creates new columns." className="cursor-help">
+                  <Info className="h-3 w-3 text-gray-400" />
+                </span>
+              </label>
+              <div className="flex gap-1.5">
+                {(['strict', 'dynamic'] as const).map(p => (
+                  <button key={p} onClick={() => setDesign(d => ({ ...d, column_policy: p }))}
+                    className={`flex-1 rounded-lg border py-1.5 text-xs font-semibold transition-colors capitalize ${
+                      (design.column_policy ?? 'strict') === p
+                        ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-900/20 dark:text-blue-300'
+                        : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'
+                    }`}>
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+                Refresh Interval (ms)
+                <span title="How often the table auto-refreshes. 0 disables auto-refresh." className="cursor-help">
+                  <Info className="h-3 w-3 text-gray-400" />
+                </span>
+              </label>
+              <div className="flex items-center gap-1.5">
+                <input type="number" min={0} value={design.refresh_interval ?? 1000}
+                  onChange={e => setDesign(d => ({ ...d, refresh_interval: Math.max(0, +e.target.value) }))}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
+              </div>
+              <div className="mt-1.5 flex gap-1">
+                {[100, 1000, 5000, 0].map(v => (
+                  <button key={v} onClick={() => setDesign(d => ({ ...d, refresh_interval: v }))}
+                    className={`rounded px-1.5 py-0.5 text-xs font-medium transition-colors ${
+                      (design.refresh_interval ?? 1000) === v
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-400'
+                    }`}>
+                    {v === 0 ? 'Off' : `${v}ms`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Summary */}
+        <div className="mt-auto border-t border-gray-100 px-4 py-4 dark:border-gray-700/60">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Summary</p>
+          <div className="space-y-2.5">
+            {[
+              { label: 'Columns', value: String(filledCols), cls: filledCols > 0 ? 'text-gray-900 dark:text-white' : 'text-gray-400' },
+              { label: 'Primary Keys', value: String(pkCount), cls: pkCount > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400' },
+              { label: 'Status', value: statusLabel, cls: statusClass },
+            ].map(row => (
+              <div key={row.label} className="flex items-center justify-between">
+                <span className="text-xs text-gray-500 dark:text-gray-400">{row.label}</span>
+                <span className={`text-xs font-semibold ${row.cls}`}>{row.value}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* ══ CENTER: Column Grid ══════════════════════════════════════════════ */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, background: C.bgApp }}>
+      {/* ══ CENTER: Column Grid ═══════════════════════════════════════════════ */}
+      <div className="flex flex-1 min-w-0 flex-col overflow-hidden">
 
-        {/* ── Toolbar ── */}
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '10px 16px',
-          background: C.bgHeader,
-          borderBottom: `1px solid ${C.border}`,
-          flexShrink: 0,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.textLabel }}>
-              Columns
-            </span>
-            <span style={{
-              fontSize: 11, fontWeight: 700,
-              background: C.accentBg, color: C.accentText,
-              border: `1px solid ${C.accentBorder}`,
-              borderRadius: 10, padding: '1px 8px',
-            }}>
+        {/* Toolbar */}
+        <div className="flex flex-shrink-0 items-center justify-between border-b border-gray-200 bg-white px-5 py-2.5 dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex items-center gap-2.5">
+            <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Columns</span>
+            <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
               {design.columns.length}
             </span>
+            <span className="text-xs text-gray-400">Click ▸ to expand advanced options per column</span>
           </div>
-          <button
-            onClick={addColumn}
-            disabled={!canAddColumn}
-            title={!canAddColumn ? 'Fill in the current column name before adding another' : undefined}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              background: canAddColumn ? C.accentBg : 'rgba(148,163,184,0.05)',
-              color: canAddColumn ? C.accentText : C.textMuted,
-              border: `1px solid ${canAddColumn ? C.accentBorder : C.borderSub}`,
-              borderRadius: 6, padding: '6px 14px',
-              fontSize: 13, fontWeight: 600,
-              cursor: canAddColumn ? 'pointer' : 'not-allowed',
-              transition: 'all 0.1s',
-            }}
-            onMouseEnter={e => { if (canAddColumn) { e.currentTarget.style.background = 'rgba(59,130,246,0.22)'; e.currentTarget.style.color = C.accentHover; } }}
-            onMouseLeave={e => { if (canAddColumn) { e.currentTarget.style.background = C.accentBg; e.currentTarget.style.color = C.accentText; } }}
-          >
-            <Plus style={{ width: 13, height: 13 }} />
-            Add Column
+          <button onClick={addColumn} disabled={!canAddColumn}
+            title={!canAddColumn ? 'Fill in the current column name first' : undefined}
+            className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold transition-all ${
+              canAddColumn ? 'bg-blue-600 text-white shadow-sm hover:bg-blue-700'
+                           : 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-700/50 dark:text-gray-600'
+            }`}>
+            <Plus className="h-3.5 w-3.5" />Add Column
           </button>
         </div>
 
-        {/* ── Column table ── */}
-        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }}>
-          <div style={{ minWidth: 700 }}>
+        {/* Column Table */}
+        <div className="flex-1 overflow-auto">
+          <table className="min-w-full border-collapse">
+            <thead className="sticky top-0 z-10">
+              <tr>
+                <th className="w-8 border-b border-r border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900" />
+                <th className="w-10 border-b border-r border-gray-200 bg-gray-50 px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-gray-400 dark:border-gray-700 dark:bg-gray-900">#</th>
+                <th className="border-b border-r border-gray-200 bg-gray-50 px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-400 dark:border-gray-700 dark:bg-gray-900">Column Name</th>
+                <th className="w-52 border-b border-r border-gray-200 bg-gray-50 px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-400 dark:border-gray-700 dark:bg-gray-900">Data Type</th>
+                <th className="w-28 border-b border-r border-gray-200 bg-gray-50 px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-400 dark:border-gray-700 dark:bg-gray-900">Default</th>
+                <th className="w-16 border-b border-r border-gray-200 bg-gray-50 px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-blue-600 dark:border-gray-700 dark:bg-gray-900 dark:text-blue-400">PK</th>
+                <th className="w-20 border-b border-r border-gray-200 bg-gray-50 px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-amber-600 dark:border-gray-700 dark:bg-gray-900 dark:text-amber-400">Not Null</th>
+                <th className="w-20 border-b border-r border-gray-200 bg-gray-50 px-2 py-2.5 text-center dark:border-gray-700 dark:bg-gray-900">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-purple-600 dark:text-purple-400">Unique</span>
+                  <span className="ml-1 text-xs text-gray-400">(†)</span>
+                </th>
+                <th className="w-10 border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900" />
+              </tr>
+            </thead>
+            <tbody>
+              {design.columns.map((col, i) => {
+                const isPK = col.constraints.includes('PRIMARY KEY');
+                const isNN = col.constraints.includes('NOT NULL');
+                const isUQ = col.constraints.includes('UNIQUE');
+                const isExpanded = expandedRows.has(i);
+                const hasAdvanced = !!(col.index_method || col.generated_expression || col.check_expression || col.constraints.includes('CHECK'));
+                const isFloatVector = col.column_type.startsWith('FLOAT_VECTOR');
 
-            {/* ── Header row ── */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: COL_GRID,
-              position: 'sticky', top: 0, zIndex: 10,
-              background: C.bgHeader,
-              borderBottom: `1px solid ${GB.head}`,
-            }}>
-              <div style={thCell({ align: 'center' })}>#</div>
-              <div style={thCell({})}>Column Name</div>
-              <div style={thCell({})}>Data Type</div>
-              <div style={thCell({})}>Default</div>
-              {/* Constraint group — strong left separator before PK */}
-              <div style={{ ...thCell({ align: 'center', color: C.textLabel, leftSep: true }), background: 'rgba(148,163,184,0.04)' }}>Primary Key</div>
-              <div style={{ ...thCell({ align: 'center', color: '#fde68a' }), background: 'rgba(148,163,184,0.04)' }}>Not Null</div>
-              <div style={{ ...thCell({ align: 'center', color: '#c4b5fd' }), background: 'rgba(148,163,184,0.04)' }}>Unique</div>
-              <div style={{ borderRight: 'none' }} />
-            </div>
-
-            {/* ── Data rows ── */}
-            {design.columns.map((col, i) => {
-              const isPK = col.constraints.includes('PRIMARY KEY');
-              const isNN = col.constraints.includes('NOT NULL');
-              const isUQ = col.constraints.includes('UNIQUE');
-              const hasName = col.name.trim().length > 0;
-
-              return (
-                <div
-                  key={i}
-                  className="group"
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: COL_GRID,
-                    minHeight: 52,
-                    borderBottom: `1px solid ${GB.row}`,
-                    background: isPK ? 'rgba(59,130,246,0.04)' : 'transparent',
-                    transition: 'background 0.1s',
-                  }}
-                  onMouseEnter={e => { if (!isPK) (e.currentTarget as HTMLDivElement).style.background = 'rgba(148,163,184,0.04)'; }}
-                  onMouseLeave={e => { if (!isPK) (e.currentTarget as HTMLDivElement).style.background = isPK ? 'rgba(59,130,246,0.04)' : 'transparent'; }}
-                >
-                  {/* # */}
-                  <div style={dcell({ align: 'center' })}>
-                    <span style={{ fontSize: 12, color: C.textMuted, fontVariantNumeric: 'tabular-nums' }}>{i + 1}</span>
-                  </div>
-
-                  {/* Column Name */}
-                  <div style={dcell({ px: 6 })}>
-                    <input
-                      autoFocus={i === focusedRow}
-                      type="text"
-                      value={col.name}
-                      onChange={e => updateColumn(i, { name: e.target.value })}
-                      onFocus={() => setFocusedRow(i)}
-                      onBlur={() => setFocusedRow(null)}
-                      placeholder="column_name"
-                      spellCheck={false}
-                      style={{
-                        width: '100%',
-                        background: 'transparent',
-                        border: '1px solid transparent',
-                        borderRadius: 5,
-                        color: hasName ? C.textPrimary : C.textSecondary,
-                        fontSize: 14,
-                        fontWeight: isPK ? 600 : 400,
-                        padding: '6px 8px',
-                        outline: 'none',
-                        fontFamily: 'var(--font-geist-mono), monospace',
-                        transition: 'border-color 0.1s',
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(148,163,184,0.3)')}
-                      onMouseLeave={e => { if (document.activeElement !== e.currentTarget) (e.currentTarget as HTMLInputElement).style.borderColor = 'transparent'; }}
-                      onFocusCapture={e => (e.currentTarget.style.borderColor = C.borderFocus)}
-                      onBlurCapture={e => (e.currentTarget.style.borderColor = 'transparent')}
-                    />
-                  </div>
-
-                  {/* Data Type */}
-                  <div style={dcell({ px: 8 })}>
-                    <TypeSelector value={col.column_type} onChange={v => updateColumn(i, { column_type: v })} />
-                  </div>
-
-                  {/* Default */}
-                  <div style={dcell({ px: 8 })}>
-                    <input
-                      type="text"
-                      value={col.default_value ?? ''}
-                      onChange={e => updateColumn(i, { default_value: e.target.value })}
-                      placeholder="NULL"
-                      spellCheck={false}
-                      style={{
-                        width: '100%',
-                        background: 'transparent',
-                        border: '1px solid transparent',
-                        borderRadius: 5,
-                        color: col.default_value ? C.textSecondary : C.textMuted,
-                        fontSize: 13,
-                        padding: '6px 8px',
-                        outline: 'none',
-                        fontFamily: 'var(--font-geist-mono), monospace',
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.borderColor = C.border)}
-                      onMouseLeave={e => { if (document.activeElement !== e.currentTarget) (e.currentTarget as HTMLInputElement).style.borderColor = 'transparent'; }}
-                      onFocusCapture={e => (e.currentTarget.style.borderColor = C.borderFocus)}
-                      onBlurCapture={e => (e.currentTarget.style.borderColor = 'transparent')}
-                    />
-                  </div>
-
-                  {/* Primary Key — strong left separator matches header */}
-                  <div style={dcell({ align: 'center', leftSep: true })}>
-                    <ConstraintCheck active={isPK} onClick={() => toggleConstraint(i, 'PRIMARY KEY')} color={C.accent} activeText={C.accentText} />
-                  </div>
-
-                  {/* Not Null */}
-                  <div style={dcell({ align: 'center' })}>
-                    <ConstraintCheck active={isNN} onClick={() => !isPK && toggleConstraint(i, 'NOT NULL')} color="#f59e0b" activeText="#fde68a" disabled={isPK} />
-                  </div>
-
-                  {/* Unique */}
-                  <div style={dcell({ align: 'center' })}>
-                    <ConstraintCheck active={isUQ} onClick={() => toggleConstraint(i, 'UNIQUE')} color="#8b5cf6" activeText="#c4b5fd" />
-                  </div>
-
-                  {/* Delete */}
-                  <div style={dcell({ align: 'center', noBorder: true })}>
-                    <button
-                      onClick={() => removeColumn(i)}
-                      disabled={design.columns.length === 1}
-                      className="opacity-0 group-hover:opacity-100"
-                      style={{
-                        padding: 5, borderRadius: 4,
-                        background: 'transparent', border: 'none',
-                        color: C.textMuted,
-                        cursor: design.columns.length === 1 ? 'not-allowed' : 'pointer',
-                        display: 'flex', transition: 'color 0.1s',
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.color = C.error)}
-                      onMouseLeave={e => (e.currentTarget.style.color = C.textMuted)}
+                return (
+                  <React.Fragment key={i}>
+                    {/* Main column row */}
+                    <tr
+                      className={`border-b border-gray-100 transition-colors dark:border-gray-700/60 ${
+                        isPK ? 'bg-blue-50/40 dark:bg-blue-900/10' : 'bg-white hover:bg-gray-50/60 dark:bg-gray-800 dark:hover:bg-gray-700/20'
+                      }`}
                     >
-                      <Trash2 style={{ width: 13, height: 13 }} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                      {/* Expand toggle */}
+                      <td className="border-r border-gray-100 px-2 py-2 text-center dark:border-gray-700/60">
+                        <button onClick={() => toggleRowExpand(i)}
+                          className={`rounded p-0.5 transition-colors ${
+                            isExpanded ? 'text-blue-500' : hasAdvanced ? 'text-amber-500' : 'text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400'
+                          }`}
+                          title="Toggle advanced column options">
+                          {isExpanded
+                            ? <ChevronDown className="h-3.5 w-3.5" />
+                            : <ChevronRight className="h-3.5 w-3.5" />}
+                        </button>
+                      </td>
 
-            {/* ── Ghost add row ── */}
-            <div
-              onClick={addColumn}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '10px 16px',
-                color: canAddColumn ? C.textSecondary : C.textMuted,
-                cursor: canAddColumn ? 'pointer' : 'not-allowed',
-                fontSize: 13,
-                borderBottom: `1px solid ${GB.row}`,
-                transition: 'all 0.1s',
-              }}
-              onMouseEnter={e => { if (canAddColumn) (e.currentTarget as HTMLDivElement).style.background = 'rgba(148,163,184,0.03)'; }}
-              onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'transparent'}
-            >
-              <Plus style={{ width: 13, height: 13 }} />
-              <span>
-                {canAddColumn ? 'Add column…' : 'Enter a column name above before adding another'}
-              </span>
-            </div>
+                      {/* # */}
+                      <td className="border-r border-gray-100 px-3 py-2 text-center dark:border-gray-700/60">
+                        <span className="font-mono text-xs text-gray-300 dark:text-gray-600">{i + 1}</span>
+                      </td>
 
+                      {/* Name */}
+                      <td className="border-r border-gray-100 px-3 py-2 dark:border-gray-700/60">
+                        <input autoFocus={i === focusedRow} type="text" value={col.name}
+                          onChange={e => updateColumn(i, { name: e.target.value })}
+                          onFocus={() => setFocusedRow(i)} onBlur={() => setFocusedRow(null)}
+                          placeholder="column_name" spellCheck={false}
+                          className={`w-full rounded border border-transparent bg-transparent px-2 py-1 font-mono text-sm transition-colors placeholder-gray-300 hover:border-gray-300 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20 dark:placeholder-gray-600 dark:hover:border-gray-600 ${
+                            isPK ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-200'
+                          }`} />
+                      </td>
+
+                      {/* Type + FLOAT_VECTOR dimension */}
+                      <td className="border-r border-gray-100 px-3 py-2 dark:border-gray-700/60">
+                        <TypeSelector
+                          value={isFloatVector ? 'FLOAT_VECTOR' : col.column_type}
+                          onChange={v => updateColumn(i, { column_type: v })}
+                        />
+                        {isFloatVector && (
+                          <div className="mt-1 flex items-center gap-1">
+                            <span className="text-xs text-gray-400">dim:</span>
+                            <input type="number" min={1} max={4096}
+                              value={col.column_type.match(/\((\d+)\)/)?.[1] ?? ''}
+                              placeholder="e.g. 384"
+                              onChange={e => {
+                                const d = e.target.value;
+                                updateColumn(i, { column_type: d ? `FLOAT_VECTOR(${d})` : 'FLOAT_VECTOR' });
+                              }}
+                              className="w-20 rounded border border-violet-200 bg-white px-2 py-0.5 font-mono text-xs text-violet-700 focus:border-violet-500 focus:outline-none dark:border-violet-800/50 dark:bg-gray-800 dark:text-violet-300" />
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Default */}
+                      <td className="border-r border-gray-100 px-3 py-2 dark:border-gray-700/60">
+                        <input type="text" value={col.default_value ?? ''}
+                          onChange={e => updateColumn(i, { default_value: e.target.value })}
+                          placeholder={col.generated_expression ? '(generated)' : 'NULL'}
+                          disabled={!!col.generated_expression}
+                          spellCheck={false}
+                          className="w-full rounded border border-transparent bg-transparent px-2 py-1 font-mono text-sm text-gray-600 placeholder-gray-300 transition-colors hover:border-gray-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:placeholder-gray-600 dark:hover:border-gray-600" />
+                      </td>
+
+                      {/* PK */}
+                      <td className="border-r border-gray-100 px-3 py-2 dark:border-gray-700/60">
+                        <div className="flex justify-center">
+                          <ConstraintCheck active={isPK} onClick={() => toggleConstraint(i, 'PRIMARY KEY')} color="blue" />
+                        </div>
+                      </td>
+
+                      {/* Not Null */}
+                      <td className="border-r border-gray-100 px-3 py-2 dark:border-gray-700/60">
+                        <div className="flex justify-center">
+                          <ConstraintCheck active={isNN} onClick={() => !isPK && toggleConstraint(i, 'NOT NULL')} color="amber" disabled={isPK} />
+                        </div>
+                      </td>
+
+                      {/* Unique */}
+                      <td className="border-r border-gray-100 px-3 py-2 dark:border-gray-700/60">
+                        <div className="flex justify-center">
+                          <ConstraintCheck active={isUQ} onClick={() => toggleConstraint(i, 'UNIQUE')} color="purple" />
+                        </div>
+                      </td>
+
+                      {/* Delete */}
+                      <td className="px-2 py-2 text-center">
+                        {design.columns.length > 1 && (
+                          <button onClick={() => removeColumn(i)}
+                            className="group/del rounded p-1 text-gray-300 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                            style={{ opacity: undefined }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+
+                    {/* Expanded advanced options sub-row */}
+                    {isExpanded && (
+                      <tr key={`exp-${i}`} className="border-b border-gray-100 dark:border-gray-700/60">
+                        <td colSpan={9} className="bg-blue-50/30 px-6 pb-3 pt-2 dark:bg-blue-900/5">
+                          <div className="flex flex-wrap items-start gap-4">
+
+                            {/* Index method */}
+                            <div>
+                              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-400">
+                                Index Method
+                              </label>
+                              <div className="flex gap-1">
+                                {(['DEFAULT', 'PLAIN', 'FULLTEXT', 'OFF'] as const).map(m => (
+                                  <button key={m}
+                                    onClick={() => updateColumn(i, { index_method: m === 'DEFAULT' ? undefined : m })}
+                                    className={`rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                                      (col.index_method ?? 'DEFAULT') === m
+                                        ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-900/20 dark:text-blue-300'
+                                        : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                                    }`}>
+                                    {m}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Analyzer (FULLTEXT only) */}
+                            {col.index_method === 'FULLTEXT' && (
+                              <div>
+                                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-400">
+                                  Analyzer
+                                </label>
+                                <select value={col.index_analyzer ?? 'standard'}
+                                  onChange={e => updateColumn(i, { index_analyzer: e.target.value })}
+                                  className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200">
+                                  {FULLTEXT_ANALYZERS.map(a => <option key={a} value={a}>{a}</option>)}
+                                </select>
+                              </div>
+                            )}
+
+                            {/* Generated ALWAYS AS */}
+                            <div className="min-w-52 flex-1">
+                              <label className="mb-1.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                                <input type="checkbox"
+                                  checked={col.generated_expression !== undefined && col.generated_expression !== ''}
+                                  onChange={e => updateColumn(i, { generated_expression: e.target.checked ? '' : undefined })}
+                                  className="h-3.5 w-3.5 accent-blue-600" />
+                                Generated Always As
+                              </label>
+                              {col.generated_expression !== undefined && (
+                                <input type="text" value={col.generated_expression}
+                                  placeholder="e.g. date_trunc('day', ts)"
+                                  onChange={e => updateColumn(i, { generated_expression: e.target.value })}
+                                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-mono text-sm text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200" />
+                              )}
+                            </div>
+
+                            {/* CHECK */}
+                            <div className="min-w-48 flex-1">
+                              <label className="mb-1.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                                <input type="checkbox"
+                                  checked={col.constraints.includes('CHECK')}
+                                  onChange={() => toggleConstraint(i, 'CHECK')}
+                                  className="h-3.5 w-3.5 accent-blue-600" />
+                                Check Constraint
+                              </label>
+                              {col.constraints.includes('CHECK') && (
+                                <input type="text" value={col.check_expression ?? ''}
+                                  placeholder="e.g. value > 0 AND value <= 100"
+                                  onChange={e => updateColumn(i, { check_expression: e.target.value })}
+                                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-mono text-sm text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200" />
+                              )}
+                            </div>
+
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {/* Ghost add row */}
+          <div onClick={addColumn}
+            className={`flex items-center gap-2 border-t border-gray-100 px-6 py-3 text-sm transition-colors dark:border-gray-700/60 ${
+              canAddColumn
+                ? 'cursor-pointer text-gray-400 hover:bg-blue-50/30 hover:text-blue-600 dark:hover:bg-blue-900/10 dark:hover:text-blue-400'
+                : 'cursor-not-allowed text-gray-300 dark:text-gray-500'
+            }`}>
+            <Plus className="h-3.5 w-3.5" />
+            <span>{canAddColumn ? 'Add column…' : 'Enter a column name above before adding another'}</span>
+          </div>
+
+          {/* UNIQUE disclaimer */}
+          <div className="border-t border-gray-100 px-6 py-2 dark:border-gray-700/60">
+            <p className="text-xs text-gray-400">
+              <span className="font-semibold text-purple-600 dark:text-purple-400">† UNIQUE</span>
+              {' '}is syntactically accepted by MonkDB but is <strong>not enforced</strong> at the database level — uniqueness must be managed in your application.
+            </p>
           </div>
         </div>
       </div>
 
-      {/* ══ RIGHT: SQL Preview ══════════════════════════════════════════════ */}
-      <div style={{ width: 400, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderLeft: `1px solid ${C.border}`, background: C.bgPanel }}>
+      {/* ══ RIGHT: SQL Preview ════════════════════════════════════════════════ */}
+      <div className="flex w-[380px] flex-shrink-0 flex-col overflow-hidden border-l border-gray-200 dark:border-gray-700">
 
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: C.bgHeader, borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.textLabel }}>
-            SQL Preview
-          </span>
+        {/* SQL header */}
+        <div className="flex flex-shrink-0 items-center justify-between bg-slate-100 dark:bg-gray-950 px-4 py-2.5">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-green-400" />
+            <span className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-gray-500">SQL Preview</span>
+          </div>
           <button onClick={handleCopy} disabled={!sql}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: copied ? C.success : C.textSecondary, background: 'transparent', border: 'none', borderRadius: 5, padding: '4px 8px', cursor: sql ? 'pointer' : 'not-allowed', opacity: sql ? 1 : 0.35, transition: 'all 0.1s' }}
-            onMouseEnter={e => { if (sql) e.currentTarget.style.background = 'rgba(148,163,184,0.08)'; }}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-          >
-            {copied ? <><Check style={{ width: 13, height: 13 }} /> Copied</> : <><Copy style={{ width: 13, height: 13 }} /> Copy</>}
+            className="flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium text-slate-500 dark:text-gray-400 transition-colors hover:bg-slate-200 dark:hover:bg-gray-800 hover:text-slate-800 dark:hover:text-gray-200 disabled:opacity-30">
+            {copied ? <><Check className="h-3 w-3" />Copied</> : <><Copy className="h-3 w-3" />Copy</>}
           </button>
         </div>
 
         {/* SQL code */}
-        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '12px 0', background: C.bgPanel }}>
+        <div className="flex-1 min-h-0 overflow-auto bg-slate-100 dark:bg-gray-950">
           {sql ? (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--font-geist-mono), monospace', fontSize: 13, lineHeight: 1.7 }}>
-              <tbody>
-                {sql.split('\n').map((line, i) => (
-                  <tr key={i}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(148,163,184,0.04)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                  >
-                    <td style={{ textAlign: 'right', paddingRight: 14, paddingLeft: 12, userSelect: 'none', color: C.textMuted, minWidth: 32, verticalAlign: 'top', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
-                      {i + 1}
-                    </td>
-                    <td style={{ color: sqlLineColor(line), whiteSpace: 'pre-wrap', wordBreak: 'break-all', paddingRight: 16, verticalAlign: 'top' }}>
-                      {line || '\u00a0'}
-                    </td>
-                  </tr>
+            <div className="flex">
+              <div className="select-none border-r border-slate-300 dark:border-gray-800 bg-slate-200/60 dark:bg-gray-900/60 px-3 py-3 text-right font-mono text-xs leading-6 text-slate-400 dark:text-gray-600">
+                {sqlLines.map((_, i) => <div key={i}>{i + 1}</div>)}
+              </div>
+              <pre className="flex-1 overflow-x-auto px-4 py-3 font-mono text-sm leading-6">
+                {sqlLines.map((line, i) => (
+                  <div key={i} className={getSqlLineClass(line)}>{line || '\u00a0'}</div>
                 ))}
-              </tbody>
-            </table>
+              </pre>
+            </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 10 }}>
-              <Database style={{ width: 28, height: 28, color: C.textMuted }} />
-              <p style={{ fontSize: 13, color: C.textSecondary, textAlign: 'center', lineHeight: 1.6 }}>
+            <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+              <Database className="h-8 w-8 text-slate-400 dark:text-gray-700" />
+              <p className="text-sm leading-relaxed text-slate-500 dark:text-gray-500">
                 Enter a table name and<br />add columns to generate SQL
               </p>
             </div>
@@ -767,192 +814,62 @@ export default function TableDesignerWizard({ onClose, onSuccess }: TableDesigne
         </div>
 
         {/* Validation */}
-        <div style={{ flexShrink: 0, padding: '10px 16px', borderTop: `1px solid ${C.borderSub}`, minHeight: 42, display: 'flex', alignItems: 'flex-start' }}>
+        <div className="flex-shrink-0 border-t border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
           {validation.errors.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div className="space-y-1.5">
               {validation.errors.slice(0, 3).map((e, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                  <XCircle style={{ width: 13, height: 13, color: C.error, flexShrink: 0, marginTop: 1 }} />
-                  <span style={{ fontSize: 12, color: C.errorText, lineHeight: 1.4 }}>{e}</span>
+                <div key={i} className="flex items-start gap-2">
+                  <XCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-red-500" />
+                  <span className="text-xs leading-tight text-red-600 dark:text-red-400">{e}</span>
                 </div>
               ))}
-              {validation.errors.length > 3 && <span style={{ fontSize: 12, color: 'rgba(252,165,165,0.5)', marginLeft: 19 }}>+{validation.errors.length - 3} more</span>}
+              {validation.errors.length > 3 && <span className="ml-5 text-xs text-red-400/60">+{validation.errors.length - 3} more</span>}
             </div>
           ) : validation.warnings.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div className="space-y-1.5">
               {validation.warnings.slice(0, 2).map((w, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                  <AlertTriangle style={{ width: 13, height: 13, color: C.warning, flexShrink: 0, marginTop: 1 }} />
-                  <span style={{ fontSize: 12, color: '#fde68a', lineHeight: 1.4 }}>{w}</span>
+                <div key={i} className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-500" />
+                  <span className="text-xs leading-tight text-amber-600 dark:text-amber-400">{w}</span>
                 </div>
               ))}
+              {validation.warnings.length > 2 && <span className="ml-5 text-xs text-amber-400/60">+{validation.warnings.length - 2} more</span>}
             </div>
           ) : sql ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <CheckCircle2 style={{ width: 13, height: 13, color: C.success }} />
-              <span style={{ fontSize: 12, fontWeight: 500, color: C.success }}>Ready to create</span>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+              <span className="text-xs font-medium text-green-600 dark:text-green-400">Ready to create</span>
             </div>
           ) : (
-            <span style={{ fontSize: 12, color: C.textMuted }}>—</span>
+            <span className="text-xs text-gray-400">Fill in table name and columns</span>
           )}
         </div>
 
-        {/* Stats */}
+        {/* Stats bar */}
         {sql && (
-          <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'space-between', padding: '6px 16px', borderTop: `1px solid ${C.borderSub}`, fontSize: 11, color: C.textSecondary }}>
-            <span>{filledCols} col{filledCols !== 1 ? 's' : ''} · {pkCount} PK</span>
-            <span>{design.sharding_config?.shard_count ?? 6} shards · {design.replication_config?.number_of_replicas ?? 1} replicas</span>
+          <div className="flex flex-shrink-0 items-center justify-between border-t border-gray-100 bg-gray-50 px-4 py-2 dark:border-gray-700/60 dark:bg-gray-800/50">
+            <span className="text-xs text-gray-400">
+              {filledCols} col{filledCols !== 1 ? 's' : ''} · {pkCount} PK
+            </span>
+            <span className="text-xs text-gray-400">
+              {design.sharding_config?.shard_count ?? 6} shards · {design.replication_config?.number_of_replicas ?? 1} replicas
+            </span>
           </div>
         )}
 
-        {/* Create Table */}
-        <div style={{ flexShrink: 0, padding: '12px 16px', borderTop: `1px solid ${C.border}` }}>
+        {/* Create Table button */}
+        <div className="flex-shrink-0 border-t border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
           <button onClick={handleCreate} disabled={!canCreate}
-            style={{
-              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              padding: '10px 0', borderRadius: 8, border: 'none',
-              fontSize: 14, fontWeight: 600,
-              cursor: canCreate ? 'pointer' : 'not-allowed',
-              background: canCreate ? C.accent : 'rgba(148,163,184,0.08)',
-              color: canCreate ? '#fff' : C.textMuted,
-              boxShadow: canCreate ? '0 0 18px rgba(59,130,246,0.3)' : 'none',
-              transition: 'all 0.15s ease',
-            }}
-            onMouseEnter={e => { if (canCreate) { e.currentTarget.style.background = C.accentHover; e.currentTarget.style.boxShadow = '0 0 24px rgba(96,165,250,0.4)'; } }}
-            onMouseLeave={e => { if (canCreate) { e.currentTarget.style.background = C.accent; e.currentTarget.style.boxShadow = '0 0 18px rgba(59,130,246,0.3)'; } }}
-          >
-            {creating ? <><Loader2 className="animate-spin" style={{ width: 15, height: 15 }} /> Creating…</> : 'Create Table'}
+            className={`flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all ${
+              canCreate
+                ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/25 hover:bg-blue-700'
+                : 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-700/50 dark:text-gray-600'
+            }`}>
+            {creating ? <><Loader2 className="h-4 w-4 animate-spin" />Creating…</> : 'Create Table'}
           </button>
         </div>
+
       </div>
-
     </div>
-  );
-}
-
-// ─── Column grid layout constants ─────────────────────────────────────────────
-// # | Name | Data Type | Default | PK | Not Null | Unique | del
-const COL_GRID = '44px 1fr 180px 96px 88px 80px 70px 44px';
-
-// Subtle border values for the column grid — softer than panel borders
-const GB = {
-  col:     'rgba(148,163,184,0.15)',  // column divider (header)
-  colRow:  'rgba(148,163,184,0.12)',  // column divider (data rows)
-  row:     'rgba(148,163,184,0.10)',  // row separator
-  sep:     'rgba(148,163,184,0.20)',  // strong constraint-group separator
-  head:    'rgba(148,163,184,0.18)',  // header bottom line
-};
-
-function thCell(opts: {
-  align?: 'left' | 'center';
-  color?: string;
-  noBorder?: boolean;
-  leftSep?: boolean;
-}): React.CSSProperties {
-  return {
-    padding: '0 12px',
-    height: 36,
-    fontSize: 11, fontWeight: 600,
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.06em',
-    color: opts.color ?? C.textLabel,
-    whiteSpace: 'nowrap' as const,
-    userSelect: 'none' as const,
-    display: 'flex', alignItems: 'center',
-    justifyContent: opts.align === 'center' ? 'center' : 'flex-start',
-    borderRight: opts.noBorder ? 'none' : `1px solid ${GB.col}`,
-    ...(opts.leftSep ? { borderLeft: `1px solid ${GB.sep}` } : {}),
-  };
-}
-
-function dcell(opts: {
-  align?: 'left' | 'center';
-  noBorder?: boolean;
-  leftSep?: boolean;
-  px?: number;
-}): React.CSSProperties {
-  const px = opts.px ?? (opts.align === 'center' ? 0 : 10);
-  return {
-    padding: `0 ${px}px`,
-    display: 'flex', alignItems: 'center',
-    justifyContent: opts.align === 'center' ? 'center' : 'flex-start',
-    borderRight: opts.noBorder ? 'none' : `1px solid ${GB.colRow}`,
-    ...(opts.leftSep ? { borderLeft: `1px solid ${GB.sep}` } : {}),
-    minWidth: 0, overflow: 'hidden',
-  };
-}
-
-// ─── Sub-components ────────────────────────────────────────────────────────────
-
-function SidebarSection({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ padding: '14px 16px', borderBottom: `1px solid ${C.borderSub}` }}>
-      <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.textLabel, marginBottom: 10 }}>
-        {label}
-      </p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{children}</div>
-    </div>
-  );
-}
-
-function SidebarField({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontSize: 11, fontWeight: 600, color: C.textLabel }}>{label}</span>
-      {children}
-    </div>
-  );
-}
-
-function StatRow({ label, value, valueColor }: { label: string; value: string | number; valueColor: string }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-      <span style={{ fontSize: 12, color: C.textSecondary }}>{label}</span>
-      <span style={{ fontSize: 12, fontWeight: 600, color: valueColor, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
-    </div>
-  );
-}
-
-function ConstraintCheck({ active, onClick, color, activeText, disabled = false }:
-  { active: boolean; onClick: () => void; color: string; activeText: string; disabled?: boolean }) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        width: 22, height: 22, borderRadius: 5, flexShrink: 0,
-        border: `1.5px solid ${active ? color : 'rgba(148,163,184,0.28)'}`,
-        background: active ? `${color}20` : 'transparent',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.32 : 1,
-        transition: 'all 0.12s ease',
-      }}
-      onMouseEnter={e => { if (!disabled && !active) e.currentTarget.style.borderColor = color; }}
-      onMouseLeave={e => { if (!disabled && !active) e.currentTarget.style.borderColor = 'rgba(148,163,184,0.28)'; }}
-    >
-      {active && <Check style={{ width: 13, height: 13, color: activeText, strokeWidth: 2.5 }} />}
-    </button>
-  );
-}
-
-function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button onClick={() => onChange(!checked)}
-      style={{
-        position: 'relative', width: 32, height: 18, borderRadius: 9,
-        background: checked ? C.accent : 'rgba(148,163,184,0.15)',
-        border: `1px solid ${checked ? C.accentBorder : C.border}`,
-        cursor: 'pointer', flexShrink: 0, transition: 'all 0.2s',
-      }}
-    >
-      <span style={{
-        position: 'absolute', top: 2, left: 2, width: 12, height: 12, borderRadius: '50%',
-        background: checked ? '#fff' : C.textSecondary,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
-        transform: checked ? 'translateX(14px)' : 'translateX(0)',
-        transition: 'transform 0.2s, background 0.2s', display: 'block',
-      }} />
-    </button>
   );
 }

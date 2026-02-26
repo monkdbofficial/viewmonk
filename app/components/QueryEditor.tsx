@@ -76,7 +76,7 @@ export default function QueryEditor() {
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [isExecuting, setIsExecuting] = useState(false);
   const [queryHistory, setQueryHistory] = useState<QueryHistoryItem[]>([]);
-  const [sidebarTab, setSidebarTab] = useState<SidebarTab>('templates');
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>('history');
   const [schemaTables, setSchemaTables] = useState<SchemaTable[]>([]);
   const [loadingSchema, setLoadingSchema] = useState(false);
   const [schemaMetadata, setSchemaMetadata] = useState<SchemaMetadata | undefined>(undefined);
@@ -2084,20 +2084,24 @@ WITH (max_num_segments = 1);`,
       </div>
 
       {/* Query Tabs */}
-      <div className="flex items-center gap-2 border-b border-gray-200 dark:border-gray-700 px-4 py-2">
-        <div className="flex-1 flex items-center gap-1 overflow-x-auto">
+      <div className="flex items-center border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900/60 pl-3 pr-2">
+        <div className="flex flex-1 items-end gap-0.5 overflow-x-auto py-1.5">
           {tabs.map((tab) => (
             <div
               key={tab.id}
-              className={`group flex items-center gap-2 px-3 py-1.5 rounded-t-lg border-b-2 transition-all ${
+              className={`group relative flex min-w-0 max-w-[180px] flex-shrink-0 items-center gap-1.5 rounded-t-md border-t border-l border-r px-3 py-1.5 transition-all ${
                 renamingTabId !== tab.id ? 'cursor-pointer' : ''
               } ${
                 tab.id === activeTab?.id
-                  ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-600 dark:border-blue-400 text-blue-900 dark:text-blue-100'
-                  : 'bg-gray-100 dark:bg-gray-800 border-transparent text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                  ? 'border-gray-200 bg-white text-gray-900 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white'
+                  : 'border-transparent bg-transparent text-gray-500 hover:bg-white/60 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800/60 dark:hover:text-gray-200'
               }`}
               onClick={() => renamingTabId !== tab.id && switchTab(tab.id)}
             >
+              {tab.id === activeTab?.id && (
+                <div className="absolute inset-x-0 top-0 h-0.5 rounded-t-md bg-blue-500" />
+              )}
+              <FileText className="h-3 w-3 flex-shrink-0 text-gray-400" />
               {renamingTabId === tab.id ? (
                 <input
                   type="text"
@@ -2106,28 +2110,22 @@ WITH (max_num_segments = 1);`,
                   onKeyDown={handleRenameKeyDown}
                   onBlur={saveRename}
                   autoFocus
-                  className="text-sm font-medium bg-white dark:bg-gray-700 border border-blue-500 dark:border-blue-400 rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-blue-400 min-w-[80px] max-w-[200px]"
+                  className="min-w-[80px] max-w-[140px] rounded border border-blue-500 bg-white px-1 py-0 text-sm font-medium outline-none focus:ring-1 focus:ring-blue-500 dark:bg-gray-700 dark:border-blue-400 dark:focus:ring-blue-400"
                   onClick={(e) => e.stopPropagation()}
                 />
               ) : (
                 <span
-                  className="text-sm font-medium whitespace-nowrap"
-                  onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    startRename(tab.id, tab.name);
-                  }}
-                  title="Double-click to rename"
+                  className="min-w-0 flex-1 truncate text-sm font-medium"
+                  onDoubleClick={(e) => { e.stopPropagation(); startRename(tab.id, tab.name); }}
+                  title={`${tab.name} — double-click to rename`}
                 >
                   {tab.name}
-                  {tab.isDirty && <span className="ml-1 text-orange-500">•</span>}
+                  {tab.isDirty && <span className="ml-1 text-orange-400">●</span>}
                 </span>
               )}
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeTab(tab.id);
-                }}
-                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-opacity"
+                onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
+                className="flex-shrink-0 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-gray-200 dark:hover:bg-gray-600"
                 title="Close tab"
               >
                 <XIcon className="h-3 w-3" />
@@ -2137,7 +2135,7 @@ WITH (max_num_segments = 1);`,
         </div>
         <button
           onClick={() => createTab()}
-          className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+          className="ml-1 flex flex-shrink-0 items-center gap-1 rounded-md px-2 py-1.5 text-gray-500 transition-colors hover:bg-white hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           title="New tab (Cmd+T)"
         >
           <PlusIcon className="h-4 w-4" />
@@ -2149,10 +2147,10 @@ WITH (max_num_segments = 1);`,
         {/* Sidebar */}
         <div className="w-80 flex flex-col space-y-2 overflow-hidden">
           {/* Sidebar Tabs */}
-          <div className="grid grid-cols-4 gap-1 rounded-lg bg-gray-100 p-1 dark:bg-gray-800">
-            <button
+          <div className="grid grid-cols-3 gap-1 rounded-lg bg-gray-100 p-1 dark:bg-gray-800">
+            {/* <button
               onClick={() => setSidebarTab('templates')}
-              className={`flex items-center justify-center gap-1 rounded px-2 py-2 text-xs font-medium transition-colors ${
+              className={`flex items-center justify-center gap-1 rounded px-2 py-2 text-sm font-medium transition-colors ${
                 sidebarTab === 'templates'
                   ? 'bg-white text-gray-900 shadow dark:bg-gray-700 dark:text-white'
                   : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
@@ -2161,10 +2159,10 @@ WITH (max_num_segments = 1);`,
             >
               <BookOpen className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Templates</span>
-            </button>
+            </button> */}
             <button
               onClick={() => setSidebarTab('history')}
-              className={`flex items-center justify-center gap-1 rounded px-2 py-2 text-xs font-medium transition-colors ${
+              className={`flex items-center justify-center gap-1 rounded px-2 py-2 text-sm font-medium transition-colors ${
                 sidebarTab === 'history'
                   ? 'bg-white text-gray-900 shadow dark:bg-gray-700 dark:text-white'
                   : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
@@ -2176,7 +2174,7 @@ WITH (max_num_segments = 1);`,
             </button>
             <button
               onClick={() => setSidebarTab('schema')}
-              className={`flex items-center justify-center gap-1 rounded px-2 py-2 text-xs font-medium transition-colors ${
+              className={`flex items-center justify-center gap-1 rounded px-2 py-2 text-sm font-medium transition-colors ${
                 sidebarTab === 'schema'
                   ? 'bg-white text-gray-900 shadow dark:bg-gray-700 dark:text-white'
                   : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
@@ -2188,7 +2186,7 @@ WITH (max_num_segments = 1);`,
             </button>
             <button
               onClick={() => setShowDocsModal(true)}
-              className="flex items-center justify-center gap-1 rounded px-2 py-2 text-xs font-medium transition-colors text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-white dark:hover:bg-gray-700"
+              className="flex items-center justify-center gap-1 rounded px-2 py-2 text-sm font-medium transition-colors text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-white dark:hover:bg-gray-700"
               title="SQL Documentation"
             >
               <Book className="h-3.5 w-3.5" />
@@ -2198,24 +2196,24 @@ WITH (max_num_segments = 1);`,
 
           {/* Sidebar Content */}
           <div className="flex-1 overflow-y-auto rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
-            {sidebarTab === 'templates' && (
+            {/* {sidebarTab === 'templates' && (
               <div className="space-y-4">
                 {queryTemplates.map((category, catIdx) => (
                   <div key={catIdx}>
-                    <h4 className="mb-2 text-xs font-bold uppercase text-gray-500 dark:text-gray-400">
+                    <h4 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
                       {category.category}
                     </h4>
-                    <div className="space-y-1">
+                    <div className="space-y-0.5">
                       {category.queries.map((template, idx) => (
                         <button
                           key={idx}
                           onClick={() => setQuery(template.sql)}
-                          className="w-full rounded bg-gray-50 px-3 py-2 text-left text-xs hover:bg-gray-100 dark:bg-gray-700/50 dark:hover:bg-gray-700"
-                          title={template.sql}
+                          className="group w-full rounded-lg border border-transparent px-3 py-2 text-left transition-all hover:border-blue-200 hover:bg-blue-50 dark:hover:border-blue-800 dark:hover:bg-blue-900/10"
+                          title={template.sql.slice(0, 200)}
                         >
                           <div className="flex items-center gap-2">
-                            <Zap className="h-3 w-3 text-blue-600 dark:text-blue-400" />
-                            <span className="font-medium text-gray-900 dark:text-gray-100">
+                            <Zap className="h-3 w-3 flex-shrink-0 text-blue-400 group-hover:text-blue-600 dark:text-blue-500 dark:group-hover:text-blue-400" />
+                            <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 dark:text-gray-300 dark:group-hover:text-blue-300">
                               {template.name}
                             </span>
                           </div>
@@ -2225,7 +2223,7 @@ WITH (max_num_segments = 1);`,
                   </div>
                 ))}
               </div>
-            )}
+            )} */}
 
             {sidebarTab === 'history' && (
               <div className="space-y-2">
@@ -2248,39 +2246,56 @@ WITH (max_num_segments = 1);`,
                     No query history yet. Execute queries to build history.
                   </p>
                 ) : (
-                  <div className="space-y-2">
-                    {queryHistory.map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => setQuery(item.query)}
-                        className={`w-full rounded border p-2 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-700/50 ${
-                          item.success
-                            ? 'border-green-200 bg-green-50/50 dark:border-green-900 dark:bg-green-900/10'
-                            : 'border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/10'
-                        }`}
-                      >
-                        <div className="mb-1 flex items-center justify-between">
-                          <span className={`font-medium ${
+                  <div className="space-y-1.5">
+                    {queryHistory.map((item) => {
+                      const qType = item.query.trim().split(/\s+/)[0].toUpperCase();
+                      const typeColors: Record<string, string> = {
+                        SELECT: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+                        INSERT: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+                        UPDATE: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+                        DELETE: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+                        CREATE: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+                        DROP: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+                        ALTER: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+                        EXPLAIN: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+                      };
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => setQuery(item.query)}
+                          className={`group w-full rounded-lg border p-2.5 text-left transition-colors hover:border-blue-200 hover:bg-blue-50/50 dark:hover:border-blue-800 dark:hover:bg-blue-900/10 ${
                             item.success
-                              ? 'text-green-700 dark:text-green-400'
-                              : 'text-red-700 dark:text-red-400'
-                          }`}>
-                            {item.success ? '✓' : '✗'} {item.duration.toFixed(0)}ms
-                          </span>
-                          <span className="text-gray-500 dark:text-gray-400">
-                            {new Date(item.timestamp).toLocaleTimeString()}
-                          </span>
-                        </div>
-                        <code className="block truncate text-gray-700 dark:text-gray-300">
-                          {item.query}
-                        </code>
-                        {!item.success && item.error && (
-                          <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-                            {item.error}
-                          </p>
-                        )}
-                      </button>
-                    ))}
+                              ? 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800/50'
+                              : 'border-red-200 bg-red-50/50 dark:border-red-900/60 dark:bg-red-900/10'
+                          }`}
+                        >
+                          <div className="mb-1.5 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className={`flex-shrink-0 rounded px-1.5 py-0.5 font-mono text-xs font-bold ${typeColors[qType] ?? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'}`}>
+                                {qType}
+                              </span>
+                              <span className={`text-sm font-semibold ${item.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                {item.success ? '✓' : '✗'} {item.duration.toFixed(0)}ms
+                              </span>
+                              {item.success && item.rowcount > 0 && (
+                                <span className="text-sm text-gray-400">{item.rowcount} rows</span>
+                              )}
+                            </div>
+                            <span className="flex-shrink-0 text-xs text-gray-400">
+                              {new Date(item.timestamp).toLocaleTimeString()}
+                            </span>
+                          </div>
+                          <code className="block truncate text-sm text-gray-600 dark:text-gray-400">
+                            {item.query.replace(/\s+/g, ' ').slice(0, 120)}
+                          </code>
+                          {!item.success && item.error && (
+                            <p className="mt-1 truncate text-sm text-red-500 dark:text-red-400">
+                              {item.error}
+                            </p>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -2301,68 +2316,90 @@ WITH (max_num_segments = 1);`,
         {/* Main Editor Area */}
         <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-hidden">
           {/* Query Input */}
-          <div className="h-64 min-h-64">
+          <div className="h-72 min-h-72 flex-shrink-0 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
             <DroppableMonacoEditor
               value={query}
               onChange={setQuery}
               onExecute={() => handleExecute(false)}
-              height="256px"
+              height="288px"
               schema={schemaMetadata}
             />
           </div>
 
           {/* Results Panel */}
           <div className="flex-1 min-h-0 flex flex-col rounded-lg border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800 overflow-hidden">
-            <div className="flex items-center justify-between border-b border-gray-300 px-4 py-2 dark:border-gray-600">
-              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                Results {results.rowcount > 0 && `(${results.rowcount.toLocaleString()} rows)`}
-              </h3>
-              <div className="flex gap-2">
+            <div className="flex flex-shrink-0 items-center justify-between border-b border-gray-200 px-4 py-2 dark:border-gray-700">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-semibold uppercase tracking-widest text-gray-400">Results</span>
+                {results.rowcount > 0 && !error && (
+                  <>
+                    <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-sm font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                      {results.rowcount.toLocaleString()} {results.rowcount === 1 ? 'row' : 'rows'}
+                    </span>
+                    {results.cols.length > 0 && (
+                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-sm font-medium text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                        {results.cols.length} cols
+                      </span>
+                    )}
+                    {executionStats.executionTime > 0 && (
+                      <span className="text-sm text-gray-400">
+                        {executionStats.executionTime < 1000
+                          ? `${executionStats.executionTime.toFixed(0)}ms`
+                          : `${(executionStats.executionTime / 1000).toFixed(2)}s`}
+                      </span>
+                    )}
+                  </>
+                )}
+                {error && <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-sm font-semibold text-red-600 dark:bg-red-900/30 dark:text-red-400">Error</span>}
+              </div>
+              <div className="flex items-center gap-1.5">
                 <button
                   onClick={copyToClipboard}
                   disabled={results.rowcount === 0}
-                  className="rounded px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-700"
+                  className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-sm font-medium text-gray-500 transition-colors hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
                   title="Copy to clipboard"
                 >
-                  <Copy className="h-3.5 w-3.5" />
+                  <Copy className="h-3.5 w-3.5" />Copy
                 </button>
                 <button
                   onClick={exportToCSV}
                   disabled={results.rowcount === 0}
-                  className="rounded px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-700"
-                  title="Export to CSV"
+                  className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-sm font-medium text-gray-500 transition-colors hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                  title="Download CSV"
                 >
-                  CSV
+                  <Download className="h-3.5 w-3.5" />CSV
                 </button>
                 <button
                   onClick={exportToJSON}
                   disabled={results.rowcount === 0}
-                  className="rounded px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-700"
-                  title="Export to JSON"
+                  className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-sm font-medium text-gray-500 transition-colors hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                  title="Download JSON"
                 >
-                  JSON
+                  <Download className="h-3.5 w-3.5" />JSON
                 </button>
-                <div className="h-4 w-px bg-gray-300 dark:bg-gray-600" />
-                <button
-                  onClick={() => setViewMode('table')}
-                  className={`rounded px-3 py-1 text-xs font-medium ${
-                    viewMode === 'table'
-                      ? 'bg-blue-600 text-white dark:bg-blue-500'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300'
-                  }`}
-                >
-                  Table
-                </button>
-                <button
-                  onClick={() => setViewMode('json')}
-                  className={`rounded px-3 py-1 text-xs font-medium ${
-                    viewMode === 'json'
-                      ? 'bg-blue-600 text-white dark:bg-blue-500'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300'
-                  }`}
-                >
-                  JSON
-                </button>
+                <div className="mx-1 h-4 w-px bg-gray-200 dark:bg-gray-700" />
+                <div className="flex items-center rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-gray-700 dark:bg-gray-900">
+                  <button
+                    onClick={() => setViewMode('table')}
+                    className={`rounded px-2.5 py-1 text-sm font-medium transition-colors ${
+                      viewMode === 'table'
+                        ? 'bg-white text-blue-600 shadow-sm dark:bg-gray-700 dark:text-blue-400'
+                        : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                    }`}
+                  >
+                    Table
+                  </button>
+                  <button
+                    onClick={() => setViewMode('json')}
+                    className={`rounded px-2.5 py-1 text-sm font-medium transition-colors ${
+                      viewMode === 'json'
+                        ? 'bg-white text-blue-600 shadow-sm dark:bg-gray-700 dark:text-blue-400'
+                        : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                    }`}
+                  >
+                    JSON
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -2423,63 +2460,64 @@ WITH (max_num_segments = 1);`,
                 <div className="flex flex-1 min-h-0 flex-col">
                   {/* Scrollable Table */}
                   <div className="flex-1 overflow-auto">
-                    <table className="w-full">
-                      <thead className="sticky top-0 bg-gray-50 dark:bg-gray-900 shadow-sm z-10">
+                    <table className="min-w-full border-collapse">
+                      <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-gray-900">
                         <tr>
-                          <th className="border-b-2 border-gray-300 px-4 py-3 text-left text-xs font-bold uppercase text-gray-500 dark:border-gray-600 dark:text-gray-400">
+                          <th className="whitespace-nowrap border-b border-gray-200 px-3 py-2.5 text-left text-sm font-semibold uppercase tracking-wider text-gray-400 dark:border-gray-700 dark:text-gray-500">
                             #
                           </th>
                           {results.cols.map((col: string, idx: number) => (
                             <th
                               key={idx}
                               onClick={() => handleSort(idx)}
-                              className="cursor-pointer border-b-2 border-gray-300 px-4 py-3 text-left text-xs font-bold uppercase text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+                              className="cursor-pointer select-none whitespace-nowrap border-b border-gray-200 px-3 py-2.5 text-left text-sm font-semibold uppercase tracking-wider text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                             >
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1.5">
                                 <span>{col}</span>
-                                {sortConfig?.col === col && (
+                                {sortConfig?.col === col ? (
                                   sortConfig.dir === 'asc' ? (
-                                    <ChevronUp className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                                    <ChevronUp className="h-3.5 w-3.5 text-blue-500" />
                                   ) : (
-                                    <ChevronDown className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                                    <ChevronDown className="h-3.5 w-3.5 text-blue-500" />
                                   )
+                                ) : (
+                                  <ChevronDown className="h-3 w-3 opacity-20" />
                                 )}
                               </div>
                             </th>
                           ))}
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-700/60">
                         {paginatedRows.map((row: any[], rowIdx: number) => {
                           const absoluteRowIdx = (currentPage - 1) * ROWS_PER_PAGE + rowIdx;
                           return (
                             <tr
                               key={absoluteRowIdx}
-                              className="border-b border-gray-100 transition-colors hover:bg-blue-50 dark:border-gray-700 dark:hover:bg-gray-700/50"
+                              className="bg-white transition-colors hover:bg-blue-50/40 dark:bg-gray-800 dark:hover:bg-gray-700/30"
                             >
-                              <td className="px-4 py-2.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+                              <td className="whitespace-nowrap px-3 py-1.5 font-mono text-sm text-gray-300 dark:text-gray-600">
                                 {absoluteRowIdx + 1}
                               </td>
                               {row.map((cell: any, cellIdx: number) => (
                                 <td
                                   key={cellIdx}
-                                  className="px-4 py-2.5 text-xs text-gray-900 dark:text-gray-100"
+                                  className="whitespace-nowrap px-3 py-1.5 font-mono text-sm"
+                                  title={cell === null ? 'NULL' : typeof cell === 'object' ? JSON.stringify(cell) : String(cell)}
                                 >
                                   {cell === null ? (
-                                    <span className="italic text-gray-400 dark:text-gray-500">NULL</span>
+                                    <span className="italic text-gray-300 dark:text-gray-600">NULL</span>
                                   ) : typeof cell === 'object' ? (
-                                    <code className="rounded bg-purple-100 px-2 py-0.5 text-xs font-mono text-purple-900 dark:bg-purple-900/30 dark:text-purple-200">
-                                      {JSON.stringify(cell)}
-                                    </code>
+                                    <span className="text-amber-700 dark:text-amber-400">{JSON.stringify(cell)}</span>
                                   ) : typeof cell === 'boolean' ? (
-                                    <span className={`inline-flex items-center gap-1 ${cell ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                      {cell ? <CheckCircle2 className="h-3 w-3" /> : <XIcon className="h-3 w-3" />}
+                                    <span className={`inline-flex items-center gap-1 font-medium ${cell ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                      {cell ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XIcon className="h-3.5 w-3.5" />}
                                       {cell ? 'true' : 'false'}
                                     </span>
                                   ) : typeof cell === 'number' ? (
-                                    <span className="font-mono text-blue-600 dark:text-blue-400">{String(cell)}</span>
+                                    <span className="text-blue-600 dark:text-blue-400">{String(cell)}</span>
                                   ) : (
-                                    String(cell)
+                                    <span className="text-gray-800 dark:text-gray-200">{String(cell)}</span>
                                   )}
                                 </td>
                               ))}
@@ -2492,48 +2530,28 @@ WITH (max_num_segments = 1);`,
 
                   {/* Fixed Pagination */}
                   {sortedRows.length > ROWS_PER_PAGE && (
-                    <div className="flex items-center justify-between border-t border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
-                      <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                        <span>
-                          Showing {(currentPage - 1) * ROWS_PER_PAGE + 1} to{' '}
-                          {Math.min(currentPage * ROWS_PER_PAGE, sortedRows.length)} of{' '}
-                          {sortedRows.length.toLocaleString()} rows
-                        </span>
-                      </div>
+                    <div className="flex flex-shrink-0 items-center justify-between border-t border-gray-100 bg-gray-50/80 px-4 py-2 dark:border-gray-700 dark:bg-gray-900/50">
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        Rows {((currentPage - 1) * ROWS_PER_PAGE + 1).toLocaleString()}–{Math.min(currentPage * ROWS_PER_PAGE, sortedRows.length).toLocaleString()} of {sortedRows.length.toLocaleString()}
+                      </span>
                       <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => setCurrentPage(1)}
-                          disabled={currentPage === 1}
-                          className="flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                          title="First page"
-                        >
+                        <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1}
+                          className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
                           First
                         </button>
-                        <button
-                          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                          disabled={currentPage === 1}
-                          className="flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                        >
-                          <ChevronLeft className="h-4 w-4" />
-                          Previous
+                        <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
+                          className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
+                          <ChevronLeft className="h-3.5 w-3.5" />
                         </button>
-                        <span className="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Page {currentPage} of {totalPages}
+                        <span className="rounded-md border border-blue-200 bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
+                          {currentPage} / {totalPages}
                         </span>
-                        <button
-                          onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                          disabled={currentPage === totalPages}
-                          className="flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                        >
-                          Next
-                          <ChevronRight className="h-4 w-4" />
+                        <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}
+                          className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
+                          <ChevronRight className="h-3.5 w-3.5" />
                         </button>
-                        <button
-                          onClick={() => setCurrentPage(totalPages)}
-                          disabled={currentPage === totalPages}
-                          className="flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                          title="Last page"
-                        >
+                        <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}
+                          className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
                           Last
                         </button>
                       </div>
@@ -2542,7 +2560,7 @@ WITH (max_num_segments = 1);`,
                 </div>
               ) : (
                 <div className="flex-1 min-h-0 overflow-auto">
-                  <pre className="p-4 text-xs text-gray-900 dark:text-gray-100 font-mono">
+                  <pre className="p-4 text-sm text-gray-900 dark:text-gray-100 font-mono">
                     {JSON.stringify(
                       results.rows.map((row: any[]) => {
                         const obj: any = {};
@@ -2839,20 +2857,25 @@ WITH (max_num_segments = 1);`,
                 );
               })()
             ) : (
-              <div className="flex flex-1 items-center justify-center">
-                <div className="text-center max-w-md">
-                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-900/20">
-                    <Database className="h-8 w-8 text-blue-500 dark:text-blue-400" />
-                  </div>
-                  <h3 className="mt-4 text-base font-medium text-gray-900 dark:text-white">
-                    Ready to Execute
-                  </h3>
-                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-                    Write your SQL query above and press <kbd className="rounded bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-800 dark:bg-gray-700 dark:text-gray-200">Cmd+Enter</kbd> or click the Run button
+              <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
+                  <Play className="h-7 w-7 text-gray-300 dark:text-gray-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Run a query to see results</p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    Press{' '}
+                    <kbd className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 font-mono text-xs dark:border-gray-700 dark:bg-gray-800">⌘</kbd>
+                    {' '}/{' '}
+                    <kbd className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 font-mono text-xs dark:border-gray-700 dark:bg-gray-800">Ctrl</kbd>
+                    {' '}+{' '}
+                    <kbd className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 font-mono text-xs dark:border-gray-700 dark:bg-gray-800">Enter</kbd>
+                    {' '}to execute
                   </p>
-                  <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-                    Results will appear here with row count and execution time
-                  </p>
+                </div>
+                <div className="flex items-center gap-6 text-xs text-gray-400">
+                  <span className="flex items-center gap-1.5"><BookOpen className="h-3.5 w-3.5" />Use Templates for quick queries</span>
+                  <span className="flex items-center gap-1.5"><History className="h-3.5 w-3.5" />History auto-saves executions</span>
                 </div>
               </div>
             )}

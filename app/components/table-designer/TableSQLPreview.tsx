@@ -237,8 +237,8 @@ export default function TableSQLPreview({
           Generated SQL
         </h4>
         <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
-          <div className="bg-gray-900 p-4">
-            <pre className="overflow-x-auto text-sm text-gray-100">
+          <div className="bg-slate-100 dark:bg-gray-900 p-4">
+            <pre className="overflow-x-auto text-sm text-slate-800 dark:text-gray-100">
               <code className="language-sql">{sql}</code>
             </pre>
           </div>
@@ -273,7 +273,7 @@ export default function TableSQLPreview({
             <dt className="font-medium text-gray-900 dark:text-white">Partitioning</dt>
             <dd className="mt-1 text-gray-600 dark:text-gray-400">
               {design.partition_config?.enabled
-                ? `${design.partition_config.partition_type} by ${design.partition_config.partition_column}`
+                ? `by "${design.partition_config.partition_column}"`
                 : 'Disabled'}
             </dd>
           </div>
