@@ -204,40 +204,38 @@ export const ALL_THEMES = Object.values(THEMES);
 
 // ECharts global option builder — applies theme colors to any chart
 export function buildEChartsTheme(theme: ThemeTokens) {
+  const L = theme.id === 'light-clean'; // isLight shorthand
+
   return {
     color: theme.chartColors,
     backgroundColor: 'transparent',
     textStyle: {
-      color: theme.id === 'light-clean' ? '#374151' : '#ffffff99',
+      color:      L ? '#374151' : '#ffffff99',
       fontFamily: 'Inter, system-ui, sans-serif',
-      fontSize: 11,
+      fontSize:   11,
     },
     grid: {
-      borderColor: theme.id === 'light-clean' ? '#E5E7EB' : '#ffffff15',
+      borderColor: L ? '#E5E7EB' : '#ffffff15',
     },
     legend: {
-      textStyle: {
-        color: theme.id === 'light-clean' ? '#6B7280' : '#ffffff80',
-      },
+      textStyle: { color: L ? '#6B7280' : '#ffffff80' },
     },
     tooltip: {
-      backgroundColor: theme.id === 'light-clean' ? '#FFFFFF' : '#0D2137',
-      borderColor: theme.id === 'light-clean' ? '#E5E7EB' : '#3B82F620',
-      textStyle: {
-        color: theme.id === 'light-clean' ? '#111827' : '#F9FAFB',
-      },
+      backgroundColor: L ? '#FFFFFF'  : '#0D2137',
+      borderColor:     L ? '#E5E7EB'  : '#3B82F620',
+      textStyle: { color: L ? '#111827' : '#F9FAFB' },
     },
     xAxis: {
-      axisLine: { lineStyle: { color: theme.id === 'light-clean' ? '#D1D5DB' : '#ffffff15' } },
-      axisTick: { lineStyle: { color: theme.id === 'light-clean' ? '#D1D5DB' : '#ffffff15' } },
-      axisLabel: { color: theme.id === 'light-clean' ? '#6B7280' : '#ffffff50' },
-      splitLine: { lineStyle: { color: theme.id === 'light-clean' ? '#F3F4F6' : '#ffffff08' } },
+      axisLine:  { lineStyle: { color: L ? '#D1D5DB' : '#ffffff15' } },
+      axisTick:  { lineStyle: { color: L ? '#D1D5DB' : '#ffffff15' } },
+      axisLabel: { color: L ? '#6B7280' : '#ffffff50' },
+      splitLine: { lineStyle: { color: L ? '#F3F4F6' : '#ffffff08' } },
     },
     yAxis: {
-      axisLine: { lineStyle: { color: theme.id === 'light-clean' ? '#D1D5DB' : '#ffffff15' } },
-      axisTick: { lineStyle: { color: theme.id === 'light-clean' ? '#D1D5DB' : '#ffffff15' } },
-      axisLabel: { color: theme.id === 'light-clean' ? '#6B7280' : '#ffffff50' },
-      splitLine: { lineStyle: { color: theme.id === 'light-clean' ? '#F3F4F6' : '#ffffff08' } },
+      axisLine:  { lineStyle: { color: L ? '#D1D5DB' : '#ffffff15' } },
+      axisTick:  { lineStyle: { color: L ? '#D1D5DB' : '#ffffff15' } },
+      axisLabel: { color: L ? '#6B7280' : '#ffffff50' },
+      splitLine: { lineStyle: { color: L ? '#F3F4F6' : '#ffffff08' } },
     },
   };
 }

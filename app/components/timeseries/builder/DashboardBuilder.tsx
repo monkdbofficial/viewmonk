@@ -14,13 +14,11 @@ import type {
   WidgetConfig, DashboardConfig, WidgetType,
   DashboardThemeId, GridPosition, DataSourceConfig, WidgetStyle,
 } from '@/app/lib/timeseries/types';
+import { ROW_HEIGHT, COL_COUNT, GAP } from '@/app/lib/timeseries/constants';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const ROW_HEIGHT = 160;
-const COL_COUNT  = 12;
-const GAP        = 14;
-const DRAG_TYPE  = 'CANVAS_WIDGET';
+const DRAG_TYPE = 'CANVAS_WIDGET';
 
 // ── Widget metadata ───────────────────────────────────────────────────────────
 
@@ -182,7 +180,7 @@ function CanvasWidget({ widget, isSelected, canvasRef, onSelect, onDelete, onRes
       onClick={(e) => { e.stopPropagation(); onSelect(widget.id); }}
     >
       <div
-        className={`relative h-full w-full rounded-xl border-2 transition-all duration-150 ${
+        className={`group relative h-full w-full rounded-xl border-2 transition-all duration-150 ${
           isSelected
             ? 'border-blue-500 bg-blue-500/[0.06] shadow-lg shadow-blue-500/20 ring-2 ring-blue-500/25 dark:bg-blue-500/[0.08]'
             : 'border-dashed border-gray-300 bg-white hover:border-gray-400 hover:bg-gray-50 dark:border-gray-600/40 dark:bg-white/[0.02] dark:hover:border-gray-500/60 dark:hover:bg-white/[0.04]'

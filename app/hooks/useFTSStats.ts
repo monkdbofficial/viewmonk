@@ -58,8 +58,8 @@ export function useFTSStats(): FTSStats {
             const history = JSON.parse(stored);
             queryStats = getQueryStats(history);
           }
-        } catch (err) {
-          console.error('Failed to load query stats:', err);
+        } catch {
+          // malformed history — use zero stats
         }
       }
 
@@ -70,8 +70,7 @@ export function useFTSStats(): FTSStats {
         avgExecutionTime: queryStats.avgExecutionTime,
         loading: false,
       });
-    } catch (err) {
-      console.error('Failed to calculate FTS stats:', err);
+    } catch {
       setStats({
         totalIndexes: 0,
         totalTables: 0,

@@ -50,8 +50,8 @@ export function saveRefreshSchedules(schedules: RefreshSchedule[]): void {
 
   try {
     localStorage.setItem(SCHEDULES_KEY, JSON.stringify(schedules));
-  } catch (err) {
-    console.error('Failed to save refresh schedules:', err);
+  } catch {
+    // storage quota exceeded — in-memory state still intact
   }
 }
 
@@ -115,7 +115,7 @@ export function addRefreshHistory(entry: Omit<RefreshHistoryEntry, 'id'>): void 
     const history = getRefreshHistory();
     const newEntry: RefreshHistoryEntry = {
       ...entry,
-      id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: crypto.randomUUID(),
     };
 
     history.unshift(newEntry);
@@ -124,8 +124,8 @@ export function addRefreshHistory(entry: Omit<RefreshHistoryEntry, 'id'>): void 
     const trimmed = history.slice(0, MAX_HISTORY);
 
     localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
-  } catch (err) {
-    console.error('Failed to save refresh history:', err);
+  } catch {
+    // storage quota exceeded — in-memory state still intact
   }
 }
 

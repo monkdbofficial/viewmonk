@@ -47,7 +47,6 @@ export default function BlobUploader({ table, folder, onClose }: BlobUploaderPro
     const anyPending = files.some(f => f.status === 'pending' || f.status === 'uploading');
 
     if (allCompleted && !anyPending) {
-      console.log('[BlobUploader] All uploads successful, closing dialog in 1.5s');
       const timer = setTimeout(() => {
         onClose();
       }, 1500);
@@ -150,8 +149,7 @@ export default function BlobUploader({ table, folder, onClose }: BlobUploaderPro
         }
       }
       return null;
-    } catch (error) {
-      console.error('[BlobUploader] Duplicate check failed:', error);
+    } catch {
       return null;
     }
   };
@@ -189,28 +187,18 @@ export default function BlobUploader({ table, folder, onClose }: BlobUploaderPro
       return;
     }
 
-    console.log('[BlobUploader] Starting upload process...');
-    console.log('[BlobUploader] Active connection:', activeConnection.name);
-    console.log('[BlobUploader] Table:', table);
-    console.log('[BlobUploader] Folder:', folder);
-
     // Upload files in batches of 3
     const CONCURRENT_UPLOADS = 3;
     const pendingFiles = files.filter((f) => f.status === 'pending');
 
-    console.log(`[BlobUploader] Uploading ${pendingFiles.length} pending files...`);
-
     for (let i = 0; i < pendingFiles.length; i += CONCURRENT_UPLOADS) {
       const batch = pendingFiles.slice(i, i + CONCURRENT_UPLOADS);
-      console.log(`[BlobUploader] Processing batch ${i / CONCURRENT_UPLOADS + 1}, ${batch.length} files`);
 
       await Promise.all(
         batch.map(async (fileWithStatus) => {
           const index = files.indexOf(fileWithStatus);
 
           try {
-            console.log(`[BlobUploader] Uploading file: ${fileWithStatus.file.name}`);
-
             // Update status to uploading
             setFiles((prev) => {
               const updated = [...prev];
@@ -220,8 +208,6 @@ export default function BlobUploader({ table, folder, onClose }: BlobUploaderPro
 
             await uploadFile(table, fileWithStatus.file, folder || undefined);
 
-            console.log(`[BlobUploader] File uploaded successfully: ${fileWithStatus.file.name}`);
-
             // Update status to completed
             setFiles((prev) => {
               const updated = [...prev];
@@ -230,8 +216,6 @@ export default function BlobUploader({ table, folder, onClose }: BlobUploaderPro
             });
           } catch (error: any) {
             const categorizedError = categorizeError(error);
-            console.error('[BlobUploader] Upload error for', fileWithStatus.file.name, ':', error);
-            console.error('[BlobUploader] Error stack:', error.stack);
 
             // Update status to failed
             setFiles((prev) => {
@@ -250,8 +234,6 @@ export default function BlobUploader({ table, folder, onClose }: BlobUploaderPro
         })
       );
     }
-
-    console.log('[BlobUploader] All uploads completed');
   };
 
   const formatFileSize = (bytes: number): string => {

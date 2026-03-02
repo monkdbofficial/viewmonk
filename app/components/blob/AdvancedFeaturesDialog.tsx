@@ -68,8 +68,8 @@ export default function AdvancedFeaturesDialog({ onClose, selectedFile }: Advanc
     try {
       const preview = await getTrashCleanupPreview(currentTable, cleanupDays);
       setCleanupPreview(preview);
-    } catch (error) {
-      console.error('Failed to load cleanup preview:', error);
+    } catch {
+      // preview unavailable
     } finally {
       setLoading(false);
     }
@@ -88,8 +88,8 @@ export default function AdvancedFeaturesDialog({ onClose, selectedFile }: Advanc
     try {
       await cleanupOldTrashedFiles(currentTable, cleanupDays);
       await loadCleanupPreview();
-    } catch (error) {
-      console.error('Failed to cleanup files:', error);
+    } catch {
+      // cleanup failed
     } finally {
       setLoading(false);
     }
@@ -101,8 +101,8 @@ export default function AdvancedFeaturesDialog({ onClose, selectedFile }: Advanc
     try {
       const history = await getFileVersionHistory(currentTable, selectedFile.id);
       setVersions(history);
-    } catch (error) {
-      console.error('Failed to load version history:', error);
+    } catch {
+      // version history unavailable
     } finally {
       setLoading(false);
     }
@@ -115,8 +115,8 @@ export default function AdvancedFeaturesDialog({ onClose, selectedFile }: Advanc
     try {
       await createNewVersion(currentTable, selectedFile.id, e.target.files[0]);
       await loadVersionHistory();
-    } catch (error) {
-      console.error('Failed to upload new version:', error);
+    } catch {
+      // version upload failed
     } finally {
       setUploadingVersion(false);
     }
@@ -132,8 +132,8 @@ export default function AdvancedFeaturesDialog({ onClose, selectedFile }: Advanc
     try {
       await restoreFileVersion(currentTable, versionId);
       await loadVersionHistory();
-    } catch (error) {
-      console.error('Failed to restore version:', error);
+    } catch {
+      // restore failed
     } finally {
       setLoading(false);
     }
@@ -145,8 +145,8 @@ export default function AdvancedFeaturesDialog({ onClose, selectedFile }: Advanc
     try {
       const summary = await getBackupSummary(currentTable);
       setBackupSummary(summary);
-    } catch (error) {
-      console.error('Failed to load backup summary:', error);
+    } catch {
+      // backup summary unavailable
     } finally {
       setLoading(false);
     }
@@ -157,8 +157,8 @@ export default function AdvancedFeaturesDialog({ onClose, selectedFile }: Advanc
     setLoading(true);
     try {
       await exportMetadata(currentTable, exportFormat);
-    } catch (error) {
-      console.error('Failed to export metadata:', error);
+    } catch {
+      // export failed
     } finally {
       setLoading(false);
     }
@@ -173,8 +173,8 @@ export default function AdvancedFeaturesDialog({ onClose, selectedFile }: Advanc
     setLoading(true);
     try {
       await exportAllBlobs(currentTable);
-    } catch (error) {
-      console.error('Failed to export all blobs:', error);
+    } catch {
+      // export failed
     } finally {
       setLoading(false);
     }

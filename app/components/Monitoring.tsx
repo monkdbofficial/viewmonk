@@ -18,6 +18,13 @@ export default function Monitoring() {
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  const formatUptime = (seconds: number): string => {
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return `${days}d ${hours}h ${minutes}m`;
+  };
+
   const handleManualRefresh = async () => {
     setIsRefreshing(true);
     await Promise.all([
@@ -203,7 +210,7 @@ export default function Monitoring() {
             <div>
               <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Cluster Uptime</p>
               <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">
-                {Math.floor((clusterHealth?.clusterUptime || 0) / 3600)}h
+                {formatUptime(clusterHealth?.clusterUptime || 0)}
               </p>
             </div>
             <Cpu className="h-8 w-8 text-orange-600 dark:text-orange-400" />
@@ -265,7 +272,7 @@ export default function Monitoring() {
                       {formatBytes(node.fs_total)}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">
-                      {Math.floor(node.uptime / 3600)}h {Math.floor((node.uptime % 3600) / 60)}m
+                      {formatUptime(node.uptime)}
                     </td>
                   </tr>
                 ))

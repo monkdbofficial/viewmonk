@@ -54,8 +54,8 @@ export function useVectorStats(): VectorStats {
             const history = JSON.parse(stored);
             queryStats = getQueryStats(history);
           }
-        } catch (err) {
-          console.error('Failed to load query stats:', err);
+        } catch {
+          // malformed history — use zero stats
         }
       }
 
@@ -66,8 +66,7 @@ export function useVectorStats(): VectorStats {
         avgExecutionTime: queryStats.avgExecutionTime,
         loading: false,
       });
-    } catch (err) {
-      console.error('Failed to calculate vector stats:', err);
+    } catch {
       setStats({
         totalCollections: 0,
         totalDocuments: 0,

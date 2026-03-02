@@ -11,7 +11,7 @@ import type {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const AGGREGATIONS: AggregationType[] = ['AVG', 'MAX', 'MIN', 'SUM', 'COUNT'];
+const AGGREGATIONS: AggregationType[] = ['AVG', 'MAX', 'MIN', 'SUM', 'COUNT', 'COUNT_DISTINCT', 'STDDEV', 'VARIANCE'];
 
 // Named palette for base color scheme
 const COLOR_SCHEMES: { id: ColorScheme; hex: string }[] = [
@@ -141,14 +141,24 @@ export default function WidgetConfigDrawer({ widget, onSave, onDelete, onClose }
 
   const table = tables.find((t) => t.schema === ds.schema && t.table === ds.table);
 
+  // Widget types that produce a single aggregate value — group-by doesn't apply
+  const SINGLE_VALUE_WIDGETS = new Set(['stat-card', 'gauge'] as const);
+
   const handleTableChange = (key: string) => {
-    const [schema, tableName] = key.split('.');
+    const dotIdx   = key.indexOf('.');
+    const schema   = key.slice(0, dotIdx);
+    const tableName = key.slice(dotIdx + 1);
     const t = tables.find((x) => x.schema === schema && x.table === tableName);
+    const needsGroup = !SINGLE_VALUE_WIDGETS.has(widget.type as 'stat-card' | 'gauge');
     setDs((prev) => ({
       ...prev, schema, table: tableName,
       timestampCol: t?.timestampCols[0] ?? '',
       metricCol:    t?.numericCols[0]?.name ?? '',
-      groupCol:     t?.textCols[0]?.name ?? '',
+      groupCol:     needsGroup ? (t?.textCols[0]?.name ?? '') : undefined,
+      // Clear column-specific fields that are tied to the old table's schema
+      xCol: undefined, yCol: undefined,
+      openCol: undefined, highCol: undefined, lowCol: undefined, closeCol: undefined,
+      parentCol: undefined,
     }));
   };
 
@@ -211,7 +221,7 @@ export default function WidgetConfigDrawer({ widget, onSave, onDelete, onClose }
     { id: 'sql',        icon: <Code2 className="h-3.5 w-3.5" />,      label: 'SQL'        },
   ];
 
-  const isChartWidget = ['line-chart', 'area-chart', 'bar-chart'].includes(widget.type);
+  const isAxisChart = ['line-chart', 'area-chart', 'bar-chart'].includes(widget.type);
 
   return (
     <div className="flex h-full w-80 flex-shrink-0 flex-col border-l border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
@@ -221,7 +231,7 @@ export default function WidgetConfigDrawer({ widget, onSave, onDelete, onClose }
         <div className="flex items-center gap-2 min-w-0">
           <h3 className="text-sm font-bold text-gray-900 dark:text-white truncate">Configure Widget</h3>
           <span className="flex-shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400 capitalize">
-            {widget.type.replace('-', ' ')}
+            {widget.type.replace(/-/g, ' ')}
           </span>
         </div>
         <button onClick={onClose} className="ml-2 flex-shrink-0 rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800">
@@ -303,11 +313,93 @@ export default function WidgetConfigDrawer({ widget, onSave, onDelete, onClose }
                   </select>
                 </div>
                 <div>
-                  <label className={labelCls}>Row Limit</label>
+                  <label className={labelCls}>
+                    Row Limit
+                    <span className="ml-1 font-normal text-gray-400">
+                      (blank = auto for time-series)
+                    </span>
+                  </label>
                   <input
-                    type="number" min={10} max={10000} step={10}
-                    value={ds.limit ?? 50}
-                    onChange={(e) => setDs((p) => ({ ...p, limit: Number(e.target.value) }))}
+                    type="number" min={1} max={10000} step={10}
+                    value={ds.limit ?? ''}
+                    placeholder="auto"
+                    onChange={(e) => {
+                      const n = e.target.value === '' ? undefined : Math.max(1, Number(e.target.value) || 1);
+                      setDs((p) => ({ ...p, limit: n }));
+                    }}
+                    className={inputCls}
+                  />
+                </div>
+
+                {/* Scatter chart: X/Y column selectors */}
+                {widget.type === 'scatter-chart' && (
+                  <>
+                    <div>
+                      <label className={labelCls}>X-Axis Column</label>
+                      <select className={selectCls} value={ds.xCol ?? ''} onChange={(e) => setDs((p) => ({ ...p, xCol: e.target.value || undefined }))}>
+                        <option value="">Use Metric Column</option>
+                        {table.numericCols.map((c) => <option key={c.name} value={c.name}>{c.name} ({c.type})</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Y-Axis Column</label>
+                      <select className={selectCls} value={ds.yCol ?? ''} onChange={(e) => setDs((p) => ({ ...p, yCol: e.target.value || undefined }))}>
+                        <option value="">Use Metric Column</option>
+                        {table.numericCols.map((c) => <option key={c.name} value={c.name}>{c.name} ({c.type})</option>)}
+                      </select>
+                    </div>
+                  </>
+                )}
+
+                {/* Candlestick: OHLC column selectors */}
+                {widget.type === 'candlestick' && (
+                  <>
+                    <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">OHLC Columns <span className="font-normal normal-case">(fall back to Metric Column)</span></p>
+                    {(['openCol', 'highCol', 'lowCol', 'closeCol'] as const).map((field) => (
+                      <div key={field}>
+                        <label className={labelCls}>{field.replace('Col', '').toUpperCase()}</label>
+                        <select className={selectCls} value={ds[field] ?? ''} onChange={(e) => setDs((p) => ({ ...p, [field]: e.target.value || undefined }))}>
+                          <option value="">Use Metric Column</option>
+                          {table.numericCols.map((c) => <option key={c.name} value={c.name}>{c.name} ({c.type})</option>)}
+                        </select>
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {/* Progress KPI: target value */}
+                {widget.type === 'progress-kpi' && (
+                  <div>
+                    <label className={labelCls}>KPI Target <span className="font-normal text-gray-400">(leave blank to use MAX from DB)</span></label>
+                    <input
+                      type="number"
+                      value={ds.kpiTarget ?? ''}
+                      onChange={(e) => setDs((p) => ({ ...p, kpiTarget: e.target.value ? Number(e.target.value) : undefined }))}
+                      placeholder="e.g. 10000"
+                      className={inputCls}
+                    />
+                  </div>
+                )}
+
+                {/* Treemap: parent category for 2-level hierarchy */}
+                {widget.type === 'treemap' && (
+                  <div>
+                    <label className={labelCls}>Parent Category <span className="font-normal text-gray-400">(optional — enables 2-level hierarchy)</span></label>
+                    <select className={selectCls} value={ds.parentCol ?? ''} onChange={(e) => setDs((p) => ({ ...p, parentCol: e.target.value || undefined }))}>
+                      <option value="">None (flat treemap)</option>
+                      {table.textCols.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                {/* WHERE clause */}
+                <div>
+                  <label className={labelCls}>WHERE Clause <span className="font-normal text-gray-400">(optional extra filter)</span></label>
+                  <input
+                    type="text"
+                    value={ds.whereClause ?? ''}
+                    onChange={(e) => setDs((p) => ({ ...p, whereClause: e.target.value || undefined }))}
+                    placeholder="status = 'active' AND region = 'US'"
                     className={inputCls}
                   />
                 </div>
@@ -503,6 +595,28 @@ export default function WidgetConfigDrawer({ widget, onSave, onDelete, onClose }
               </div>
             </div>
 
+            {/* Y-axis scale */}
+            {isAxisChart && (
+              <div className={sectionCls}>
+                <p className={sectionTitle}>Y-Axis Scale</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {(['linear', 'log'] as const).map((scale) => (
+                    <button
+                      key={scale}
+                      onClick={() => setStyle((p) => ({ ...p, yAxisScale: scale }))}
+                      className={`rounded-lg border py-2 text-xs font-medium capitalize transition-all ${
+                        (style.yAxisScale ?? 'linear') === scale
+                          ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-500 dark:bg-blue-900/20 dark:text-blue-300'
+                          : 'border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400'
+                      }`}
+                    >
+                      {scale === 'linear' ? 'Linear' : 'Logarithmic'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Gauge options */}
             {widget.type === 'gauge' && (
               <div className={sectionCls}>
@@ -595,7 +709,7 @@ export default function WidgetConfigDrawer({ widget, onSave, onDelete, onClose }
             </button>
 
             {/* Reference: show active thresholds at bottom */}
-            {(style.thresholds ?? []).length > 0 && isChartWidget && (
+            {(style.thresholds ?? []).length > 0 && isAxisChart && (
               <div className="rounded-xl bg-gray-50 p-3 dark:bg-gray-800/50">
                 <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">Active Threshold Lines</p>
                 <div className="space-y-1">
@@ -615,9 +729,22 @@ export default function WidgetConfigDrawer({ widget, onSave, onDelete, onClose }
         {/* ── SQL TAB ───────────────────────────────────────────────────────── */}
         {tab === 'sql' && (
           <div className="space-y-3">
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Auto-generated SQL. Edit to customize. Variables: <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">{'{{from}}'}</code>, <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">{'{{to}}'}</code>, <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">{'{{interval}}'}</code>
+            <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+              Auto-generated SQL. Edit to customize. Supported template variables:
             </p>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                '{{from}}', '{{to}}', '{{interval}}', '{{aggregation}}',
+                '{{schema}}', '{{table}}', '{{tsCol}}', '{{metricCol}}', '{{groupCol}}', '{{limit}}',
+                '{{xCol}}', '{{yCol}}',
+                '{{openCol}}', '{{highCol}}', '{{lowCol}}', '{{closeCol}}',
+                '{{kpiTargetExpr}}', '{{parentCol}}', '{{whereClause}}', '{{filterClause}}',
+              ].map((v) => (
+                <code key={v} className="rounded bg-gray-100 px-1 py-0.5 text-[11px] text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+                  {v}
+                </code>
+              ))}
+            </div>
             <textarea
               value={ds.customSql ?? previewSql}
               onChange={(e) => setDs((p) => ({ ...p, customSql: e.target.value }))}

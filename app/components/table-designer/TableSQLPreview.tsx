@@ -79,8 +79,8 @@ export default function TableSQLPreview({
         },
       });
       setValidation(result);
-    } catch (err: any) {
-      console.error('Validation error:', err);
+    } catch {
+      // validation unavailable — user can still view SQL and proceed
     }
   };
 

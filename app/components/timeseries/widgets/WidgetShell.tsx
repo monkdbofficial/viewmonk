@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   AlertTriangle, Settings2, Trash2, GripVertical,
   Clock, Database, Copy, Check,
@@ -8,7 +8,7 @@ import type { ThemeTokens } from '@/app/lib/timeseries/themes';
 import type { WidgetStatus } from '@/app/lib/timeseries/types';
 import { formatRelativeTime } from '@/app/lib/timeseries/time-range';
 
-// ── Shimmer keyframe (injected once per render tree) ──────────────────────────
+// ── Shimmer keyframe — injected once into <head>, never duplicated ────────────
 
 const SHIMMER_CSS = `
 @keyframes widget-shimmer {
@@ -20,6 +20,17 @@ const SHIMMER_CSS = `
   100% { transform: translateX(100%);  }
 }
 `;
+
+let shimmerInjected = false;
+function useShimmerCSS() {
+  useEffect(() => {
+    if (shimmerInjected) return;
+    const style = document.createElement('style');
+    style.textContent = SHIMMER_CSS;
+    document.head.appendChild(style);
+    shimmerInjected = true;
+  }, []);
+}
 
 // ── Shimmer skeleton block ────────────────────────────────────────────────────
 
@@ -67,6 +78,7 @@ export default function WidgetShell({
   title, status, error, lastUpdated, executionTime, theme,
   builderMode = false, onRetry, onEdit, onDelete, children,
 }: WidgetShellProps) {
+  useShimmerCSS();
   const [copied, setCopied] = useState(false);
 
   const isRefreshing = status === 'refreshing';
@@ -141,7 +153,6 @@ export default function WidgetShell({
       className={`flex h-full flex-col overflow-hidden transition-all duration-300 ${cardCls}`}
       style={{ ...glowStyle, ...glassStyle }}
     >
-      <style>{SHIMMER_CSS}</style>
 
       {/* ── Accent top bar ─────────────────────────────────────────────────── */}
       <div className="relative flex-shrink-0 h-[2px] overflow-hidden">
@@ -192,7 +203,7 @@ export default function WidgetShell({
           )}
           {executionTime > 0 && !builderMode && (
             <span className={`hidden lg:block text-[11px] ${theme.textMuted} opacity-40`}>
-              {executionTime}ms
+              {executionTime >= 1000 ? `${(executionTime / 1000).toFixed(1)}s` : `${executionTime}ms`}
             </span>
           )}
           {builderMode && onEdit && (

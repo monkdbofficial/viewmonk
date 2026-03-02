@@ -17,6 +17,15 @@ export default function LineChartWidget({ series, style, theme }: LineChartWidge
   const getColor = (i: number) =>
     style.customColors?.[i] || theme.chartColors[i % theme.chartColors.length];
 
+  const fmtVal = (v: number) => {
+    const prefix = style.prefix ?? '';
+    const unit   = style.unit ?? '';
+    const val    = style.decimals !== undefined
+      ? v.toFixed(style.decimals)
+      : v.toLocaleString(undefined, { maximumFractionDigits: 4 });
+    return `${prefix}${val}${unit}`;
+  };
+
   // Build threshold mark lines
   const markLine = (style.thresholds ?? []).length > 0
     ? {
@@ -38,12 +47,33 @@ export default function LineChartWidget({ series, style, theme }: LineChartWidge
 
   const smooth = style.smooth ?? true;
 
+  // Format ISO timestamp strings from MonkDB DATE_TRUNC into readable axis labels
+  const fmtTime = (s: string): string => {
+    try {
+      const d = new Date(s);
+      if (isNaN(d.getTime())) return s;
+      // Sub-day bucket: show "14:30"
+      if (d.getHours() !== 0 || d.getMinutes() !== 0 || d.getSeconds() !== 0) {
+        return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+      }
+      // Day/week/month bucket: show "Jan 15"
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    } catch { return s; }
+  };
+
   const option = {
     ...t,
     tooltip: {
       ...t.tooltip,
       trigger: 'axis',
       axisPointer: { type: 'cross', lineStyle: { color: theme.accentPrimary + '60' } },
+      formatter: (params: { name: string; seriesName: string; value: number | string; marker: string }[]) => {
+        const header = params[0]?.name ?? '';
+        const rows = params
+          .map((p) => `${p.marker} ${p.seriesName}: <b>${fmtVal(Number(p.value))}</b>`)
+          .join('<br/>');
+        return `${header}<br/>${rows}`;
+      },
     },
     legend: style.showLegend
       ? { ...t.legend, bottom: 0, type: 'scroll' }
@@ -58,18 +88,17 @@ export default function LineChartWidget({ series, style, theme }: LineChartWidge
       type: 'category',
       boundaryGap: false,
       data: series[0]?.data.map((d) => d[0]) ?? [],
+      axisLabel: {
+        ...t.xAxis.axisLabel,
+        formatter: (s: string) => fmtTime(s),
+      },
     },
     yAxis: {
       ...t.yAxis,
-      type: 'value',
+      type: style.yAxisScale === 'log' ? 'log' : 'value',
       axisLabel: {
         ...t.yAxis.axisLabel,
-        formatter: (v: number) => {
-          const prefix = style.prefix ?? '';
-          const unit   = style.unit ?? '';
-          const val    = style.decimals !== undefined ? v.toFixed(style.decimals) : v;
-          return `${prefix}${val}${unit}`;
-        },
+        formatter: (v: number) => fmtVal(v),
       },
     },
     series: series.map((s, i) => {

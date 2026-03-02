@@ -64,7 +64,6 @@ export default function EnhancedTableSQLPreview({
       const result = validateTableDesign(design);
       setValidation(result);
     } catch (err: any) {
-      console.error('Validation error:', err);
       showError('Validation Failed', err.message);
     }
   };
@@ -74,9 +73,6 @@ export default function EnhancedTableSQLPreview({
 
     try {
       setCreating(true);
-
-      console.log('Generated SQL:', sql);
-      console.log('Table Design:', JSON.stringify(design, null, 2));
 
       // Execute the CREATE TABLE statement
       await activeConnection.client.query(sql);
@@ -88,14 +84,10 @@ export default function EnhancedTableSQLPreview({
 
       onSuccess();
     } catch (err: any) {
-      console.error('Failed to create table:', err);
-      console.error('SQL that failed:', sql);
-
-      // Show more detailed error
       const errorMsg = err.message || 'Unknown error occurred';
       showError(
         'Failed to Create Table',
-        `${errorMsg}\n\nPlease check the browser console for the SQL statement that failed.`
+        `${errorMsg}\n\nPlease review the SQL statement above and check your table configuration.`
       );
     } finally {
       setCreating(false);

@@ -17,12 +17,21 @@ export default function FunnelChartWidget({ slices, style, theme }: FunnelChartW
 
   const getColor = (i: number) => style.customColors?.[i] || theme.chartColors[i % theme.chartColors.length];
 
+  const fmtVal = (v: number) => {
+    const prefix = style.prefix ?? '';
+    const unit   = style.unit ?? '';
+    const val    = style.decimals !== undefined
+      ? v.toFixed(style.decimals)
+      : v.toLocaleString(undefined, { maximumFractionDigits: 4 });
+    return `${prefix}${val}${unit}`;
+  };
+
   const option = {
     ...t,
     tooltip: {
       trigger: 'item',
-      formatter: (p: { name: string; value: number; percent: number }) =>
-        `${p.name}: <b>${p.value.toLocaleString()}</b> (${p.percent}%)`,
+      formatter: (p: { name: string; value: number; percent: number; marker: string }) =>
+        `${p.marker} ${p.name}: <b>${fmtVal(p.value)}</b> (${p.percent.toFixed(1)}%)`,
       backgroundColor: t.tooltip.backgroundColor,
       borderColor:     t.tooltip.borderColor,
       textStyle:       t.tooltip.textStyle,
@@ -46,7 +55,7 @@ export default function FunnelChartWidget({ slices, style, theme }: FunnelChartW
         color: '#fff',
         fontSize: 12,
         fontWeight: 600,
-        formatter: (p: { name: string; value: number }) => `${p.name}\n${p.value.toLocaleString()}`,
+        formatter: (p: { name: string; value: number }) => `${p.name}\n${fmtVal(p.value)}`,
       },
       itemStyle: { borderWidth: 0 },
       data: slices.map((s, i) => ({

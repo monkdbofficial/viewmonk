@@ -17,10 +17,22 @@ interface TreemapWidgetProps {
 }
 
 export default function TreemapWidget({ nodes, style, theme }: TreemapWidgetProps) {
-  const t = buildEChartsTheme(theme);
+  const t       = buildEChartsTheme(theme);
   const isLight = theme.id === 'light-clean';
 
-  const levelColors = theme.chartColors;
+  // Respect customColors when provided; fall back to theme palette
+  const levelColors = (style.customColors?.filter(Boolean).length ?? 0) > 0
+    ? style.customColors!.filter(Boolean)
+    : theme.chartColors;
+
+  const fmtVal = (v: number) => {
+    const prefix = style.prefix ?? '';
+    const unit   = style.unit ?? '';
+    const val    = style.decimals !== undefined
+      ? v.toFixed(style.decimals)
+      : v.toLocaleString(undefined, { maximumFractionDigits: 4 });
+    return `${prefix}${val}${unit}`;
+  };
 
   const option = {
     ...t,
@@ -28,7 +40,7 @@ export default function TreemapWidget({ nodes, style, theme }: TreemapWidgetProp
       trigger: 'item',
       formatter: (p: { name: string; value: number; treePathInfo: { name: string }[] }) => {
         const path = p.treePathInfo.map((n) => n.name).join(' › ');
-        return `${path}<br/><b>${p.value.toLocaleString()}</b>`;
+        return `${path}<br/><b>${fmtVal(p.value)}</b>`;
       },
       backgroundColor: t.tooltip.backgroundColor,
       borderColor:     t.tooltip.borderColor,
@@ -45,7 +57,7 @@ export default function TreemapWidget({ nodes, style, theme }: TreemapWidgetProp
         fontSize: 12,
         fontWeight: 600,
         color: isLight ? '#1f2937' : '#ffffff',
-        formatter: (p: { name: string; value: number }) => `${p.name}\n${p.value.toLocaleString()}`,
+        formatter: (p: { name: string; value: number }) => `${p.name}\n${fmtVal(p.value)}`,
       },
       upperLabel: {
         show: true,

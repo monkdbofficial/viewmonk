@@ -28,8 +28,8 @@ export default function Settings() {
       if (savedSettings) {
         setSettings(JSON.parse(savedSettings));
       }
-    } catch (error) {
-      console.error('Failed to load settings:', error);
+    } catch {
+      // parse error — keep defaults
     }
   }, []);
 
@@ -45,9 +45,8 @@ export default function Settings() {
       localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
       setHasUnsavedChanges(false);
       toast.success('Settings Saved', 'Your preferences have been saved successfully');
-    } catch (error) {
+    } catch {
       toast.error('Save Failed', 'Failed to save settings. Please try again.');
-      console.error('Failed to save settings:', error);
     }
   };
 

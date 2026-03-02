@@ -55,8 +55,8 @@ export default function QuotaMonitoringDialog({ onClose }: QuotaMonitoringDialog
         setCriticalThreshold(config.criticalThresholdPercent);
         setEnableAlerts(config.enableAlerts);
       }
-    } catch (error) {
-      console.error('Failed to load quota data:', error);
+    } catch {
+      // load failure — quota data unavailable
     } finally {
       setLoading(false);
     }
@@ -81,8 +81,8 @@ export default function QuotaMonitoringDialog({ onClose }: QuotaMonitoringDialog
       await setQuotaSettings(currentTable, newSettings);
       setShowSettings(false);
       await loadQuotaData();
-    } catch (error) {
-      console.error('Failed to save settings:', error);
+    } catch {
+      // settings save failed — retry or check connection
     } finally {
       setSaving(false);
     }

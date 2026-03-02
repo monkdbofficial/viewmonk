@@ -523,7 +523,6 @@ export function useReadWriteRatio(): UseQueryResult<{
         setData({ readOps: 0, writeOps: 0, ratio: '0:0' });
       }
     } catch (err) {
-      console.error('[useReadWriteRatio] Error fetching read/write ratio:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch read/write ratio');
       setData(null);
     } finally {

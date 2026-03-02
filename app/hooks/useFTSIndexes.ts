@@ -7,6 +7,26 @@ import { useState, useEffect } from 'react';
 import { useMonkDBClient } from '@/app/lib/monkdb-context';
 import { useAccessibleSchemas } from './useAccessibleSchemas';
 
+// ── localStorage key constants ──────────────────────────────────────────────
+const LS_FTS_FAVORITES = 'monkdb-fts-favorites';
+const LS_FTS_SAVED     = 'monkdb-fts-saved';
+
+// ── Concurrency helpers ──────────────────────────────────────────────────────
+/** Run an array of async tasks in batches to avoid overwhelming the DB. */
+async function batchedMap<T, R>(
+  items: T[],
+  batchSize: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await Promise.all(batch.map(fn));
+    results.push(...batchResults);
+  }
+  return results;
+}
+
 export interface FTSIndex {
   schema: string;
   table: string;
@@ -31,99 +51,82 @@ export function useFTSIndexes(): UseFTSIndexesResult {
   const [error, setError] = useState<string | null>(null);
 
   const fetchIndexes = async () => {
-    if (!client) {
-      setIndexes([]);
-      setLoading(false);
-      return;
-    }
-
-    if (schemasLoading) {
-      return;
-    }
+    if (!client) { setIndexes([]); setLoading(false); return; }
+    if (schemasLoading) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      // Query for columns with FULLTEXT indexes
-      // In MonkDB/CrateDB, fulltext indexes are defined at the column level
-      const query = `
-        SELECT
-          table_schema,
-          table_name,
-          column_name,
-          ordinal_position
-        FROM information_schema.columns
-        WHERE data_type = 'text'
+      // Step 1: Get all base tables in accessible schemas
+      const tableResult = await client.query(`
+        SELECT table_schema, table_name
+        FROM information_schema.tables
+        WHERE table_type = 'BASE TABLE'
           AND table_schema NOT IN ('sys', 'information_schema', 'pg_catalog')
-        ORDER BY table_schema, table_name, ordinal_position
-      `;
+        ORDER BY table_schema, table_name
+      `);
 
-      const result = await client.query(query);
-
-      // Convert rows to objects
-      const rows = result.rows.map((row: any[]) => {
-        const obj: any = {};
-        result.cols.forEach((col: string, idx: number) => {
-          obj[col] = row[idx];
-        });
-        return obj;
-      });
-
-      // Filter by accessible schemas and group columns by table
       const accessibleSchemaSet = new Set(accessibleSchemas.map(s => s.name));
-      const tableMap = new Map<string, FTSIndex>();
+      const tables = tableResult.rows
+        .map((r: any[]) => ({ schema: r[0], table: r[1] }))
+        .filter((t: { schema: string }) => accessibleSchemaSet.has(t.schema));
 
-      for (const row of rows) {
-        const schema = row.table_schema;
+      // Step 2: For each table run SHOW CREATE TABLE and parse named FULLTEXT indexes.
+      // MonkDB 6+ requires MATCH("index_name", ?) — column-name syntax does not work.
+      // Process in batches of 10 to avoid overwhelming the DB with concurrent requests.
+      const ftsIndexes: FTSIndex[] = [];
+      const IDX_REGEX = /INDEX\s+"([^"]+)"\s+USING\s+FULLTEXT\s+\(([^)]+)\)/i;
+      const ANALYZER_REGEX = /analyzer\s*=\s*'([^']+)'/i;
 
-        // Skip if user doesn't have access to this schema
-        if (!accessibleSchemaSet.has(schema)) {
-          continue;
-        }
-
-        const key = `${schema}.${row.table_name}`;
-
-        if (!tableMap.has(key)) {
-          tableMap.set(key, {
-            schema,
-            table: row.table_name,
-            indexName: `fts_${row.table_name}`, // Generate a default index name
-            columns: [],
-          });
-        }
-
-        // Add column to the table's FTS index
-        const index = tableMap.get(key)!;
-        if (row.column_name && !index.columns.includes(row.column_name)) {
-          index.columns.push(row.column_name);
-        }
-      }
-
-      const parsedIndexes = Array.from(tableMap.values());
-
-      // Fetch document counts for each table
-      await Promise.all(
-        parsedIndexes.map(async (index) => {
+      await batchedMap(
+        tables,
+        10,
+        async ({ schema, table }: { schema: string; table: string }) => {
           try {
-            const countQuery = `
-              SELECT COUNT(*) as count
-              FROM "${index.schema}"."${index.table}"
-            `;
-            const countResult = await client.query(countQuery);
-            index.documentCount = parseInt(countResult.rows[0]?.[0] || '0', 10);
-          } catch (err) {
-            console.warn(`Failed to fetch count for ${index.schema}.${index.table}:`, err);
-            index.documentCount = 0;
+            const result = await client.query(`SHOW CREATE TABLE "${schema}"."${table}"`);
+            const ddl: string = result.rows[0]?.[0] || '';
+            const lines = ddl.split('\n');
+            for (let i = 0; i < lines.length; i++) {
+              const m = IDX_REGEX.exec(lines[i]);
+              if (m) {
+                const indexName = m[1];
+                const cols = m[2].split(',').map((c: string) => c.trim().replace(/^"|"$/g, ''));
+                // Analyzer appears in the WITH (...) block on following lines
+                const context = lines.slice(i, i + 5).join(' ');
+                const am = ANALYZER_REGEX.exec(context);
+                ftsIndexes.push({
+                  schema,
+                  table,
+                  indexName,
+                  columns: cols,
+                  analyzer: am ? am[1] : 'standard',
+                });
+              }
+            }
+          } catch {
+            // table not accessible or SHOW failed — skip
           }
-        })
+        }
       );
 
-      setIndexes(parsedIndexes);
+      // Step 3: Fetch document counts (batched)
+      await batchedMap(ftsIndexes, 10, async (idx) => {
+        try {
+          const r = await client.query(`SELECT COUNT(*) FROM "${idx.schema}"."${idx.table}"`);
+          idx.documentCount = parseInt(r.rows[0]?.[0] || '0', 10);
+        } catch {
+          idx.documentCount = 0;
+        }
+      });
+
+      setIndexes(
+        ftsIndexes.sort((a, b) =>
+          `${a.schema}.${a.table}.${a.indexName}`.localeCompare(`${b.schema}.${b.table}.${b.indexName}`)
+        )
+      );
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch FTS indexes';
-      setError(errorMessage);
-      console.error('[useFTSIndexes]', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch FTS indexes');
     } finally {
       setLoading(false);
     }
@@ -146,8 +149,12 @@ export function useFTSIndexes(): UseFTSIndexesResult {
  */
 export function getFTSFavorites(): string[] {
   if (typeof window === 'undefined') return [];
-  const stored = localStorage.getItem('monkdb-fts-favorites');
-  return stored ? JSON.parse(stored) : [];
+  try {
+    const stored = localStorage.getItem(LS_FTS_FAVORITES);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -158,7 +165,7 @@ export function addFTSFavorite(schema: string, table: string): void {
   const favorites = getFTSFavorites();
   if (!favorites.includes(key)) {
     favorites.push(key);
-    localStorage.setItem('monkdb-fts-favorites', JSON.stringify(favorites));
+    localStorage.setItem(LS_FTS_FAVORITES, JSON.stringify(favorites));
   }
 }
 
@@ -169,7 +176,7 @@ export function removeFTSFavorite(schema: string, table: string): void {
   const key = `${schema}.${table}`;
   const favorites = getFTSFavorites();
   const filtered = favorites.filter(f => f !== key);
-  localStorage.setItem('monkdb-fts-favorites', JSON.stringify(filtered));
+  localStorage.setItem(LS_FTS_FAVORITES, JSON.stringify(filtered));
 }
 
 /**
@@ -194,8 +201,12 @@ export function getSavedFTSSearches(): Array<{
   timestamp: number;
 }> {
   if (typeof window === 'undefined') return [];
-  const stored = localStorage.getItem('monkdb-fts-saved');
-  return stored ? JSON.parse(stored) : [];
+  try {
+    const stored = localStorage.getItem(LS_FTS_SAVED);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -211,11 +222,11 @@ export function saveFTSSearch(search: {
 }): void {
   const saved = getSavedFTSSearches();
   saved.push({
-    id: Date.now().toString(),
+    id: crypto.randomUUID(),
     timestamp: Date.now(),
     ...search,
   });
-  localStorage.setItem('monkdb-fts-saved', JSON.stringify(saved));
+  localStorage.setItem(LS_FTS_SAVED, JSON.stringify(saved));
 }
 
 /**
@@ -224,5 +235,5 @@ export function saveFTSSearch(search: {
 export function deleteSavedFTSSearch(id: string): void {
   const saved = getSavedFTSSearches();
   const filtered = saved.filter(s => s.id !== id);
-  localStorage.setItem('monkdb-fts-saved', JSON.stringify(filtered));
+  localStorage.setItem(LS_FTS_SAVED, JSON.stringify(filtered));
 }

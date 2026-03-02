@@ -47,10 +47,11 @@ export default function RefreshScheduleManager({
 
   const [showConfig, setShowConfig] = useState(!currentSchedule);
   const [showHistory, setShowHistory] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   // Form state
   const [enabled, setEnabled] = useState(currentSchedule?.enabled ?? false);
-  const [interval, setInterval] = useState(currentSchedule?.interval ?? 30);
+  const [intervalMinutes, setIntervalMinutes] = useState(currentSchedule?.interval ?? 30);
   const [autoRefreshOnInsert, setAutoRefreshOnInsert] = useState(
     currentSchedule?.autoRefreshOnInsert ?? false
   );
@@ -64,7 +65,7 @@ export default function RefreshScheduleManager({
       schema,
       table,
       enabled,
-      interval,
+      interval: intervalMinutes,
       autoRefreshOnInsert,
       lastRefresh: currentSchedule?.lastRefresh || Date.now(),
       nextRefresh: 0,
@@ -87,12 +88,12 @@ export default function RefreshScheduleManager({
   };
 
   const handleRemoveSchedule = () => {
-    if (confirm(`Remove refresh schedule for ${schema}.${table}?`)) {
-      removeSchedule(schema, table);
-      setShowConfig(true);
-      setEnabled(false);
-      toast.success('Schedule Removed', 'Automatic refresh disabled');
-    }
+    if (!confirmRemove) { setConfirmRemove(true); return; }
+    removeSchedule(schema, table);
+    setShowConfig(true);
+    setEnabled(false);
+    setConfirmRemove(false);
+    toast.success('Schedule Removed', 'Automatic refresh disabled');
   };
 
   const tableHistory = history.filter(h => h.schema === schema && h.table === table);
@@ -222,9 +223,9 @@ export default function RefreshScheduleManager({
                   {REFRESH_PRESETS.map((preset) => (
                     <button
                       key={preset.value}
-                      onClick={() => setInterval(preset.value)}
+                      onClick={() => setIntervalMinutes(preset.value)}
                       className={`px-3 py-2 text-xs font-medium rounded-lg border transition-colors ${
-                        interval === preset.value
+                        intervalMinutes === preset.value
                           ? 'bg-blue-600 text-white border-blue-600'
                           : 'bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'
                       }`}
@@ -244,8 +245,8 @@ export default function RefreshScheduleManager({
                   type="number"
                   min="1"
                   max="10080"
-                  value={interval}
-                  onChange={(e) => setInterval(parseInt(e.target.value) || 30)}
+                  value={intervalMinutes}
+                  onChange={(e) => setIntervalMinutes(parseInt(e.target.value, 10) || 30)}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -320,13 +321,25 @@ export default function RefreshScheduleManager({
                   )}
                 </button>
                 {currentSchedule && (
-                  <button
-                    onClick={handleRemoveSchedule}
-                    className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Remove Schedule
-                  </button>
+                  confirmRemove ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Remove schedule?</span>
+                      <button onClick={handleRemoveSchedule}
+                        className="px-3 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition-colors">
+                        Confirm
+                      </button>
+                      <button onClick={() => setConfirmRemove(false)}
+                        className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-medium rounded-lg hover:bg-gray-200 transition-colors">
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={handleRemoveSchedule}
+                      className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors">
+                      <Trash2 className="w-4 h-4" />
+                      Remove Schedule
+                    </button>
+                  )
                 )}
               </div>
             </div>

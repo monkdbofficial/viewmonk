@@ -131,20 +131,15 @@ export default function SQLDocumentation({ onClose, onInsertExample }: SQLDocume
     setSelectedCommand(command);
     setLoading(true);
     try {
-      console.log('Loading doc:', `/monk-docs/${command.file}`);
       const response = await fetch(`/monk-docs/${command.file}`);
-      console.log('Response status:', response.status);
       if (response.ok) {
         const content = await response.text();
-        console.log('Content loaded, length:', content.length);
         setCommandContent(content);
       } else {
-        console.error('Failed to load:', response.status, response.statusText);
         setCommandContent(`# Documentation not available\n\nThe documentation file could not be loaded.\n\nError: ${response.status} ${response.statusText}\n\nPath: /monk-docs/${command.file}`);
       }
-    } catch (error) {
-      console.error('Error loading doc:', error);
-      setCommandContent(`# Error loading documentation\n\nPlease try again.\n\nError: ${error}`);
+    } catch {
+      setCommandContent(`# Error loading documentation\n\nPlease try again.`);
     } finally {
       setLoading(false);
     }
@@ -164,15 +159,13 @@ export default function SQLDocumentation({ onClose, onInsertExample }: SQLDocume
     return codeBlockMatch ? codeBlockMatch[1].trim() : null;
   };
 
-  console.log('SQLDocumentation rendering, categories:', commandsByCategory.length);
-
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-white dark:bg-gray-900">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-700">
         <div className="flex items-center gap-2">
           <Book className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-          <h3 className="font-semibold text-gray-900 dark:text-white">SQL Documentation (DEBUG: {SQL_COMMANDS.length} commands)</h3>
+          <h3 className="font-semibold text-gray-900 dark:text-white">SQL Documentation</h3>
         </div>
         {onClose && (
           <button

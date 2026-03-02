@@ -28,11 +28,8 @@ async function loadTransformers() {
   }
 
   try {
-    console.log('[Embeddings] Dynamically importing @xenova/transformers...');
-
     // Use dynamic import with error boundary
-    const module = await import('@xenova/transformers').catch((err) => {
-      console.error('[Embeddings] Failed to import transformers:', err);
+    const module = await import('@xenova/transformers').catch(() => {
       throw new Error(
         'Failed to load AI model library. This might be due to:\n' +
         '1. Browser compatibility issues\n' +
@@ -51,19 +48,15 @@ async function loadTransformers() {
         module.env.allowLocalModels = false;
         module.env.allowRemoteModels = true;
         module.env.backends = module.env.backends || {};
-        console.log('[Embeddings] Transformers environment configured');
       }
-    } catch (configError) {
-      console.warn('[Embeddings] Could not configure transformers env:', configError);
-      // Continue anyway - configuration is optional
+    } catch {
+      // Configuration is optional — continue
     }
 
     transformersModule = module;
-    console.log('[Embeddings] Transformers library loaded successfully');
     return module;
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[Embeddings] Critical error loading transformers:', error);
     throw new Error(
       'Cannot load embedding model:\n' +
       errorMsg + '\n\n' +
@@ -106,16 +99,11 @@ async function getEmbeddingPipeline(): Promise<any> {
   isLoading = true;
 
   try {
-    console.log('[Embeddings] Loading transformers library...');
     const { pipeline } = await loadTransformers();
-
-    console.log('[Embeddings] Loading model:', MODEL_NAME);
     embeddingPipeline = await pipeline('feature-extraction', MODEL_NAME);
-    console.log('[Embeddings] Model loaded successfully');
     return embeddingPipeline;
   } catch (error) {
     loadError = error instanceof Error ? error : new Error('Failed to load model');
-    console.error('[Embeddings] Load error:', loadError);
     throw loadError;
   } finally {
     isLoading = false;
@@ -202,12 +190,7 @@ export async function batchGenerateEmbeddings(
  * Call this on app initialization for better UX
  */
 export async function preloadModel(): Promise<void> {
-  try {
-    await getEmbeddingPipeline();
-  } catch (error) {
-    console.error('[Embeddings] Failed to preload model:', error);
-    throw error;
-  }
+  await getEmbeddingPipeline();
 }
 
 /**

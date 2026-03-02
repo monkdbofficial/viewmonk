@@ -20,7 +20,7 @@ export type WidgetType =
   | 'candlestick'
   | 'progress-kpi';
 
-export type AggregationType = 'AVG' | 'MAX' | 'MIN' | 'SUM' | 'COUNT';
+export type AggregationType = 'AVG' | 'MAX' | 'MIN' | 'SUM' | 'COUNT' | 'COUNT_DISTINCT' | 'STDDEV' | 'VARIANCE';
 
 export type ColorScheme =
   | 'blue'
@@ -51,7 +51,21 @@ export interface DataSourceConfig {
   groupCol?: string;     // e.g. 'location'  (optional — for multi-series)
   aggregation: AggregationType;
   customSql?: string;    // power-user raw SQL mode (overrides template)
-  limit?: number;        // for data-table widgets (default 50)
+  limit?: number;        // row limit (default 50)
+  // scatter-chart: explicit X/Y numeric columns
+  xCol?: string;
+  yCol?: string;
+  // candlestick: explicit OHLC columns (fall back to metricCol)
+  openCol?: string;
+  highCol?: string;
+  lowCol?: string;
+  closeCol?: string;
+  // progress-kpi: fixed target value (overrides MAX from DB)
+  kpiTarget?: number;
+  // treemap: parent category for 2-level hierarchy
+  parentCol?: string;
+  // additional WHERE conditions (appended to SQL filter)
+  whereClause?: string;
 }
 
 // ── Widget Threshold ─────────────────────────────────────────────────────────
@@ -81,6 +95,7 @@ export interface WidgetStyle {
   smooth?: boolean;               // smooth curves on line/area charts
   showDataLabels?: boolean;       // show values on bars / pie slices
   cardStyle?: 'default' | 'glass' | 'filled' | 'borderless'; // card background style
+  yAxisScale?: 'linear' | 'log';  // Y-axis scale type for line/area/bar charts
 }
 
 // ── Widget Config (stored in dashboard) ──────────────────────────────────────
@@ -149,7 +164,7 @@ export type WidgetStatus =
 export interface WidgetRuntimeState {
   widgetId: string;
   status: WidgetStatus;
-  data: Record<string, any>[];  // query results as objects
+  data: Record<string, unknown>[];  // query results as objects
   columns: string[];
   error: string | null;
   lastUpdated: Date | null;
@@ -198,7 +213,13 @@ export interface TemplateDefinition {
   requiredSchema: TemplateRequiredSchema;
   widgetCount: number;
   defaultLayout: Omit<WidgetConfig, 'dataSource'>[];  // layout without data bindings
-  demoData: Record<string, any>;  // fake data for preview (no DB needed)
+  /**
+   * Name of the _demo_* table in MonkDB that backs this template's preview.
+   * All data binding (column roles, aggregations, limits) is stored in
+   * DEMO_TABLE_SCHEMAS[demoTable].widgetRoles inside demo-setup.ts.
+   * Template files contain zero data configuration.
+   */
+  demoTable: string;
 }
 
 // ── Builder State ─────────────────────────────────────────────────────────────

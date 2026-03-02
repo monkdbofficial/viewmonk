@@ -71,8 +71,6 @@ export function MonkDBProvider({ children }: { children: React.ReactNode }) {
             role: conn.config.role || 'superuser' as 'superuser'
           };
 
-          console.log('[MonkDBContext] Restoring connection:', conn.name, 'with role:', config.role);
-
           return {
             id: conn.id,
             name: conn.name,
@@ -154,8 +152,8 @@ export function MonkDBProvider({ children }: { children: React.ReactNode }) {
           }
         });
       }
-    } catch (error) {
-      console.error('Failed to load connections from localStorage:', error);
+    } catch {
+      // malformed localStorage data — start with empty connection list
     }
   };
 
@@ -175,14 +173,14 @@ export function MonkDBProvider({ children }: { children: React.ReactNode }) {
         },
       }));
       localStorage.setItem('monkdb_connections', JSON.stringify(toSave));
-    } catch (error) {
-      console.error('Failed to save connections to localStorage:', error);
+    } catch {
+      // storage quota exceeded — in-memory state still intact
     }
   }, []);
 
   const addConnection = useCallback(
     async (name: string, config: MonkDBConfig): Promise<string> => {
-      const id = `conn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const id = `conn_${crypto.randomUUID()}`;
       const client = createMonkDBClient(config);
 
       const newConnection: Connection = {

@@ -309,7 +309,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
 
       if (isTauri) {
         // Tauri mode
-        console.log('[BlobStorage] Loading blobs via Tauri API...');
         result = await invoke('list_blobs', {
           request: {
             connection_id: activeConnection.id,
@@ -322,7 +321,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         count = result.length; // Tauri should return count separately in future
       } else {
         // Browser mode - query metadata table directly with pagination
-        console.log('[BlobStorage] Loading blobs via HTTP API with pagination...');
         const metadataTable = getMetadataTableName(table);
 
         // First, check if table exists and migrate if needed
@@ -338,7 +336,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         });
 
         if (!checkResponse.ok) {
-          console.warn('[BlobStorage] Table check failed, table may not exist');
           setBlobs([]);
           setTotalCount(0);
           setLoading(false);
@@ -347,7 +344,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
 
         const tableInfo = await checkResponse.json();
         const existingColumns = (tableInfo.rows || []).map((row: any[]) => row[0]);
-        console.log('[BlobStorage] Existing columns:', existingColumns);
 
         // Check if we need to add new columns
         const requiredColumns = [
@@ -360,9 +356,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         const missingColumns = requiredColumns.filter(col => !existingColumns.includes(col));
 
         if (missingColumns.length > 0) {
-          console.log('[BlobStorage] Missing columns detected:', missingColumns);
-          console.log('[BlobStorage] Some enterprise features will be disabled until migration.');
-
           addNotification({
             type: 'info',
             title: 'Table Migration Available',
@@ -480,7 +473,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
 
         if (!response.ok) {
           const errorText = await response.text();
-          console.error('[BlobStorage] Load failed:', errorText);
           throw new Error(`Failed to load blobs: ${response.status} ${response.statusText}`);
         }
 
@@ -524,7 +516,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
 
       setBlobs(result);
     } catch (error: any) {
-      console.error('[BlobStorage] Failed to load blobs:', error);
       addNotification({
         type: 'error',
         title: 'Failed to Load BLOBs',
@@ -593,12 +584,9 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
           message: `Storage is at ${quotaCheck.usage.usagePercent?.toFixed(1)}% capacity. Upload proceeding but cleanup is urgent.`,
         });
       }
-    } catch (error: any) {
-      console.error('[BlobUpload] Quota check failed:', error);
-      // Continue with upload on quota check failure
+    } catch {
+      // quota check failure — allow upload to continue
     }
-
-    console.log(`[BlobUpload] User ${userId} uploading file: ${file.name}`);
 
     // Initialize progress
     const progressKey = `${file.name}-${Date.now()}`;
@@ -609,21 +597,14 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
     }));
 
     try {
-      console.log(`[BlobUpload] Starting upload for ${file.name} (${file.size} bytes)`);
-      console.log(`[BlobUpload] Mode: ${typeof window !== 'undefined' && window.__TAURI__ ? 'Tauri Desktop' : 'Web Browser'}`);
-
       // Read file content
-      console.log(`[BlobUpload] Reading file content...`);
       const arrayBuffer = await file.arrayBuffer();
       const fileBytes = new Uint8Array(arrayBuffer);
-      console.log(`[BlobUpload] File read successfully, ${fileBytes.length} bytes`);
 
       // Calculate SHA-1 hash
-      console.log(`[BlobUpload] Calculating SHA-1 hash...`);
       const hashBuffer = await crypto.subtle.digest('SHA-1', fileBytes);
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       const sha1Hash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-      console.log(`[BlobUpload] SHA-1: ${sha1Hash}`);
 
       // Update progress to uploading
       setUploadProgress(prev => new Map(prev).set(progressKey, {
@@ -642,7 +623,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
 
       if (isTauri) {
         // Tauri mode - use invoke command
-        console.log(`[BlobUpload] Using Tauri API...`);
         result = await invoke('upload_blob', {
           request: {
             connection_id: activeConnection.id,
@@ -656,11 +636,9 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         });
       } else {
         // Browser mode - use proxy API to avoid CORS
-        console.log(`[BlobUpload] Using proxy API...`);
 
         // Upload blob via Next.js API proxy
         const proxyUrl = `/api/blob/${table}/${sha1Hash}`;
-        console.log(`[BlobUpload] Uploading to proxy: ${proxyUrl}`);
 
         const uploadResponse = await fetch(proxyUrl, {
           method: 'PUT',
@@ -675,8 +653,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         if (!uploadResponse.ok) {
           throw new Error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
         }
-
-        console.log(`[BlobUpload] Blob uploaded successfully, status: ${uploadResponse.status}`);
 
         // Update progress
         setUploadProgress(prev => new Map(prev).set(progressKey, {
@@ -695,7 +671,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         const insertSql = `INSERT INTO ${metadataTable} (id, sha1_hash, filename, folder_path, file_size, content_type, uploaded_at, uploaded_by, metadata)
           VALUES ('${metadataId}', '${sha1Hash}', '${escapeSqlString(file.name)}', ${folderValue}, ${file.size}, '${escapeSqlString(contentType)}', CURRENT_TIMESTAMP, ${uploadedByValue}, NULL)`;
 
-        console.log(`[BlobUpload] Inserting metadata...`);
         const metadataResponse = await fetch('/api/sql', {
           method: 'POST',
           headers: {
@@ -707,9 +682,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         });
 
         if (!metadataResponse.ok) {
-          console.warn(`[BlobUpload] Metadata insert failed: ${metadataResponse.status}`);
-        } else {
-          console.log(`[BlobUpload] Metadata inserted successfully`);
+          // Metadata insert failed — blob is uploaded but metadata is missing
         }
 
         result = {
@@ -719,8 +692,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
           metadata_row_id: metadataId,
         };
       }
-
-      console.log(`[BlobUpload] Upload successful! SHA-1: ${result.sha1_hash}`);
 
       // Update progress to completed
       setUploadProgress(prev => new Map(prev).set(progressKey, {
@@ -756,13 +727,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         });
       }, 3000);
     } catch (error: any) {
-      console.error(`[BlobUpload] Upload failed for ${file.name}:`, error);
-      console.error(`[BlobUpload] Error details:`, {
-        message: error.message,
-        stack: error.stack,
-        toString: error.toString()
-      });
-
       setUploadProgress(prev => new Map(prev).set(progressKey, {
         filename: file.name,
         progress: 0,
@@ -965,12 +929,9 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
             title: 'Permission Denied',
             message: 'You do not have permission to delete this file. Only the file owner can delete it.',
           });
-          console.warn(`[BlobStorage] User ${userId} attempted to delete file owned by ${fileOwnerId}`);
           return;
         }
       }
-
-      console.log(`[BlobStorage] User ${userId} deleting file (permanent: ${permanent})`);
 
       const isTauri = typeof window !== 'undefined' && window.__TAURI__;
 
@@ -1017,7 +978,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
           });
 
           if (!blobResponse.ok && blobResponse.status !== 404) {
-            console.warn(`[BlobStorage] Blob delete returned ${blobResponse.status}`);
+            // Non-fatal: blob may already be gone
           }
 
           addNotification({
@@ -1057,7 +1018,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
       // Reload blobs
       await loadBlobs(table, currentFolder || undefined);
     } catch (error: any) {
-      console.error('[BlobStorage] Delete failed:', error);
       addNotification({
         type: 'error',
         title: 'Delete Failed',
@@ -1122,8 +1082,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      console.log(`[BlobStorage] User ${userId} renaming file to: ${newFilename}`);
-
       const isTauri = typeof window !== 'undefined' && window.__TAURI__;
 
       if (isTauri) {
@@ -1176,7 +1134,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         });
 
         if (!refreshResponse.ok) {
-          console.warn('[BlobStorage] REFRESH TABLE failed, changes may not be immediately visible');
+          // Non-fatal: changes may not be immediately visible
         }
       }
 
@@ -1192,7 +1150,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
       // Reload blobs to show updated filename with force refresh
       await loadBlobs(table, currentFolder || undefined);
     } catch (error: any) {
-      console.error('[BlobStorage] Rename failed:', error);
       addNotification({
         type: 'error',
         title: 'Rename Failed',
@@ -1293,9 +1250,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
 
   // Toggle favorite status
   const toggleFavorite = useCallback(async (table: string, metadataRowId: string, isFavorite: boolean) => {
-    console.log('[toggleFavorite] Called with:', { table, metadataRowId, isFavorite });
     if (!activeConnection) {
-      console.error('[toggleFavorite] No active connection');
       return;
     }
 
@@ -1354,8 +1309,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         SET is_favorite = ${!isFavorite}
         WHERE id = '${escapeSqlString(metadataRowId)}'`;
 
-      console.log('[toggleFavorite] Executing SQL:', updateSql);
-
       const response = await fetch('/api/sql', {
         method: 'POST',
         headers: {
@@ -1368,12 +1321,10 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('[toggleFavorite] Update failed:', errorText);
         throw new Error(`Failed to toggle favorite: ${response.status} - ${errorText}`);
       }
 
-      const result = await response.json();
-      console.log('[toggleFavorite] Update result:', result);
+      await response.json();
 
       // Refresh table to make changes visible
       await fetch('/api/sql', {
@@ -1386,11 +1337,8 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ stmt: `REFRESH TABLE ${metadataTable}` }),
       });
 
-      console.log('[toggleFavorite] Reloading blobs...');
       await loadBlobs(table, currentFolder || undefined);
-      console.log('[toggleFavorite] Complete');
     } catch (error: any) {
-      console.error('[toggleFavorite] Error:', error);
       addNotification({
         type: 'error',
         title: 'Update Failed',
@@ -1752,8 +1700,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
           type: r[2],
         })) || [],
       };
-    } catch (error: any) {
-      console.error('[BlobStorage] Failed to get analytics:', error);
+    } catch {
       return null;
     }
   }, [activeConnection]);
@@ -1766,10 +1713,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
    * Generate a unique share token for file sharing
    */
   const generateShareToken = (): string => {
-    const timestamp = Date.now().toString(36);
-    const randomPart = Math.random().toString(36).substring(2, 15);
-    const randomPart2 = Math.random().toString(36).substring(2, 15);
-    return `share_${timestamp}_${randomPart}${randomPart2}`;
+    return `share_${crypto.randomUUID().replace(/-/g, '')}`;
   };
 
   /**
@@ -1783,23 +1727,14 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
     expiresInDays?: number,
     password?: string
   ): Promise<string | null> => {
-    console.log('[blob-context] shareFile called with:', { table, metadataRowId, permissions, expiresInDays });
-    console.log('[blob-context] activeConnection:', !!activeConnection);
-    console.log('[blob-context] userId:', userId);
-    console.log('[blob-context] role:', role);
-
     if (!activeConnection) {
-      console.error('[blob-context] No active connection');
       return null;
     }
 
     // Require authentication
     try {
-      console.log('[blob-context] Checking authentication...');
       requireAuthentication(userId, 'share files');
-      console.log('[blob-context] Authentication passed');
     } catch (error: any) {
-      console.error('[blob-context] Authentication failed:', error);
       addNotification({
         type: 'error',
         title: 'Authentication Required',
@@ -1809,9 +1744,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
     }
 
     // Check role-based permission
-    console.log('[blob-context] Checking permission for update_files...');
     if (!hasPermission('update_files')) {
-      console.error('[blob-context] Permission denied for role:', role);
       addNotification({
         type: 'error',
         title: 'Permission Denied',
@@ -1819,7 +1752,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
       });
       return null;
     }
-    console.log('[blob-context] Permission check passed');
 
     try {
       const metadataTable = getMetadataTableName(table);
@@ -2118,8 +2050,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
       });
 
       return metadata;
-    } catch (error: any) {
-      console.error('[BlobStorage] Failed to validate share token:', error);
+    } catch {
       return null;
     }
   }, [activeConnection, addNotification]);
@@ -2223,7 +2154,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const auditTable = getAuditLogTableName(table);
-      const id = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      const id = `audit_${crypto.randomUUID()}`;
 
       const detailsJson = details ? `'${escapeSqlString(JSON.stringify(details))}'` : 'NULL';
       const fileIdValue = fileId ? `'${escapeSqlString(fileId)}'` : 'NULL';
@@ -2256,8 +2187,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         },
         body: JSON.stringify({ stmt: insertSql }),
       });
-    } catch (error: any) {
-      console.error('[BlobStorage] Failed to log audit entry:', error);
+    } catch {
       // Don't throw - audit logging shouldn't break the main operation
     }
   }, [activeConnection, userId, role]);
@@ -2299,10 +2229,8 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
       if (!response.ok) {
         throw new Error(`Failed to create audit log table: ${response.status}`);
       }
-
-      console.log(`[BlobStorage] Created audit log table: ${auditTable}`);
-    } catch (error: any) {
-      console.error('[BlobStorage] Failed to create audit log table:', error);
+    } catch {
+      // audit log table creation failure is non-fatal
     }
   }, [activeConnection]);
 
@@ -2405,8 +2333,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         success: row[10],
         error_message: row[11],
       })) || [];
-    } catch (error: any) {
-      console.error('[BlobStorage] Failed to get audit logs:', error);
+    } catch {
       return [];
     }
   }, [activeConnection, createAuditLogTable]);
@@ -2559,8 +2486,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
           timestamp: r[3],
         })) || [],
       };
-    } catch (error: any) {
-      console.error('[BlobStorage] Failed to get audit summary:', error);
+    } catch {
       return null;
     }
   }, [activeConnection]);
@@ -2644,8 +2570,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         totalSize,
         count: files.length,
       };
-    } catch (error: any) {
-      console.error('[BlobStorage] Failed to preview cleanup:', error);
+    } catch {
       return { files: [], totalSize: 0, count: 0 };
     }
   }, [activeConnection]);
@@ -2725,7 +2650,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
             });
 
             if (!deleteResponse.ok) {
-              console.warn(`[BlobStorage] Failed to delete BLOB ${file.sha1_hash}: ${deleteResponse.status}`);
+              // Non-fatal: blob may already be gone
             }
           }
 
@@ -2752,8 +2677,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
             deleted_at: file.deleted_at,
           });
         } catch (fileError: any) {
-          console.error(`[BlobStorage] Failed to cleanup file ${file.filename}:`, fileError);
-
           // Log failed cleanup
           await logAudit(table, 'delete', file.id, file.filename, false, {
             cleanup: true,
@@ -2778,7 +2701,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
 
       return { deletedCount, freedSpace };
     } catch (error: any) {
-      console.error('[BlobStorage] Cleanup failed:', error);
       addNotification({
         type: 'error',
         title: 'Cleanup Failed',
@@ -2968,7 +2890,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
       await loadBlobs(table, originalFolder || undefined);
       return result.id;
     } catch (error: any) {
-      console.error('[BlobStorage] Failed to create version:', error);
       addNotification({
         type: 'error',
         title: 'Version Creation Failed',
@@ -3093,8 +3014,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
       })) || [];
 
       return versions;
-    } catch (error: any) {
-      console.error('[BlobStorage] Failed to get version history:', error);
+    } catch {
       return [];
     }
   }, [activeConnection]);
@@ -3181,7 +3101,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
 
       await loadBlobs(table, versionRow[3] || undefined);
     } catch (error: any) {
-      console.error('[BlobStorage] Failed to restore version:', error);
       addNotification({
         type: 'error',
         title: 'Restore Failed',
@@ -3258,7 +3177,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
 
       await loadBlobs(table, firstVersion.folder_path || undefined);
     } catch (error: any) {
-      console.error('[BlobStorage] Failed to delete all versions:', error);
       addNotification({
         type: 'error',
         title: 'Delete Failed',
@@ -3309,8 +3227,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
       const tags = data.rows?.map((row: any[]) => row[0]).filter(Boolean) || [];
 
       return tags;
-    } catch (error: any) {
-      console.error('[BlobStorage] Failed to get tags:', error);
+    } catch {
       return [];
     }
   }, [activeConnection]);
@@ -3475,7 +3392,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
 
       return exportData;
     } catch (error: any) {
-      console.error('[BlobStorage] Failed to export metadata:', error);
       addNotification({
         type: 'error',
         title: 'Export Failed',
@@ -3577,7 +3493,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         total_size: files.reduce((sum, f) => sum + f.file_size, 0),
       });
     } catch (error: any) {
-      console.error('[BlobStorage] Failed to export blobs:', error);
       addNotification({
         type: 'error',
         title: 'Export Failed',
@@ -3634,8 +3549,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         oldestFile: row[2] || '',
         newestFile: row[3] || '',
       };
-    } catch (error: any) {
-      console.error('[BlobStorage] Failed to get backup summary:', error);
+    } catch {
       return null;
     }
   }, [activeConnection]);
@@ -3721,8 +3635,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         criticalThresholdPercent: row[3] || 90,
         enableAlerts: row[4] !== false,
       };
-    } catch (error: any) {
-      console.error('[BlobStorage] Failed to get quota settings:', error);
+    } catch {
       return null;
     }
   }, [activeConnection]);
@@ -3819,10 +3732,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         title: 'Quota Settings Updated',
         message: `Storage quota settings have been updated for ${table}.`,
       });
-
-      console.log('[BlobStorage] Quota settings updated:', settings);
     } catch (error: any) {
-      console.error('[BlobStorage] Failed to set quota settings:', error);
       addNotification({
         type: 'error',
         title: 'Failed to Update Settings',
@@ -3904,8 +3814,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         alertLevel,
         remainingBytes,
       };
-    } catch (error: any) {
-      console.error('[BlobStorage] Failed to get table quota usage:', error);
+    } catch {
       return null;
     }
   }, [activeConnection, getQuotaSettings]);
@@ -3988,8 +3897,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         alertLevel,
         remainingBytes,
       };
-    } catch (error: any) {
-      console.error('[BlobStorage] Failed to get user quota usage:', error);
+    } catch {
       return null;
     }
   }, [activeConnection, getQuotaSettings]);
@@ -4076,8 +3984,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
       });
 
       return usages;
-    } catch (error: any) {
-      console.error('[BlobStorage] Failed to get all users quota usage:', error);
+    } catch {
       return [];
     }
   }, [activeConnection, getQuotaSettings]);
@@ -4119,8 +4026,7 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
       }
 
       return { allowed: true, usage };
-    } catch (error: any) {
-      console.error('[BlobStorage] Failed to check quota before upload:', error);
+    } catch {
       // On error, allow the upload
       return { allowed: true };
     }
@@ -4130,8 +4036,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
     if (!activeConnection) return;
 
     try {
-      console.log(`[BlobStorage] Creating BLOB table and metadata table for: ${table}`);
-
       const isTauri = typeof window !== 'undefined' && window.__TAURI__;
 
       if (isTauri) {
@@ -4145,8 +4049,8 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         });
       } else {
         // Browser mode - create BLOB table first
-        console.log(`[BlobStorage] Step 1: Creating BLOB table: ${table}`);
-        const createBlobTableSql = `CREATE BLOB TABLE ${table} CLUSTERED INTO 4 SHARDS WITH (number_of_replicas = 0)`;
+        const safeTable = escapeSqlIdentifier(table);
+        const createBlobTableSql = `CREATE BLOB TABLE "${safeTable}" CLUSTERED INTO 4 SHARDS WITH (number_of_replicas = 0)`;
 
         const blobTableResponse = await fetch('/api/sql', {
           method: 'POST',
@@ -4163,17 +4067,13 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
 
           // Check if table already exists (ignore this error)
           if (errorText.includes('RelationAlreadyExists') || errorText.includes('already exists')) {
-            console.log(`[BlobStorage] BLOB table already exists: ${table}`);
+            // BLOB table already exists — continue
           } else {
-            console.error(`[BlobStorage] Failed to create BLOB table: ${errorText}`);
             throw new Error(`Failed to create BLOB table: ${blobTableResponse.status} - ${errorText}`);
           }
-        } else {
-          console.log(`[BlobStorage] BLOB table created successfully: ${table}`);
         }
 
         // Step 2: Create metadata table with enterprise features
-        console.log(`[BlobStorage] Step 2: Creating metadata table with enterprise features`);
         const metadataTable = getMetadataTableName(table);
         const createSql = `CREATE TABLE IF NOT EXISTS ${metadataTable} (
           id TEXT PRIMARY KEY,
@@ -4221,14 +4121,10 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
 
         if (!response.ok) {
           const errorText = await response.text();
-          console.error(`[BlobStorage] Failed to create metadata table: ${errorText}`);
-          throw new Error(`Failed to create metadata table: ${response.status}`);
+          throw new Error(`Failed to create metadata table: ${response.status} - ${errorText}`);
         }
 
-        console.log(`[BlobStorage] Metadata table created successfully: ${metadataTable}`);
-
-        // Create indexes for enterprise features
-        console.log(`[BlobStorage] Step 3: Creating indexes for enterprise features`);
+        // Step 3: Create indexes for enterprise features
         const indexes = [
           `CREATE INDEX IF NOT EXISTS idx_${table}_sha1_hash ON ${metadataTable} (sha1_hash)`,
           `CREATE INDEX IF NOT EXISTS idx_${table}_folder_path ON ${metadataTable} (folder_path)`,
@@ -4249,14 +4145,12 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
               'x-monkdb-port': activeConnection.config.port.toString(),
             },
             body: JSON.stringify({ stmt: indexSql }),
-          }).catch(err => console.warn('[BlobStorage] Index creation warning:', err));
+          }).catch(() => { /* index creation warnings are non-fatal */ });
         }
 
-        console.log(`[BlobStorage] All indexes created successfully`);
       }
 
       // Step 4: Create audit log table
-      console.log(`[BlobStorage] Step 4: Creating audit log table`);
       await createAuditLogTable(table);
 
       addNotification({
@@ -4265,7 +4159,6 @@ export function BlobProvider({ children }: { children: React.ReactNode }) {
         message: `BLOB table ${table} created successfully`,
       });
     } catch (error: any) {
-      console.error('[BlobStorage] Create table failed:', error);
       addNotification({
         type: 'error',
         title: 'Table Creation Failed',

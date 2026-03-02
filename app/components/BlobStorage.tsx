@@ -89,8 +89,8 @@ function BlobStorageContent() {
         // If we found at least 2 of the 3 key columns, consider it enterprise-enabled
         return (data.rows && data.rows.length >= 2);
       }
-    } catch (error) {
-      console.error('[BlobStorage] Error checking table features:', error);
+    } catch {
+      // feature check failed — assume no enterprise features
     }
 
     return false;
@@ -104,8 +104,6 @@ function BlobStorageContent() {
     }
 
     try {
-      console.log('[BlobStorage] Loading actual blob metadata tables from database...');
-
       // Query to get all tables ending with _blob_metadata
       const sql = `SELECT table_name FROM information_schema.tables WHERE table_schema = 'doc' AND table_name LIKE '%_blob_metadata'`;
 
@@ -123,14 +121,11 @@ function BlobStorageContent() {
       });
 
       if (!response.ok) {
-        const errorText = await response.text().catch(() => `HTTP ${response.status}`);
-        console.error('[BlobStorage] Failed to load tables:', response.status, errorText);
         setTables([]);
         return;
       }
 
       const data = await response.json();
-      console.log('[BlobStorage] Tables query result:', data);
 
       // Extract base table names (remove _blob_metadata suffix)
       const tableNames = (data.rows || [])
@@ -139,7 +134,6 @@ function BlobStorageContent() {
         .map((name: string) => name.replace('_blob_metadata', ''))
         .sort();
 
-      console.log('[BlobStorage] Found blob tables:', tableNames);
       setTables(tableNames);
 
       // Check which tables have enterprise features
@@ -148,13 +142,11 @@ function BlobStorageContent() {
         featuresMap[table] = await checkTableFeatures(table);
       }
       setTableFeatures(featuresMap);
-      console.log('[BlobStorage] Table enterprise features:', featuresMap);
 
       // Auto-select first table if none selected, using functional update to avoid
       // needing currentTable in the dependency array (which would cause re-fetch loops)
       setCurrentTable(prev => prev || tableNames[0] || null);
-    } catch (error) {
-      console.error('[BlobStorage] Error loading tables:', error);
+    } catch {
       setTables([]);
     }
   }, [activeConnection]);
@@ -237,7 +229,6 @@ function BlobStorageContent() {
     if (!activeConnection) return;
 
     try {
-      console.log('[BlobStorage] Deleting table:', tableName);
 
       // Delete metadata table first
       const deleteMetadataSql = `DROP TABLE IF EXISTS "${tableName}_blob_metadata"`;
@@ -294,9 +285,7 @@ function BlobStorageContent() {
         }
       }
 
-      console.log('[BlobStorage] Table deleted successfully');
     } catch (error: any) {
-      console.error('[BlobStorage] Failed to delete table:', error);
       alert(`Failed to delete table: ${error.message}`);
     }
   };
@@ -305,7 +294,6 @@ function BlobStorageContent() {
     if (!activeConnection) return;
 
     try {
-      console.log('[BlobStorage] Creating new table:', tableName);
       await createMetadataTable(tableName);
 
       // Reload the actual table list from database to ensure it's in sync
@@ -332,7 +320,6 @@ function BlobStorageContent() {
           .map((name: string) => name.replace('_blob_metadata', ''))
           .sort();
 
-        console.log('[BlobStorage] Updated table list:', tableNames);
         setTables(tableNames);
 
         // Mark the new table as having enterprise features
@@ -345,9 +332,8 @@ function BlobStorageContent() {
 
       // Select the newly created table
       setCurrentTable(tableName);
-      console.log('[BlobStorage] Table created successfully:', tableName);
-    } catch (error) {
-      console.error('[BlobStorage] Failed to create table:', error);
+    } catch {
+      // table creation failed — user will see empty table list
     }
   };
 

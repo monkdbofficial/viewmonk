@@ -71,7 +71,7 @@ export default function CreateFTSIndexDialog({ onClose, onSuccess }: CreateFTSIn
   const selSt: React.CSSProperties = {
     width: '100%', background: C.bgInput, border: `1px solid ${C.border}`,
     borderRadius: 7, color: C.textPrimary, fontSize: 13, padding: '7px 11px',
-    outline: 'none', cursor: 'pointer', appearance: 'auto' as any,
+    outline: 'none', cursor: 'pointer', appearance: 'auto',
   };
 
   const [step, setStep] = useState(1);
@@ -97,14 +97,19 @@ export default function CreateFTSIndexDialog({ onClose, onSuccess }: CreateFTSIn
         const colResult = await client.query(
           `SELECT column_name, data_type, is_nullable
            FROM information_schema.columns
-           WHERE table_schema = $1 AND table_name = $2
+           WHERE table_schema = ? AND table_name = ?
            ORDER BY ordinal_position`,
           [schema, sourceTable]
         );
         const pkResult = await client.query(
-          `SELECT column_name FROM information_schema.key_column_usage
-           WHERE table_schema = $1 AND table_name = $2
-             AND constraint_name LIKE '%_pkey'`,
+          `SELECT kcu.column_name
+           FROM information_schema.key_column_usage kcu
+           JOIN information_schema.table_constraints tc
+             ON kcu.constraint_name = tc.constraint_name
+             AND kcu.table_schema = tc.table_schema
+             AND kcu.table_name = tc.table_name
+           WHERE tc.constraint_type = 'PRIMARY KEY'
+             AND kcu.table_schema = ? AND kcu.table_name = ?`,
           [schema, sourceTable]
         );
         const pkSet = new Set(pkResult.rows.map((r: any[]) => r[0]));

@@ -99,10 +99,8 @@ export default function LeafletMapViewer({
         mapRef.current = map;
         isMountedRef.current = true;
         setMapReady(true);
-
-        console.log('✅ Leaflet map initialized successfully');
-      } catch (error) {
-        console.error('❌ Error initializing map:', error);
+      } catch {
+        // map init failed — container may not be ready yet
       }
     }, 100);
 
@@ -137,20 +135,16 @@ export default function LeafletMapViewer({
   // Update markers when geoPoints change
   useEffect(() => {
     if (!mapRef.current || !mapReady) {
-      console.log('⚠️ Map not ready yet, waiting...');
       return;
     }
-
-    console.log('📍 Updating markers:', geoPoints.length, 'points');
 
     // Clear existing markers
     markersRef.current.forEach(marker => marker.remove());
     markersRef.current = [];
 
     // Add new markers - using CircleMarker for better visibility
-    geoPoints.forEach((point, index) => {
+    geoPoints.forEach((point) => {
       const [lng, lat] = point.coordinates;
-      console.log(`  Point ${index + 1}:`, { lat, lng, name: point.properties?.name });
 
       try {
         // Create a visible circle marker
@@ -179,18 +173,15 @@ export default function LeafletMapViewer({
         marker.bindPopup(popupContent);
 
         markersRef.current.push(marker);
-      } catch (error) {
-        console.error(`❌ Error adding marker ${index + 1}:`, error);
+      } catch {
+        // skip malformed point
       }
     });
-
-    console.log('✅ Added', markersRef.current.length, 'markers to map');
 
     // Fit bounds if we have markers
     if (markersRef.current.length > 0) {
       const group = L.featureGroup(markersRef.current);
       mapRef.current.fitBounds(group.getBounds(), { padding: [50, 50] });
-      console.log('📐 Fitted map bounds to markers');
     }
   }, [geoPoints, mapReady]);
 

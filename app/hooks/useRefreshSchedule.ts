@@ -146,6 +146,21 @@ export function useRefreshSchedule(schema?: string, table?: string) {
   // Check if any tables need refresh
   const tablesToRefresh = schedules.filter(s => needsRefresh(s));
 
+  // ── Actually execute scheduled refreshes ──────────────────────────────────
+  // Poll every 60 s. For each enabled schedule whose nextRefresh time has
+  // passed, run REFRESH TABLE automatically ("scheduled" trigger).
+  useEffect(() => {
+    if (!client) return;
+    const timer = setInterval(async () => {
+      const allSchedules = getRefreshSchedules();
+      const due = allSchedules.filter(s => needsRefresh(s));
+      for (const s of due) {
+        await executeRefresh(s.schema, s.table, 'scheduled');
+      }
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, [client, executeRefresh]);
+
   return {
     schedules,
     history,

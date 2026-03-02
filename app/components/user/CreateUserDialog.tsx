@@ -58,24 +58,26 @@ export default function CreateUserDialog({ onClose, onSuccess }: CreateUserDialo
     setCreating(true);
 
     try {
+      const safeUsername = '"' + username.replace(/"/g, '""') + '"';
+
       // Create user with password (if provided) - CrateDB/MonkDB syntax
       if (password) {
+        const safePassword = password.replace(/'/g, "''");
         await activeConnection.client.query(
-          `CREATE USER ${username} WITH (password = '${password.replace(/'/g, "''")}')`
+          `CREATE USER ${safeUsername} WITH (password = '${safePassword}')`
         );
       } else {
-        await activeConnection.client.query(`CREATE USER ${username}`);
+        await activeConnection.client.query(`CREATE USER ${safeUsername}`);
       }
 
       // Grant superuser status using AL (Admin Level) privilege
       if (isSuperuser) {
-        await activeConnection.client.query(`GRANT AL TO ${username}`);
+        await activeConnection.client.query(`GRANT AL TO ${safeUsername}`);
       }
 
       toast.success('User created', `User "${username}" has been created successfully`);
       onSuccess();
     } catch (err) {
-      console.error('Failed to create user:', err);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       setError(errorMessage);
       toast.error('Failed to create user', errorMessage);

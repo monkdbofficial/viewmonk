@@ -99,7 +99,6 @@ export default function TableExporter({
       toast.success('Export Successful', `Exported ${rows.length} rows to ${fileName}`);
       onClose();
     } catch (error) {
-      console.error('Export failed:', error);
       toast.error('Export Failed', error instanceof Error ? error.message : 'Could not export data');
     } finally {
       setExporting(false);

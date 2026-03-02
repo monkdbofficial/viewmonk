@@ -25,8 +25,7 @@ export default function MigrateTableDialog({ table, onClose, onComplete }: Migra
 
     try {
       const metadataTable = `${table}_blob_metadata`;
-
-      console.log('[Migration] Starting migration for table:', metadataTable);
+      const quotedMetadataTable = `"${metadataTable}"`;
 
       // First, check which columns already exist
       setMessage('Checking existing columns...');
@@ -44,7 +43,6 @@ export default function MigrateTableDialog({ table, onClose, onComplete }: Migra
 
       const existingColumnsData = await checkColumnsResponse.json();
       const existingColumns = (existingColumnsData.rows || []).map((row: any[]) => row[0]);
-      console.log('[Migration] Existing columns:', existingColumns);
 
       // Define all enterprise columns
       const columns = [
@@ -66,7 +64,6 @@ export default function MigrateTableDialog({ table, onClose, onComplete }: Migra
 
       // Filter to only columns that don't exist
       const columnsToAdd = columns.filter(col => !existingColumns.includes(col.name));
-      console.log('[Migration] Columns to add:', columnsToAdd.map(c => c.name));
 
       if (columnsToAdd.length === 0) {
         setStatus('success');
@@ -83,9 +80,8 @@ export default function MigrateTableDialog({ table, onClose, onComplete }: Migra
 
       for (const col of columnsToAdd) {
         setMessage(`Adding column: ${col.name}...`);
-        console.log('[Migration] Adding column:', col.name, 'type:', col.type);
 
-        const alterSql = `ALTER TABLE ${metadataTable} ADD COLUMN ${col.name} ${col.type}`;
+        const alterSql = `ALTER TABLE ${quotedMetadataTable} ADD COLUMN ${col.name} ${col.type}`;
 
         const response = await fetch('/api/sql', {
           method: 'POST',
@@ -97,39 +93,31 @@ export default function MigrateTableDialog({ table, onClose, onComplete }: Migra
           body: JSON.stringify({ stmt: alterSql }),
         });
 
-        console.log('[Migration] Response status for', col.name, ':', response.status);
-
         if (response.ok) {
           addedCount++;
-          console.log('[Migration] Successfully added column:', col.name);
         } else {
           const error = await response.text();
-          console.error(`[Migration] Failed to add column ${col.name}:`, error);
           errors.push(`${col.name}: ${error}`);
         }
       }
 
       // Refresh table to make columns available
       setMessage('Refreshing table schema...');
-      console.log('[Migration] Refreshing table...');
-      const refreshResponse = await fetch('/api/sql', {
+      await fetch('/api/sql', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-monkdb-host': activeConnection.config.host,
           'x-monkdb-port': activeConnection.config.port.toString(),
         },
-        body: JSON.stringify({ stmt: `REFRESH TABLE ${metadataTable}` }),
+        body: JSON.stringify({ stmt: `REFRESH TABLE ${quotedMetadataTable}` }),
       });
-
-      console.log('[Migration] Refresh response status:', refreshResponse.status);
 
       // Wait for schema to propagate
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Verify columns were added
       setMessage('Verifying schema changes...');
-      console.log('[Migration] Verifying columns were added...');
       const verifyResponse = await fetch('/api/sql', {
         method: 'POST',
         headers: {
@@ -145,17 +133,14 @@ export default function MigrateTableDialog({ table, onClose, onComplete }: Migra
       if (verifyResponse.ok) {
         const verifyData = await verifyResponse.json();
         const updatedColumns = (verifyData.rows || []).map((row: any[]) => row[0]);
-        console.log('[Migration] Current columns in table after migration:', updatedColumns);
 
         const missingColumns = columnsToAdd.filter(col => !updatedColumns.includes(col.name));
         if (missingColumns.length > 0) {
-          console.error('[Migration] Missing columns after migration:', missingColumns.map(c => c.name));
           throw new Error(`Failed to add columns: ${missingColumns.map(c => c.name).join(', ')}`);
         }
       }
 
       if (errors.length > 0) {
-        console.error('[Migration] Errors occurred:', errors);
         setStatus('error');
         setMessage(`⚠️ Migration completed with errors:\n${errors.slice(0, 3).join('\n')}`);
         return;
@@ -173,7 +158,6 @@ export default function MigrateTableDialog({ table, onClose, onComplete }: Migra
     } catch (error: any) {
       setStatus('error');
       setMessage(`❌ Migration failed: ${error.message}`);
-      console.error('[Migration] Error:', error);
     } finally {
       setMigrating(false);
     }

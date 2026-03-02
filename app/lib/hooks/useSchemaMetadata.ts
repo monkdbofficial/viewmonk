@@ -80,8 +80,7 @@ export function useSchemaMetadata() {
         `, [currentUser]);
         return result.rows.map((row: any[]) => ({ name: row[0] }));
       }
-    } catch (err) {
-      console.error('Failed to fetch schemas:', err);
+    } catch {
       return [];
     }
   }, [activeConnection]);
@@ -137,8 +136,7 @@ export function useSchemaMetadata() {
           .filter((table): table is TableInfo => table !== null &&
             !['pg_catalog', 'information_schema', 'sys'].includes(table.schema));
       }
-    } catch (err) {
-      console.error('Failed to fetch tables:', err);
+    } catch {
       return [];
     }
   }, [activeConnection]);
@@ -168,8 +166,7 @@ export function useSchemaMetadata() {
         name: row[2],
         type: row[3],
       }));
-    } catch (err) {
-      console.error('Failed to fetch columns:', err);
+    } catch {
       return [];
     }
   }, [activeConnection]);

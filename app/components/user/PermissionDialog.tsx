@@ -96,7 +96,6 @@ export default function PermissionDialog({ user, onClose, onSuccess }: Permissio
           }))
         );
       } catch (err) {
-        console.error('Failed to load permissions:', err);
         toast.error('Failed to load permissions', err instanceof Error ? err.message : 'Unknown error');
       } finally {
         setLoading(false);
@@ -118,15 +117,18 @@ export default function PermissionDialog({ user, onClose, onSuccess }: Permissio
     setGranting(true);
 
     try {
+      const safeGrantee = '"' + user.name.replace(/"/g, '""') + '"';
+
       if (activeTab === 'schema') {
         if (!selectedSchema) {
           toast.error('No schema selected', 'Please select a schema');
           return;
         }
 
+        const safeSchema = '"' + selectedSchema.replace(/"/g, '""') + '"';
         for (const priv of selectedPrivileges) {
           await activeConnection.client.query(
-            `GRANT ${priv} ON SCHEMA ${selectedSchema} TO ${user.name}`
+            `GRANT ${priv} ON SCHEMA ${safeSchema} TO ${safeGrantee}`
           );
         }
 
@@ -140,9 +142,11 @@ export default function PermissionDialog({ user, onClose, onSuccess }: Permissio
           return;
         }
 
+        const [tSchema, tName] = selectedTable.split('.');
+        const safeTable = '"' + tSchema.replace(/"/g, '""') + '"."' + tName.replace(/"/g, '""') + '"';
         for (const priv of selectedPrivileges) {
           await activeConnection.client.query(
-            `GRANT ${priv} ON TABLE ${selectedTable} TO ${user.name}`
+            `GRANT ${priv} ON TABLE ${safeTable} TO ${safeGrantee}`
           );
         }
 
@@ -170,7 +174,6 @@ export default function PermissionDialog({ user, onClose, onSuccess }: Permissio
       setPermissions(perms);
       setSelectedPrivileges([]);
     } catch (err) {
-      console.error('Failed to grant permission:', err);
       toast.error('Failed to grant permission', err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setGranting(false);
@@ -186,8 +189,12 @@ export default function PermissionDialog({ user, onClose, onSuccess }: Permissio
     }
 
     try {
+      const safeGrantee = '"' + user.name.replace(/"/g, '""') + '"';
+      const safeIdent = perm.ident.includes('.')
+        ? perm.ident.split('.').map(p => '"' + p.replace(/"/g, '""') + '"').join('.')
+        : '"' + perm.ident.replace(/"/g, '""') + '"';
       await activeConnection.client.query(
-        `REVOKE ${perm.type} ON ${perm.class} ${perm.ident} FROM ${user.name}`
+        `REVOKE ${perm.type} ON ${perm.class} ${safeIdent} FROM ${safeGrantee}`
       );
 
       toast.success('Permission revoked', `Revoked ${perm.type} from ${user.name}`);
@@ -209,7 +216,6 @@ export default function PermissionDialog({ user, onClose, onSuccess }: Permissio
 
       setPermissions(perms);
     } catch (err) {
-      console.error('Failed to revoke permission:', err);
       toast.error('Failed to revoke permission', err instanceof Error ? err.message : 'Unknown error');
     }
   };

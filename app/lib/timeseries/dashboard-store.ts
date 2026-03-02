@@ -8,6 +8,9 @@ import type { DashboardConfig } from './types';
 
 const LOCAL_KEY = 'monkdb_ts_dashboards';
 
+// Typed query function accepted by all MonkDB sync helpers
+type QueryFn = (sql: string, args?: unknown[]) => Promise<{ rows?: unknown[][] }>;
+
 // ── MonkDB persistence table DDL ──────────────────────────────────────────────
 
 const CREATE_TABLE_SQL = `
@@ -77,7 +80,7 @@ export function duplicateDashboard(id: string): DashboardConfig | null {
   if (!original) return null;
   const copy: DashboardConfig = {
     ...original,
-    id: `dash_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    id: `dash_${crypto.randomUUID()}`,
     name: `${original.name} (copy)`,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -93,7 +96,7 @@ export function createNewDashboard(
 ): DashboardConfig {
   const now = new Date().toISOString();
   const config: DashboardConfig = {
-    id: `dash_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    id: `dash_${crypto.randomUUID()}`,
     name,
     ...(description?.trim() ? { description: description.trim() } : {}),
     themeId,
@@ -109,9 +112,7 @@ export function createNewDashboard(
 // ── MonkDB sync (enterprise persistence) ─────────────────────────────────────
 // Called when a MonkDB client is available — syncs to DB table for cross-device access
 
-export async function initMonkDBStore(
-  queryFn: (sql: string, args?: any[]) => Promise<any>,
-): Promise<void> {
+export async function initMonkDBStore(queryFn: QueryFn): Promise<void> {
   try {
     await queryFn(CREATE_TABLE_SQL);
   } catch {
@@ -119,10 +120,7 @@ export async function initMonkDBStore(
   }
 }
 
-export async function syncToMonkDB(
-  config: DashboardConfig,
-  queryFn: (sql: string, args?: any[]) => Promise<any>,
-): Promise<void> {
+export async function syncToMonkDB(config: DashboardConfig, queryFn: QueryFn): Promise<void> {
   try {
     const sql = `
       INSERT INTO monkdb._dashboards (id, name, description, config, created_at, updated_at, is_template)
@@ -146,27 +144,22 @@ export async function syncToMonkDB(
   }
 }
 
-export async function loadFromMonkDB(
-  queryFn: (sql: string) => Promise<any>,
-): Promise<DashboardConfig[]> {
+export async function loadFromMonkDB(queryFn: QueryFn): Promise<DashboardConfig[]> {
   try {
     const result = await queryFn(
       `SELECT config FROM monkdb._dashboards WHERE is_template = false ORDER BY updated_at DESC`,
     );
     return (result.rows ?? [])
-      .map((row: any[]) => {
-        try { return JSON.parse(row[0]); } catch { return null; }
+      .map((row: unknown[]) => {
+        try { return JSON.parse(row[0] as string) as DashboardConfig; } catch { return null; }
       })
-      .filter(Boolean);
+      .filter((d): d is DashboardConfig => d !== null);
   } catch {
     return [];
   }
 }
 
-export async function deleteFromMonkDB(
-  id: string,
-  queryFn: (sql: string, args?: any[]) => Promise<any>,
-): Promise<void> {
+export async function deleteFromMonkDB(id: string, queryFn: QueryFn): Promise<void> {
   try {
     await queryFn(`DELETE FROM monkdb._dashboards WHERE id = ?`, [id]);
   } catch {

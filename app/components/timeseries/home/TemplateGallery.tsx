@@ -135,14 +135,40 @@ export default function TemplateGallery({ onPreview, onUse }: TemplateGalleryPro
                     style={{ background: `linear-gradient(135deg, ${theme.accentPrimary}22 0%, transparent 55%)` }}
                   />
 
-                  {/* Simulated widget grid */}
-                  <div className="absolute inset-4 grid gap-2" style={{ gridTemplateColumns: '1fr 1fr 1fr', gridTemplateRows: '1fr 1fr 1fr' }}>
-                    <div className="rounded-lg border border-gray-300/60 bg-gray-200/70 dark:border-white/[0.08] dark:bg-white/[0.08]" />
-                    <div className="rounded-lg border border-gray-300/60 bg-gray-200/70 dark:border-white/[0.08] dark:bg-white/[0.08]" />
-                    <div className="rounded-lg border border-gray-300/60 bg-gray-200/70 dark:border-white/[0.08] dark:bg-white/[0.08]" />
-                    <div className="col-span-2 row-span-2 rounded-lg border border-gray-300/60 bg-gray-200/80 dark:border-white/[0.10] dark:bg-white/[0.12]" />
-                    <div className="row-span-2 rounded-lg border border-gray-300/60 bg-gray-200/60 dark:border-white/[0.07] dark:bg-white/[0.06]" />
-                  </div>
+                  {/* Actual widget layout thumbnail — positions mirror the template's defaultLayout */}
+                  {(() => {
+                    const layout = template.defaultLayout;
+                    const maxRow = Math.max(...layout.map((w) => w.position.y + w.position.h));
+                    const COLS = 12;
+                    return (
+                      <div className="absolute inset-3" style={{ position: 'absolute' }}>
+                        {layout.map((w, i) => (
+                          <div
+                            key={w.id}
+                            className="absolute p-[2px]"
+                            style={{
+                              left:   `${(w.position.x / COLS) * 100}%`,
+                              top:    `${(w.position.y / maxRow) * 100}%`,
+                              width:  `${(w.position.w / COLS) * 100}%`,
+                              height: `${(w.position.h / maxRow) * 100}%`,
+                            }}
+                          >
+                            <div
+                              className="h-full w-full rounded-md"
+                              style={{
+                                background: i % 3 === 0
+                                  ? `${theme.accentPrimary}28`
+                                  : i % 3 === 1
+                                  ? `${theme.accentPrimary}18`
+                                  : `${theme.accentPrimary}0F`,
+                                border: `1px solid ${theme.accentPrimary}30`,
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
 
                   {/* Accent glow blob */}
                   <div

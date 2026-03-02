@@ -60,7 +60,7 @@ export default function VectorOperationsPage() {
     executionTime: number;
   }) => {
     const item: QueryHistoryItem = {
-      id: `${Date.now()}_${Math.random()}`,
+      id: crypto.randomUUID(),
       timestamp: Date.now(),
       ...entry,
     };

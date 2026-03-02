@@ -10,10 +10,7 @@ interface ShareFileDialogProps {
 }
 
 export default function ShareFileDialog({ blob, onClose }: ShareFileDialogProps) {
-  console.log('[ShareFileDialog] Component mounted for:', blob.filename);
   const { shareFile, unshareFile, currentTable } = useBlobStorage();
-  console.log('[ShareFileDialog] currentTable:', currentTable);
-  console.log('[ShareFileDialog] shareFile function:', typeof shareFile);
   const [loading, setLoading] = useState(false);
   const [shareToken, setShareToken] = useState<string | null>(blob.share_token || null);
   const [copied, setCopied] = useState(false);
@@ -27,20 +24,10 @@ export default function ShareFileDialog({ blob, onClose }: ShareFileDialogProps)
   const [usePassword, setUsePassword] = useState<boolean>(false);
 
   const handleShare = async () => {
-    console.log('[ShareFileDialog] handleShare called');
-    console.log('[ShareFileDialog] currentTable:', currentTable);
-    console.log('[ShareFileDialog] blob.id:', blob.id);
-    console.log('[ShareFileDialog] permissions:', permissions);
-    console.log('[ShareFileDialog] expiresInDays:', expiresInDays);
-
-    if (!currentTable) {
-      console.error('[ShareFileDialog] No currentTable, aborting');
-      return;
-    }
+    if (!currentTable) return;
 
     setLoading(true);
     try {
-      console.log('[ShareFileDialog] Calling shareFile...');
       const token = await shareFile(
         currentTable,
         blob.id,
@@ -49,18 +36,13 @@ export default function ShareFileDialog({ blob, onClose }: ShareFileDialogProps)
         usePassword && password ? password : undefined
       );
 
-      console.log('[ShareFileDialog] shareFile returned token:', token);
       if (token) {
         setShareToken(token);
-        console.log('[ShareFileDialog] Share token set successfully');
-      } else {
-        console.warn('[ShareFileDialog] shareFile returned null');
       }
-    } catch (error) {
-      console.error('[ShareFileDialog] Failed to share file:', error);
+    } catch {
+      // share failed — token remains unset
     } finally {
       setLoading(false);
-      console.log('[ShareFileDialog] handleShare completed');
     }
   };
 
@@ -71,8 +53,8 @@ export default function ShareFileDialog({ blob, onClose }: ShareFileDialogProps)
     try {
       await unshareFile(currentTable, blob.id);
       setShareToken(null);
-    } catch (error) {
-      console.error('Failed to unshare file:', error);
+    } catch {
+      // unshare failed
     } finally {
       setLoading(false);
     }

@@ -12,7 +12,8 @@ interface GaugeWidgetProps {
 }
 
 export default function GaugeWidget({ data, style, theme }: GaugeWidgetProps) {
-  const t   = buildEChartsTheme(theme);
+  const t       = buildEChartsTheme(theme);
+  const isLight = theme.id === 'light-clean';
   const min = style.gaugeMin ?? data.min;
   const max = style.gaugeMax ?? data.max;
   const pct = max > min ? ((data.current - min) / (max - min)) : 0;
@@ -40,7 +41,7 @@ export default function GaugeWidget({ data, style, theme }: GaugeWidgetProps) {
     }
     // Fill remainder with last color or fallback
     if (prev < 1) {
-      axisLineColors.push([1, segments[segments.length - 1][1] ?? (theme.id === 'light-clean' ? '#E5E7EB' : '#ffffff15')]);
+      axisLineColors.push([1, segments[segments.length - 1][1] ?? (isLight ? '#E5E7EB' : '#ffffff15')]);
     }
   } else {
     // Default: green → amber → red
@@ -51,7 +52,7 @@ export default function GaugeWidget({ data, style, theme }: GaugeWidgetProps) {
       theme.chartColors[3] ?? '#EF4444';
     axisLineColors = [
       [pct, gaugeColor],
-      [1, theme.id === 'light-clean' ? '#E5E7EB' : '#ffffff15'],
+      [1, isLight ? '#E5E7EB' : '#ffffff15'],
     ];
   }
 
@@ -69,7 +70,7 @@ export default function GaugeWidget({ data, style, theme }: GaugeWidgetProps) {
     ...t,
     tooltip: {
       ...t.tooltip,
-      formatter: `{b}: {c}${style.unit ?? ''}`,
+      formatter: `{b}: ${style.prefix ?? ''}{c}${style.unit ?? ''}`,
     },
     series: [{
       type: 'gauge',
@@ -94,16 +95,16 @@ export default function GaugeWidget({ data, style, theme }: GaugeWidgetProps) {
       splitLine: {
         distance: -14,
         length: 10,
-        lineStyle: { color: theme.id === 'light-clean' ? '#D1D5DB' : '#ffffff20', width: 2 },
+        lineStyle: { color: isLight ? '#D1D5DB' : '#ffffff20', width: 2 },
       },
       axisTick: {
         distance: -8,
         length: 6,
-        lineStyle: { color: theme.id === 'light-clean' ? '#D1D5DB' : '#ffffff15' },
+        lineStyle: { color: isLight ? '#D1D5DB' : '#ffffff15' },
       },
       axisLabel: {
         distance: -28,
-        color: theme.id === 'light-clean' ? '#9CA3AF' : '#ffffff50',
+        color: isLight ? '#9CA3AF' : '#ffffff50',
         fontSize: 9,
         formatter: (v: number) => {
           if (style.prefix) return `${style.prefix}${Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`;
@@ -118,7 +119,7 @@ export default function GaugeWidget({ data, style, theme }: GaugeWidgetProps) {
           const unit   = style.unit   ?? '';
           return `${prefix}${v.toFixed(decimalFmt)}${unit}`;
         },
-        color: theme.id === 'light-clean' ? '#111827' : '#ffffff',
+        color: isLight ? '#111827' : '#ffffff',
         fontSize: 20,
         fontWeight: 'bold',
         offsetCenter: [0, '30%'],

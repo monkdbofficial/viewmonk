@@ -76,18 +76,21 @@ export default function ERDiagramPage() {
       for (const tableName of tableNames) {
         let columnsResult;
         let usingShowColumns = true;
+        const safeTable = tableName.replace(/"/g, '""');
+        const safeSchema = selectedSchema.replace(/"/g, '""');
         try {
           columnsResult = await activeConnection.client.query(
-            `SHOW COLUMNS FROM ${tableName} IN ${selectedSchema}`
+            `SHOW COLUMNS FROM "${safeTable}" IN "${safeSchema}"`
           );
         } catch {
           usingShowColumns = false;
           columnsResult = await activeConnection.client.query(
             `SELECT column_name, data_type, is_nullable
              FROM information_schema.columns
-             WHERE table_schema = '${selectedSchema}'
-               AND table_name = '${tableName}'
-             ORDER BY ordinal_position`
+             WHERE table_schema = ?
+               AND table_name = ?
+             ORDER BY ordinal_position`,
+            [selectedSchema, tableName]
           );
         }
 

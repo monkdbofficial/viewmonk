@@ -353,15 +353,19 @@ export default function QueryEditor() {
     if (stored) {
       try {
         setQueryHistory(JSON.parse(stored));
-      } catch (e) {
-        console.error('Failed to load query history', e);
+      } catch {
+        // ignore malformed localStorage entry
       }
     }
   }, []);
 
   // Save query history to localStorage
   const saveQueryHistory = (history: QueryHistoryItem[]) => {
-    localStorage.setItem('monkdb_query_history', JSON.stringify(history.slice(0, 50))); // Keep last 50
+    try {
+      localStorage.setItem('monkdb_query_history', JSON.stringify(history.slice(0, 50)));
+    } catch {
+      // storage quota exceeded — in-memory history still works
+    }
     setQueryHistory(history);
   };
 
@@ -370,13 +374,16 @@ export default function QueryEditor() {
     if (!activeConnection) return;
 
     // Prevent concurrent schema loading
-    if (isLoadingSchemaRef.current) {
-      console.log('[Schema Load] Already loading, skipping...');
-      return;
-    }
+    if (isLoadingSchemaRef.current) return;
 
     isLoadingSchemaRef.current = true;
     setLoadingSchema(true);
+
+    // Safety net: guarantee the ref is always released even on unexpected throws
+    const releaseRef = () => {
+      isLoadingSchemaRef.current = false;
+      setLoadingSchema(false);
+    };
 
     // Retry configuration
     const MAX_RETRIES = 3;
@@ -391,8 +398,6 @@ export default function QueryEditor() {
 
       for (let attempt = 1; attempt <= MAX_RETRIES && shouldRetry; attempt++) {
         try {
-          console.log(`[Schema Load] Attempt ${attempt}/${MAX_RETRIES} using Tauri...`);
-
           const metadata = await invoke<SchemaMetadata>('get_schema_metadata', {
             connectionId: activeConnection.id,
           });
@@ -421,10 +426,8 @@ export default function QueryEditor() {
           };
           setSchemaExplorerMetadata(transformedMetadata);
 
-          console.log('[Schema Load] Success via Tauri');
           toast.success('Schema Loaded', `Loaded ${metadata.schemas.length} schemas`);
-          setLoadingSchema(false);
-          isLoadingSchemaRef.current = false;
+          releaseRef();
           return; // Success!
         } catch (err) {
           // Extract error details
@@ -450,21 +453,12 @@ export default function QueryEditor() {
 
           // If command not found, skip retries and go straight to SQL fallback
           if (isCommandNotFound) {
-            console.log('[Schema Load] Tauri command not available, using SQL fallback...');
             shouldRetry = false;
             break;
           }
 
-          // Log error with details
-          if (attempt === 1) {
-            console.warn(`[Schema Load] Tauri loading failed: ${errorMessage}`);
-          }
-
           if (attempt < MAX_RETRIES) {
-            console.log(`[Schema Load] Retrying in ${RETRY_DELAY}ms...`);
             await wait(RETRY_DELAY);
-          } else {
-            console.log('[Schema Load] All Tauri attempts failed, falling back to SQL...');
           }
         }
       }
@@ -472,8 +466,6 @@ export default function QueryEditor() {
 
     // Fallback to SQL-based loading - Load complete metadata (schemas, tables, columns)
     try {
-      console.log('[Schema Load] Using SQL fallback - loading complete metadata...');
-
       // Load all columns from all tables in user schemas
       const columnsResult = await activeConnection.client.query(`
         SELECT
@@ -555,15 +547,12 @@ export default function QueryEditor() {
       const totalTables = Object.values(schemaMap).reduce((sum, tables) => sum + Object.keys(tables).length, 0);
       const totalColumns = columnsResult.rows.length;
 
-      console.log('[Schema Load] Success via SQL fallback');
       toast.success('Schema Loaded', `Loaded ${Object.keys(schemaMap).length} schemas, ${totalTables} tables, ${totalColumns} columns`);
     } catch (err) {
-      console.error('[Schema Load] SQL fallback failed:', err);
       const errorMessage = err instanceof Error ? err.message : 'Could not load schema';
       toast.error('Schema Load Failed', errorMessage);
     } finally {
-      setLoadingSchema(false);
-      isLoadingSchemaRef.current = false;
+      releaseRef();
     }
   }, [activeConnection, toast]);
 
@@ -587,8 +576,8 @@ export default function QueryEditor() {
       }));
 
       setSchemaTables(tables);
-    } catch (err) {
-      console.error('Failed to load schema:', err);
+    } catch {
+      // silent — UI stays with previous schema state
     } finally {
       setLoadingSchema(false);
     }
@@ -722,7 +711,7 @@ export default function QueryEditor() {
 
       // Add to history
       const historyItem: QueryHistoryItem = {
-        id: `${Date.now()}_${Math.random()}`,
+        id: crypto.randomUUID(),
         query: queryToExecute,
         timestamp: Date.now(),
         duration: result.duration || duration,
@@ -844,7 +833,7 @@ export default function QueryEditor() {
 
       // Add failed query to history with original error
       const historyItem: QueryHistoryItem = {
-        id: `${Date.now()}_${Math.random()}`,
+        id: crypto.randomUUID(),
         query: queryToExecute,
         timestamp: Date.now(),
         duration: Date.now() - startTime,
@@ -890,7 +879,10 @@ export default function QueryEditor() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `monkdb_export_${Date.now()}.csv`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
     toast.success('Exported', 'Results exported to CSV');
@@ -916,7 +908,10 @@ export default function QueryEditor() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `monkdb_export_${Date.now()}.json`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
     toast.success('Exported', 'Results exported to JSON');
@@ -935,7 +930,7 @@ export default function QueryEditor() {
     try {
       await navigator.clipboard.writeText(text);
       toast.success('Copied', 'Results copied to clipboard');
-    } catch (err) {
+    } catch {
       toast.error('Copy Failed', 'Failed to copy to clipboard');
     }
   };
@@ -1233,7 +1228,7 @@ export default function QueryEditor() {
 
       const now = new Date().toISOString();
       const newEntry = {
-        id: `sq_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        id: `sq_${crypto.randomUUID()}`,
         name: saveQueryData.name.trim(),
         description: saveQueryData.description.trim() || undefined,
         query: query.trim(),
@@ -1253,8 +1248,7 @@ export default function QueryEditor() {
       toast.success('Saved', `Query "${saveQueryData.name}" saved`);
       setShowSaveDialog(false);
       setSaveQueryData({ name: '', description: '', folder: '', tags: '' });
-    } catch (error) {
-      console.error('Failed to save query:', error);
+    } catch {
       toast.error('Save Failed', 'Could not save query');
     }
   };
@@ -1315,7 +1309,7 @@ SELECT
   ROUND((heap['used']::float / heap['max']::float * 100), 2) AS "Heap Usage %",
   ROUND((fs['total']['used']::float / fs['total']['size']::float * 100), 2) AS "Disk Usage %",
   load['1'] AS "Load (1m)",
-  ROUND(os['uptime'] / 3600) AS "Uptime (hours)"
+  ROUND(os['uptime'] / 3600000) AS "Uptime (hours)"
 FROM sys.nodes
 ORDER BY name;`,
         },

@@ -5,7 +5,7 @@ import {
   Search, RefreshCw, Clock, X, Plus, Download, Copy,
   Code2, BookOpen, Zap, Info, FileText, Loader2,
   AlertTriangle, SlidersHorizontal, Terminal, Tag,
-  Database, ChevronRight,
+  Database, ChevronRight, Pencil, Trash2, Lock,
 } from 'lucide-react';
 import { useMonkDBClient } from '../lib/monkdb-context';
 import { useTheme } from '../components/ThemeProvider';
@@ -24,8 +24,26 @@ interface SearchResult {
   [key: string]: any;
 }
 
+interface UserSnippet {
+  id: string;
+  label: string;
+  code: string;
+  desc: string;
+}
+
+function loadUserSnippets(): UserSnippet[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const s = localStorage.getItem('monkdb-fts-query-snippets');
+    return s ? JSON.parse(s) : [];
+  } catch { return []; }
+}
+
+function persistUserSnippets(snippets: UserSnippet[]): void {
+  try { localStorage.setItem('monkdb-fts-query-snippets', JSON.stringify(snippets)); } catch {}
+}
+
 const LIMIT_PRESETS = [10, 25, 50, 100, 500, 1000];
-const BOOST_PRESETS = [0.5, 1.0, 1.5, 2.0, 3.0];
 
 const QUERY_SYNTAX_TIPS = [
   { label: 'Single Term',  code: 'error',               desc: 'Match documents containing "error"' },
@@ -98,7 +116,6 @@ export default function FullTextSearchPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [tableSearchQuery, setTableSearchQuery] = useState('');
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
-  const [fieldBoosts, setFieldBoosts] = useState<Record<string, number>>({});
   const [limit, setLimit] = useState(50);
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -107,6 +124,33 @@ export default function FullTextSearchPage() {
   const [showScheduleManager, setShowScheduleManager] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showSQLPreview, setShowSQLPreview] = useState(false);
+
+  // ── User-editable query snippets ─────────────────────────────────────────
+  const [userSnippets, setUserSnippets] = useState<UserSnippet[]>(() => loadUserSnippets());
+  const [editingId, setEditingId] = useState<string | null>(null); // 'new' | snippet id
+  const [draftLabel, setDraftLabel] = useState('');
+  const [draftCode, setDraftCode] = useState('');
+  const [draftDesc, setDraftDesc] = useState('');
+
+  const startAdd = () => { setEditingId('new'); setDraftLabel(''); setDraftCode(''); setDraftDesc(''); };
+  const startEdit = (s: UserSnippet) => { setEditingId(s.id); setDraftLabel(s.label); setDraftCode(s.code); setDraftDesc(s.desc); };
+  const cancelEdit = () => setEditingId(null);
+
+  const commitSnippet = () => {
+    if (!draftLabel.trim() || !draftCode.trim()) return;
+    const updated = editingId === 'new'
+      ? [...userSnippets, { id: crypto.randomUUID(), label: draftLabel.trim(), code: draftCode.trim(), desc: draftDesc.trim() }]
+      : userSnippets.map(s => s.id === editingId ? { ...s, label: draftLabel.trim(), code: draftCode.trim(), desc: draftDesc.trim() } : s);
+    setUserSnippets(updated);
+    persistUserSnippets(updated);
+    setEditingId(null);
+  };
+
+  const deleteSnippet = (id: string) => {
+    const updated = userSnippets.filter(s => s.id !== id);
+    setUserSnippets(updated);
+    persistUserSnippets(updated);
+  };
 
   const filteredIndexes = indexes.filter((idx) => {
     if (!tableSearchQuery.trim()) return true;
@@ -124,13 +168,7 @@ export default function FullTextSearchPage() {
     setSelectedColumns(index.columns);
     setResults([]);
     setNeedsRefresh(false);
-    const boosts: Record<string, number> = {};
-    index.columns.forEach((col) => { boosts[col] = 1.0; });
-    setFieldBoosts(boosts);
   };
-
-  const setBoost = (col: string, value: number) =>
-    setFieldBoosts((prev) => ({ ...prev, [col]: value }));
 
   const handleRefreshTable = async () => {
     if (!client || !selectedIndex) return;
@@ -143,15 +181,11 @@ export default function FullTextSearchPage() {
     }
   };
 
+  // MonkDB 6+: MATCH must use the named index, not column names
   const buildMatchClause = useCallback((): string => {
-    if (!selectedColumns.length) return '';
-    if (selectedColumns.length === 1) return `MATCH(${selectedColumns[0]}, ?)`;
-    const parts = selectedColumns.map((col) => {
-      const boost = fieldBoosts[col] ?? 1.0;
-      return boost !== 1.0 ? `${col} ${boost.toFixed(1)}` : col;
-    });
-    return `MATCH((${parts.join(', ')}), ?)`;
-  }, [selectedColumns, fieldBoosts]);
+    if (!selectedIndex) return 'MATCH("index_name", ?)';
+    return `MATCH("${selectedIndex.indexName.replace(/"/g, '""')}", ?)`;
+  }, [selectedIndex]);
 
   const buildSQL = useCallback((): string => {
     if (!selectedIndex || !searchQuery.trim()) return '';
@@ -171,9 +205,9 @@ export default function FullTextSearchPage() {
     setSearching(true);
     const startTime = Date.now();
     try {
-      const matchClause = buildMatchQuery(selectedColumns, searchQuery, fieldBoosts);
-      const sql = `SELECT *, _score FROM "${selectedIndex.schema}"."${selectedIndex.table}" WHERE ${matchClause} ORDER BY _score DESC LIMIT $2`;
-      const result = await client.query(sql, [searchQuery, limit]);
+      const matchClause = buildMatchQuery(selectedIndex.indexName);
+      const sql = `SELECT *, _score FROM "${selectedIndex.schema}"."${selectedIndex.table}" WHERE ${matchClause} ORDER BY _score DESC LIMIT ${limit}`;
+      const result = await client.query(sql, [searchQuery]);
       const rows = result.rows.map((row: any[]) => {
         const obj: any = {};
         result.cols.forEach((col: string, i: number) => { obj[col] = row[i]; });
@@ -181,27 +215,34 @@ export default function FullTextSearchPage() {
       });
       setResults(rows);
       setExecutionTime(Date.now() - startTime);
+      // If 0 results on a non-empty table, new inserts may not be visible yet
+      setNeedsRefresh(rows.length === 0 && (selectedIndex.documentCount ?? 0) > 0);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Search failed';
       toast.error('Search Failed', msg);
-      if (msg.includes('refresh') || msg.includes('index')) setNeedsRefresh(true);
     } finally { setSearching(false); }
+  };
+
+  const triggerDownload = (url: string, filename: string) => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const exportCSV = () => {
     if (!results.length) return;
     const cols = Object.keys(results[0]);
     const csv = [cols.join(','), ...results.map((r) => cols.map((c) => JSON.stringify(r[c] ?? '')).join(','))].join('\n');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    Object.assign(document.createElement('a'), { href: url, download: `fts-${Date.now()}.csv` }).click();
-    URL.revokeObjectURL(url);
+    triggerDownload(URL.createObjectURL(new Blob([csv], { type: 'text/csv' })), `fts-${Date.now()}.csv`);
   };
 
   const exportJSON = () => {
     if (!results.length) return;
-    const url = URL.createObjectURL(new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' }));
-    Object.assign(document.createElement('a'), { href: url, download: `fts-${Date.now()}.json` }).click();
-    URL.revokeObjectURL(url);
+    triggerDownload(URL.createObjectURL(new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' })), `fts-${Date.now()}.json`);
   };
 
   const copyResults = async () => {
@@ -482,59 +523,30 @@ ORDER BY _score DESC`}</pre>
                   </div>
                 )}
 
-                {/* Relevance Weights */}
-                {selectedColumns.length > 0 && (
+                {/* Indexed columns info */}
+                {selectedIndex && selectedColumns.length > 0 && (
                   <div style={{ background: C.bgSub, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', background: C.bgHeader, borderBottom: `1px solid ${C.border}` }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                        <SlidersHorizontal style={{ width: 14, height: 14, color: C.accentText }} />
-                        <span style={{ fontSize: 13, fontWeight: 600, color: C.textPrimary }}>Relevance Weights</span>
-                        {selectedColumns.length > 1 && (
-                          <span style={{ fontSize: 10, fontWeight: 600, color: C.textMuted, background: 'rgba(148,163,184,0.08)', border: `1px solid ${C.borderSub}`, borderRadius: 4, padding: '1px 6px' }}>Optional</span>
-                        )}
-                      </div>
-                      <span style={{ fontSize: 11, color: C.textMuted }}>Omit a boost to use default weight</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: C.bgHeader, borderBottom: `1px solid ${C.border}` }}>
+                      <SlidersHorizontal style={{ width: 14, height: 14, color: C.accentText }} />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: C.textPrimary }}>Indexed Columns</span>
+                      <span style={{ fontSize: 10, color: C.textMuted, background: 'rgba(148,163,184,0.08)', border: `1px solid ${C.borderSub}`, borderRadius: 4, padding: '1px 6px', fontFamily: 'var(--font-geist-mono), monospace' }}>
+                        {selectedIndex.indexName}
+                      </span>
                     </div>
-
-                    {selectedColumns.map((col, ci) => {
-                      const current = fieldBoosts[col] ?? 1.0;
-                      return (
-                        <div key={col} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderBottom: ci < selectedColumns.length - 1 ? `1px solid ${C.borderSub}` : 'none' }}>
-                          <span title={col} style={{ width: 120, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontFamily: 'var(--font-geist-mono), monospace', color: C.textSecondary, background: 'rgba(148,163,184,0.08)', border: `1px solid ${C.borderSub}`, borderRadius: 4, padding: '2px 7px' }}>
-                            {col}
-                          </span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            {BOOST_PRESETS.map((preset) => {
-                              const active = Math.abs(current - preset) < 0.01;
-                              return (
-                                <button key={preset} onClick={() => setBoost(col, preset)} disabled={searching}
-                                  style={{ minWidth: 38, padding: '3px 6px', borderRadius: 5, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: `1px solid ${active ? C.accentBorder : C.border}`, background: active ? C.accentBg : 'transparent', color: active ? C.accentText : C.textSecondary, transition: 'all 0.1s' }}
-                                  onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(148,163,184,0.08)'; }}
-                                  onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}>
-                                  {preset}×
-                                </button>
-                              );
-                            })}
-                          </div>
-                          <input type="number" min="0.1" max="10" step="0.1" value={current.toFixed(1)}
-                            onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) setBoost(col, v); }}
-                            disabled={searching}
-                            style={{ marginLeft: 'auto', width: 64, textAlign: 'right', background: C.bgInput, border: `1px solid ${C.border}`, borderRadius: 6, color: C.textPrimary, fontSize: 12, padding: '4px 8px', outline: 'none', fontFamily: 'var(--font-geist-mono), monospace' }}
-                            onFocus={e => e.currentTarget.style.borderColor = C.borderFocus}
-                            onBlur={e => e.currentTarget.style.borderColor = C.border}
-                          />
-                        </div>
-                      );
-                    })}
-
-                    {/* Live MATCH preview */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '10px 14px' }}>
+                      {selectedColumns.map(col => (
+                        <span key={col} style={{ fontSize: 11, fontFamily: 'var(--font-geist-mono), monospace', color: C.accentText, background: C.accentBg, border: `1px solid ${C.accentBorder}`, borderRadius: 5, padding: '2px 8px' }}>
+                          {col}
+                        </span>
+                      ))}
+                    </div>
                     <div style={{ padding: '8px 14px', background: C.bgSub, borderTop: `1px solid ${C.border}` }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                         <Terminal style={{ width: 11, height: 11, color: C.textMuted }} />
-                        <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: C.textMuted }}>Live MATCH clause</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: C.textMuted }}>MATCH clause</span>
                       </div>
                       <code style={{ fontFamily: 'var(--font-geist-mono), monospace', fontSize: 12, color: '#4ade80' }}>
-                        WHERE {buildMatchClause() || 'MATCH(column, ?)'}
+                        WHERE {buildMatchClause()}
                       </code>
                     </div>
                   </div>
@@ -646,10 +658,15 @@ ORDER BY _score DESC`}</pre>
             {/* Query Syntax */}
             <RefSection C={C} icon={<BookOpen style={{ width: 13, height: 13, color: C.accentText }} />} label="Query Syntax">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+
+                {/* ── Built-in tips (read-only) ── */}
                 {QUERY_SYNTAX_TIPS.map((tip) => (
                   <div key={tip.label} style={{ background: 'rgba(148,163,184,0.04)', border: `1px solid ${C.borderSub}`, borderRadius: 7, padding: '8px 10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: C.textSecondary }}>{tip.label}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <Lock style={{ width: 9, height: 9, color: C.textMuted, flexShrink: 0 }} />
+                        <span style={{ fontSize: 11, fontWeight: 600, color: C.textSecondary }}>{tip.label}</span>
+                      </div>
                       {selectedIndex && (
                         <button onClick={() => setSearchQuery(tip.code)}
                           style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: 10, fontWeight: 600, color: C.accentText, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}>
@@ -661,6 +678,59 @@ ORDER BY _score DESC`}</pre>
                     <p style={{ fontSize: 10, color: C.textMuted, lineHeight: 1.5 }}>{tip.desc}</p>
                   </div>
                 ))}
+
+                {/* ── User snippets (editable) ── */}
+                {userSnippets.map((s) => (
+                  editingId === s.id ? (
+                    <SnippetForm key={s.id} C={C}
+                      label={draftLabel} code={draftCode} desc={draftDesc}
+                      onLabel={setDraftLabel} onCode={setDraftCode} onDesc={setDraftDesc}
+                      onSave={commitSnippet} onCancel={cancelEdit} />
+                  ) : (
+                    <div key={s.id} style={{ background: C.accentBg, border: `1px solid ${C.accentBorder}`, borderRadius: 7, padding: '8px 10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: C.accentText, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.label}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, marginLeft: 4 }}>
+                          {selectedIndex && (
+                            <button onClick={() => setSearchQuery(s.code)}
+                              style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: 10, fontWeight: 600, color: C.accentText, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}>
+                              Use <ChevronRight style={{ width: 10, height: 10 }} />
+                            </button>
+                          )}
+                          <button onClick={() => startEdit(s)}
+                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: C.textMuted, padding: '1px 3px', display: 'flex', borderRadius: 3 }}
+                            onMouseEnter={e => e.currentTarget.style.color = C.accentText}
+                            onMouseLeave={e => e.currentTarget.style.color = C.textMuted}>
+                            <Pencil style={{ width: 11, height: 11 }} />
+                          </button>
+                          <button onClick={() => deleteSnippet(s.id)}
+                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: C.textMuted, padding: '1px 3px', display: 'flex', borderRadius: 3 }}
+                            onMouseEnter={e => e.currentTarget.style.color = '#f87171'}
+                            onMouseLeave={e => e.currentTarget.style.color = C.textMuted}>
+                            <Trash2 style={{ width: 11, height: 11 }} />
+                          </button>
+                        </div>
+                      </div>
+                      <code style={{ display: 'block', fontFamily: 'var(--font-geist-mono), monospace', fontSize: 11, color: C.accentText, marginBottom: s.desc ? 3 : 0 }}>{s.code}</code>
+                      {s.desc && <p style={{ fontSize: 10, color: C.textMuted, lineHeight: 1.5 }}>{s.desc}</p>}
+                    </div>
+                  )
+                ))}
+
+                {/* ── Add new snippet ── */}
+                {editingId === 'new' ? (
+                  <SnippetForm C={C}
+                    label={draftLabel} code={draftCode} desc={draftDesc}
+                    onLabel={setDraftLabel} onCode={setDraftCode} onDesc={setDraftDesc}
+                    onSave={commitSnippet} onCancel={cancelEdit} />
+                ) : (
+                  <button onClick={startAdd}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', borderRadius: 7, border: `1px dashed ${C.accentBorder}`, background: 'transparent', color: C.accentText, fontSize: 11, fontWeight: 600, cursor: 'pointer', marginTop: 2 }}
+                    onMouseEnter={e => e.currentTarget.style.background = C.accentBg}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    <Plus style={{ width: 12, height: 12 }} /> Add Snippet
+                  </button>
+                )}
               </div>
             </RefSection>
 
@@ -757,6 +827,42 @@ function FBtn({ icon, label, onClick, disabled, accent, C }: {
       onMouseLeave={e => { if (!disabled) e.currentTarget.style.background = accent ? C.accentBg : 'rgba(148,163,184,0.05)'; }}>
       {icon}{label}
     </button>
+  );
+}
+
+function SnippetForm({ C, label, code, desc, onLabel, onCode, onDesc, onSave, onCancel }: {
+  C: FC_colors & { bgInput: string; textPrimary: string; borderFocus: string; border: string };
+  label: string; code: string; desc: string;
+  onLabel: (v: string) => void; onCode: (v: string) => void; onDesc: (v: string) => void;
+  onSave: () => void; onCancel: () => void;
+}) {
+  const inp: React.CSSProperties = {
+    width: '100%', background: C.bgInput, border: `1px solid ${C.border}`, borderRadius: 6,
+    color: C.textPrimary, fontSize: 11, padding: '5px 8px', outline: 'none', boxSizing: 'border-box',
+    fontFamily: 'var(--font-geist-mono), monospace',
+  };
+  return (
+    <div style={{ background: C.accentBg, border: `1px solid ${C.accentBorder}`, borderRadius: 7, padding: '10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <input placeholder="Label  e.g. My error search" value={label} onChange={e => onLabel(e.target.value)} style={inp}
+        onFocus={e => e.currentTarget.style.borderColor = C.borderFocus}
+        onBlur={e => e.currentTarget.style.borderColor = C.border} />
+      <input placeholder="Query  e.g. +error -warning" value={code} onChange={e => onCode(e.target.value)} style={inp}
+        onFocus={e => e.currentTarget.style.borderColor = C.borderFocus}
+        onBlur={e => e.currentTarget.style.borderColor = C.border} />
+      <input placeholder="Description (optional)" value={desc} onChange={e => onDesc(e.target.value)} style={inp}
+        onFocus={e => e.currentTarget.style.borderColor = C.borderFocus}
+        onBlur={e => e.currentTarget.style.borderColor = C.border} />
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button onClick={onSave} disabled={!label.trim() || !code.trim()}
+          style={{ flex: 1, padding: '5px 0', borderRadius: 6, border: `1px solid ${C.accentBorder}`, background: C.accentBg, color: C.accentText, fontSize: 11, fontWeight: 700, cursor: !label.trim() || !code.trim() ? 'not-allowed' : 'pointer', opacity: !label.trim() || !code.trim() ? 0.45 : 1 }}>
+          Save
+        </button>
+        <button onClick={onCancel}
+          style={{ flex: 1, padding: '5px 0', borderRadius: 6, border: `1px solid ${C.border}`, background: 'transparent', color: C.textSecondary, fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }
 

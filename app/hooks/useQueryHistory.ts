@@ -48,16 +48,16 @@ export function useQueryHistory(feature: 'vector' | 'fts') {
         const parsed = JSON.parse(stored);
         setHistory(parsed);
       }
-    } catch (err) {
-      console.error(`Failed to load ${feature} history:`, err);
+    } catch {
+      // malformed localStorage data — start with empty history
     }
   };
 
   const saveHistory = (items: QueryHistoryItem[]) => {
     try {
       localStorage.setItem(storageKey, JSON.stringify(items));
-    } catch (err) {
-      console.error(`Failed to save ${feature} history:`, err);
+    } catch {
+      // storage quota exceeded — in-memory history still intact
     }
   };
 

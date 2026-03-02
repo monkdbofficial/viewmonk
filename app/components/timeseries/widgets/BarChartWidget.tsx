@@ -13,11 +13,21 @@ interface BarChartWidgetProps {
 }
 
 export default function BarChartWidget({ series, style, theme, onDrillDown }: BarChartWidgetProps) {
-  const t = buildEChartsTheme(theme);
+  const t       = buildEChartsTheme(theme);
+  const isLight = theme.id === 'light-clean';
   const categories = series[0]?.data.map((d) => d[0]) ?? [];
 
   const getColor = (i: number) =>
     style.customColors?.[i] || theme.chartColors[i % theme.chartColors.length];
+
+  const fmtVal = (v: number) => {
+    const prefix = style.prefix ?? '';
+    const unit   = style.unit ?? '';
+    const val    = style.decimals !== undefined
+      ? v.toFixed(style.decimals)
+      : v.toLocaleString(undefined, { maximumFractionDigits: 4 });
+    return `${prefix}${val}${unit}`;
+  };
 
   // Threshold markLines
   const markLine = (style.thresholds ?? []).length > 0
@@ -44,6 +54,13 @@ export default function BarChartWidget({ series, style, theme, onDrillDown }: Ba
       ...t.tooltip,
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
+      formatter: (params: { name: string; seriesName: string; value: number | string; marker: string }[]) => {
+        const header = params[0]?.name ?? '';
+        const rows = params
+          .map((p) => `${p.marker} ${p.seriesName}: <b>${fmtVal(Number(p.value))}</b>`)
+          .join('<br/>');
+        return `${header}<br/>${rows}`;
+      },
     },
     legend: style.showLegend && series.length > 1
       ? { ...t.legend, bottom: 0 }
@@ -65,15 +82,10 @@ export default function BarChartWidget({ series, style, theme, onDrillDown }: Ba
     },
     yAxis: {
       ...t.yAxis,
-      type: 'value',
+      type: style.yAxisScale === 'log' ? 'log' : 'value',
       axisLabel: {
         ...t.yAxis.axisLabel,
-        formatter: (v: number) => {
-          const prefix = style.prefix ?? '';
-          const unit   = style.unit ?? '';
-          const val    = style.decimals !== undefined ? v.toFixed(style.decimals) : v;
-          return `${prefix}${val}${unit}`;
-        },
+        formatter: (v: number) => fmtVal(v),
       },
     },
     series: series.map((s, i) => {
@@ -94,13 +106,8 @@ export default function BarChartWidget({ series, style, theme, onDrillDown }: Ba
               show: true,
               position: 'top' as const,
               fontSize: 10,
-              color: theme.id === 'light-clean' ? '#374151' : '#ffffff80',
-              formatter: (p: { value: number }) => {
-                const prefix = style.prefix ?? '';
-                const unit   = style.unit   ?? '';
-                const val    = style.decimals !== undefined ? p.value.toFixed(style.decimals) : p.value;
-                return `${prefix}${val}${unit}`;
-              },
+              color: isLight ? '#374151' : '#ffffff80',
+              formatter: (p: { value: number }) => fmtVal(p.value),
             }
           : { show: false },
         markLine,

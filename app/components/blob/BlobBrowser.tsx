@@ -127,8 +127,7 @@ export default function BlobBrowser({
       // Close dialog after successful rename and reload
       setRenameDialogBlob(null);
       setNewFilename('');
-    } catch (error) {
-      console.error('[BlobBrowser] Rename failed:', error);
+    } catch {
       // Keep dialog open on error so user can retry
     }
   };
@@ -140,16 +139,11 @@ export default function BlobBrowser({
 
   const handleToggleFavorite = async (e: React.MouseEvent, blob: BlobMetadata) => {
     e.stopPropagation();
-    console.log('[BlobBrowser] Toggle favorite clicked:', blob.filename, 'Current:', blob.is_favorite);
-    if (!currentTable) {
-      console.error('[BlobBrowser] No current table');
-      return;
-    }
+    if (!currentTable) return;
     try {
       await toggleFavorite(currentTable, blob.id, blob.is_favorite);
-      console.log('[BlobBrowser] Favorite toggled successfully');
-    } catch (error) {
-      console.error('[BlobBrowser] Toggle favorite error:', error);
+    } catch {
+      // toggle failed — state will not update
     }
   };
 
@@ -348,9 +342,8 @@ export default function BlobBrowser({
                             // Ensure video is unmuted when loaded
                             const video = e.currentTarget;
                             video.muted = false;
-                            video.play().catch(err => {
+                            video.play().catch(() => {
                               // If unmuted autoplay fails, play muted
-                              console.log('Autoplay with sound failed, trying muted:', err);
                               video.muted = true;
                               video.play();
                             });

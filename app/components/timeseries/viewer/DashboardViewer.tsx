@@ -12,22 +12,26 @@ import type { ThemeTokens } from '@/app/lib/timeseries/themes';
 import { getDefaultTimeRange } from '@/app/lib/timeseries/time-range';
 import { useDashboardRefresh } from '@/app/hooks/timeseries/useDashboardRefresh';
 import type { DashboardConfig, TimeRange, ActiveFilter } from '@/app/lib/timeseries/types';
-
-const ROW_HEIGHT = 160;  // Taller rows fill the viewport better
-const COL_COUNT  = 12;
-const GAP        = 14;
+import { ROW_HEIGHT, COL_COUNT, GAP } from '@/app/lib/timeseries/constants';
 
 // ── Export helpers ────────────────────────────────────────────────────────────
+
+function triggerDownload(url: string, filename: string) {
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 function exportAsJSON(config: DashboardConfig) {
   const json = JSON.stringify(config, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = `${config.name.toLowerCase().replace(/\s+/g, '-')}-dashboard.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+  triggerDownload(url, `${config.name.toLowerCase().replace(/\s+/g, '-')}-dashboard.json`);
 }
 
 async function exportAsPNG(canvasEl: HTMLElement | null, name: string) {
@@ -43,11 +47,7 @@ async function exportAsPNG(canvasEl: HTMLElement | null, name: string) {
     canvas.toBlob((blob) => {
       if (!blob) return;
       const url = URL.createObjectURL(blob);
-      const a   = document.createElement('a');
-      a.href    = url;
-      a.download = `${name.toLowerCase().replace(/\s+/g, '-')}.png`;
-      a.click();
-      URL.revokeObjectURL(url);
+      triggerDownload(url, `${name.toLowerCase().replace(/\s+/g, '-')}.png`);
     }, 'image/png');
   } catch {
     alert('PNG export requires html2canvas. Please try JSON export instead.');

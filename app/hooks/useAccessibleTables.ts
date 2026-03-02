@@ -34,14 +34,10 @@ export function useAccessibleTables(schemaName: string) {
         const client = activeConnection.client;
         const username = activeConnection.config.username || 'monkdb';
 
-        console.log('[useAccessibleTables] Fetching tables for schema:', schemaName, 'user:', username);
-
         // Special case: superuser sees all tables
         const isSuperuser = activeConnection.config.role === 'superuser';
 
         if (isSuperuser) {
-          console.log('[useAccessibleTables] User is superuser, fetching all tables');
-
           // Get all tables in schema
           const allTables = await client.getTables(schemaName);
 
@@ -51,11 +47,8 @@ export function useAccessibleTables(schemaName: string) {
             privileges: ['DQL', 'DML', 'DDL', 'AL'], // Superuser has all
           }));
 
-          console.log('[useAccessibleTables] Superuser tables:', tableList.length);
           setTables(tableList);
         } else {
-          console.log('[useAccessibleTables] User is NOT superuser, filtering by privileges');
-
           // Query accessible tables based on sys.privileges
           const result = await client.query(`
             SELECT DISTINCT ident, type
@@ -67,14 +60,14 @@ export function useAccessibleTables(schemaName: string) {
             ORDER BY ident
           `, [username, `${schemaName}.%`]);
 
-          console.log('[useAccessibleTables] Privilege rows:', result.rows.length);
-
           // Group privileges by table
           const tableMap = new Map<string, string[]>();
           result.rows.forEach(row => {
             const fullTableName = row[0]; // Format: schema.table
             const privilege = row[1];
-            const tableName = fullTableName.split('.')[1]; // Extract table name
+            const parts = String(fullTableName).split('.');
+            const tableName = parts.length >= 2 ? parts[1] : null;
+            if (!tableName) return; // skip malformed privilege entries
             if (!tableMap.has(tableName)) {
               tableMap.set(tableName, []);
             }
@@ -87,13 +80,11 @@ export function useAccessibleTables(schemaName: string) {
             privileges: Array.from(new Set(privileges)), // Deduplicate
           }));
 
-          console.log('[useAccessibleTables] Accessible tables:', tableList.length);
           setTables(tableList);
         }
 
         setLoading(false);
       } catch (err) {
-        console.error('[useAccessibleTables] Error:', err);
         setError(err instanceof Error ? err.message : 'Failed to load tables');
         setTables([]);
         setLoading(false);

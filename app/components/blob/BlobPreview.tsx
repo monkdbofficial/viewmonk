@@ -143,8 +143,6 @@ export default function BlobPreview({ blob, allBlobs, onClose, onDelete }: BlobP
       setLoading(false);
     } else if (isOfficeDoc) {
       // Parse Office documents using JavaScript libraries
-      console.log('[BlobPreview] Loading Office document:', currentBlob.filename, contentType);
-
       fetch(blobUrl, {
         method: 'GET',
         headers: {
@@ -153,14 +151,11 @@ export default function BlobPreview({ blob, allBlobs, onClose, onDelete }: BlobP
         },
       })
         .then(async (response) => {
-          console.log('[BlobPreview] Fetch response status:', response.status);
-
           if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
           }
 
           const arrayBuffer = await response.arrayBuffer();
-          console.log('[BlobPreview] ArrayBuffer size:', arrayBuffer.byteLength, 'bytes');
 
           // Check if we got actual data
           if (arrayBuffer.byteLength === 0) {
@@ -169,17 +164,12 @@ export default function BlobPreview({ blob, allBlobs, onClose, onDelete }: BlobP
 
           // Check file signature
           const uint8Array = new Uint8Array(arrayBuffer);
-          const signature = Array.from(uint8Array.slice(0, 4))
-            .map(b => '0x' + b.toString(16).padStart(2, '0'))
-            .join(' ');
-          console.log('[BlobPreview] File signature:', signature);
 
           // Check if this is a modern Office file (ZIP-based format)
           const isModernOffice = uint8Array[0] === 0x50 && uint8Array[1] === 0x4B;
           const isOldWord = uint8Array[0] === 0xD0 && uint8Array[1] === 0xCF; // .doc, .xls, .ppt
 
           if (!isModernOffice) {
-            console.warn('[BlobPreview] Not a modern Office file. Signature:', signature);
 
             // Show download card for old formats or unknown files
             let fileTypeLabel = '📁 Office Document';
@@ -275,16 +265,12 @@ export default function BlobPreview({ blob, allBlobs, onClose, onDelete }: BlobP
           try {
             if (contentType.includes('word')) {
               // Parse Word document with Mammoth.js
-              console.log('[BlobPreview] Parsing Word document...');
               const result = await mammoth.convertToHtml({ arrayBuffer });
-              console.log('[BlobPreview] Word parsing complete');
               setOfficeHtml(result.value);
               setLoading(false);
             } else if (contentType.includes('spreadsheet')) {
               // Parse Excel with SheetJS
-              console.log('[BlobPreview] Parsing Excel spreadsheet...');
               const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-              console.log('[BlobPreview] Found sheets:', workbook.SheetNames);
 
               let html = '<div style="overflow: auto; max-height: 70vh;">';
 
@@ -344,13 +330,11 @@ export default function BlobPreview({ blob, allBlobs, onClose, onDelete }: BlobP
               setLoading(false);
             }
           } catch (err: any) {
-            console.error('[BlobPreview] Error parsing Office document:', err);
             setError(err.message || 'Failed to parse document');
             setLoading(false);
           }
         })
         .catch((err: any) => {
-          console.error('[BlobPreview] Error loading Office document:', err);
           setError(err.message || 'Failed to load document');
           setLoading(false);
         });
@@ -367,8 +351,7 @@ export default function BlobPreview({ blob, allBlobs, onClose, onDelete }: BlobP
           setZipContents(files.sort());
           setLoading(false);
         })
-        .catch(err => {
-          console.error('Failed to load ZIP:', err);
+        .catch(() => {
           setError('Failed to load ZIP archive');
           setLoading(false);
         });
@@ -384,8 +367,7 @@ export default function BlobPreview({ blob, allBlobs, onClose, onDelete }: BlobP
               setCsvData(results.data);
               setLoading(false);
             },
-            error: (err: any) => {
-              console.error('CSV parse error:', err);
+            error: () => {
               setError('Failed to parse CSV');
               setLoading(false);
             }
@@ -672,9 +654,8 @@ export default function BlobPreview({ blob, allBlobs, onClose, onDelete }: BlobP
               // Ensure video is unmuted when loaded
               const video = e.currentTarget;
               video.muted = false;
-              video.play().catch(err => {
+              video.play().catch(() => {
                 // If unmuted autoplay fails, play muted
-                console.log('Autoplay with sound failed, trying muted:', err);
                 video.muted = true;
                 video.play();
               });

@@ -1,5 +1,6 @@
 'use client';
 import type { ThemeTokens } from '@/app/lib/timeseries/themes';
+import type { WidgetStyle } from '@/app/lib/timeseries/types';
 
 export interface ProgressItem {
   label: string;
@@ -11,19 +12,28 @@ export interface ProgressItem {
 
 interface ProgressKPIWidgetProps {
   items: ProgressItem[];
+  style: WidgetStyle;
   theme: ThemeTokens;
 }
 
-function fmt(n: number, unit?: string) {
-  const abs = Math.abs(n);
-  let s: string;
-  if (abs >= 1_000_000) s = (n / 1_000_000).toFixed(1) + 'M';
-  else if (abs >= 1_000) s = (n / 1_000).toFixed(1) + 'K';
-  else                   s = n.toLocaleString(undefined, { maximumFractionDigits: 1 });
-  return unit ? `${s}${unit}` : s;
+function fmtNum(n: number, style: WidgetStyle, unit?: string) {
+  const prefix  = style.prefix ?? '';
+  const suffix  = style.unit   ?? unit ?? '';
+  const abs     = Math.abs(n);
+  let   s: string;
+  if (style.decimals !== undefined) {
+    s = n.toFixed(style.decimals);
+  } else if (abs >= 1_000_000) {
+    s = (n / 1_000_000).toFixed(1) + 'M';
+  } else if (abs >= 1_000) {
+    s = (n / 1_000).toFixed(1) + 'K';
+  } else {
+    s = n.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  }
+  return `${prefix}${s}${suffix}`;
 }
 
-export default function ProgressKPIWidget({ items, theme }: ProgressKPIWidgetProps) {
+export default function ProgressKPIWidget({ items, style, theme }: ProgressKPIWidgetProps) {
   const isLight = theme.id === 'light-clean';
 
   const trackCls  = isLight ? 'bg-gray-200'   : 'bg-white/10';
@@ -46,9 +56,9 @@ export default function ProgressKPIWidget({ items, theme }: ProgressKPIWidgetPro
               <span className={`truncate text-xs font-semibold ${labelCls}`}>{item.label}</span>
               <div className="flex flex-shrink-0 items-baseline gap-1.5">
                 <span className={`text-sm font-bold ${valueCls}`} style={{ color }}>
-                  {fmt(item.value, item.unit)}
+                  {fmtNum(item.value, style, item.unit)}
                 </span>
-                <span className={`text-xs ${targetCls}`}>/ {fmt(item.target, item.unit)}</span>
+                <span className={`text-xs ${targetCls}`}>/ {fmtNum(item.target, style, item.unit)}</span>
                 <span
                   className={`text-[10px] font-semibold ${overGoal ? '' : pctCls}`}
                   style={overGoal ? { color } : {}}

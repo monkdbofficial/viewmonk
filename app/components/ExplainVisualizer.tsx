@@ -55,8 +55,7 @@ export default function ExplainVisualizer({ explainData, isAnalyze }: ExplainVis
       }
       // If it's already an object
       return Array.isArray(explainData) ? explainData[0] : explainData;
-    } catch (error) {
-      console.error('Failed to parse EXPLAIN output:', error);
+    } catch {
       return null;
     }
   };

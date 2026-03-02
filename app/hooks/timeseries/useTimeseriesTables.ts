@@ -4,7 +4,7 @@ import { useMonkDBClient } from '@/app/lib/monkdb-context';
 import type { TimeseriesTable, ColumnInfo } from '@/app/lib/timeseries/types';
 
 const TIMESTAMP_TYPES = ['timestamp with time zone', 'timestamp without time zone', 'timestamp'];
-const NUMERIC_TYPES   = ['real', 'double precision', 'float', 'integer', 'long', 'short', 'byte', 'numeric'];
+const NUMERIC_TYPES   = ['real', 'double precision', 'float', 'integer', 'long', 'short', 'byte', 'numeric', 'double', 'int', 'bigint', 'smallint', 'decimal', 'money'];
 const TEXT_TYPES      = ['text', 'character varying', 'varchar', 'char', 'string'];
 
 export function useTimeseriesTables() {
@@ -42,10 +42,12 @@ export function useTimeseriesTables() {
       }
 
       // Build TimeseriesTable list — only tables that have at least 1 timestamp column
+      // Exclude internal _demo_* tables (used for template previews, not user data)
       const result: TimeseriesTable[] = [];
       for (const row of tablesResult.rows) {
         const schema = row[0] as string;
         const table  = row[1] as string;
+        if (table.startsWith('_demo_')) continue;
         const key    = `${schema}.${table}`;
         const cols   = colMap[key] ?? [];
 

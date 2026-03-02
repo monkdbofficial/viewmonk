@@ -30,10 +30,8 @@ export function SchemaProvider({ children }: { children: ReactNode }) {
       const key = `schema_${activeConnection.id}`;
       const saved = localStorage.getItem(key);
       if (saved) {
-        console.log('[SchemaContext] Restored schema:', saved);
         setActiveSchemaState(saved);
       } else {
-        console.log('[SchemaContext] Using default schema:', defaultSchema);
         setActiveSchemaState(defaultSchema);
       }
     } else {
@@ -42,7 +40,6 @@ export function SchemaProvider({ children }: { children: ReactNode }) {
   }, [activeConnection]);
 
   const setActiveSchema = (schema: string) => {
-    console.log('[SchemaContext] Switching to schema:', schema);
     setActiveSchemaState(schema);
 
     // Save preference for this connection

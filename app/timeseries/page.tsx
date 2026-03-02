@@ -1,11 +1,13 @@
 'use client';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import DashboardHome from '@/app/components/timeseries/home/DashboardHome';
 import DashboardViewer from '@/app/components/timeseries/viewer/DashboardViewer';
 import DashboardBuilder from '@/app/components/timeseries/builder/DashboardBuilder';
 import { useDashboard, useDashboardList } from '@/app/hooks/timeseries/useDashboard';
+import { useDemoSetup } from '@/app/hooks/timeseries/useDemoSetup';
 import { getTemplate } from '@/app/lib/timeseries/templates';
 import { saveDashboard } from '@/app/lib/timeseries/dashboard-store';
+import { DEMO_TABLE_SCHEMAS } from '@/app/lib/timeseries/demo-setup';
 import type { DashboardConfig, TemplateDefinition, DataSourceConfig } from '@/app/lib/timeseries/types';
 
 // ── Navigation state ──────────────────────────────────────────────────────────
@@ -94,9 +96,23 @@ function BuilderPage({
   );
 }
 
-// ── Build a full-height layout-aware DashboardConfig from a template ──────────
+// ── Build a DashboardConfig that queries the template's _demo_* table ─────────
+// Column names are resolved at runtime from DEMO_TABLE_SCHEMAS via role indices.
+// Zero hardcoded column strings — the schema registry is the single source of truth.
 
 function buildPreviewConfig(template: TemplateDefinition): DashboardConfig {
+  const schema = DEMO_TABLE_SCHEMAS[template.demoTable];
+  const fallbackMetric = schema?.numericCols[0] ?? 'value';
+
+  const baseDs: DataSourceConfig = {
+    schema:       'monkdb',
+    table:        template.demoTable,
+    timestampCol: 'ts',
+    metricCol:    fallbackMetric,
+    aggregation:  'AVG' as const,
+    limit:        200,
+  };
+
   return {
     id:              `preview_${template.id}`,
     name:            template.name,
@@ -106,19 +122,70 @@ function buildPreviewConfig(template: TemplateDefinition): DashboardConfig {
     createdAt:       new Date().toISOString(),
     updatedAt:       new Date().toISOString(),
     templateId:      template.id,
-    // Layout without real datasources (demo mode ignores the datasource)
-    widgets: template.defaultLayout.map((layout) => ({
-      ...layout,
-      dataSource: {
-        schema:       'monkdb',
-        table:        '_demo',
-        timestampCol: 'ts',
-        metricCol:    'value',
-        aggregation:  'AVG' as const,
-        limit:        50,
-      },
-    })),
+    widgets: template.defaultLayout.map((layout) => {
+      const role = schema?.widgetRoles[layout.id];
+      if (!role || !schema) return { ...layout, dataSource: baseDs };
+
+      const metricCol = schema.numericCols[role.n] ?? fallbackMetric;
+      const groupCol  = role.g !== undefined ? schema.textCols[role.g] : undefined;
+
+      return {
+        ...layout,
+        dataSource: {
+          ...baseDs,
+          metricCol,
+          aggregation: role.agg,
+          ...(groupCol  !== undefined && { groupCol }),
+          ...(role.limit !== undefined && { limit: role.limit }),
+        },
+      };
+    }),
   };
+}
+
+// ── Template preview page — ensures demo tables exist, then runs real queries ──
+
+function TemplatePreviewPage({
+  templateId,
+  onBack,
+}: {
+  templateId: string;
+  onBack: () => void;
+}) {
+  const template = getTemplate(templateId);
+  const { ready, initializing, error, ensureReady } = useDemoSetup();
+
+  useEffect(() => {
+    ensureReady();
+  }, [ensureReady]);
+
+  if (!template) return <NotFound onBack={onBack} />;
+
+  if (error) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-red-500">
+        <p className="text-sm font-medium">Demo setup failed</p>
+        <p className="max-w-sm text-center text-xs text-gray-500">{error}</p>
+        <button onClick={onBack} className="text-sm text-blue-600 underline">Go back</button>
+      </div>
+    );
+  }
+
+  if (initializing || !ready) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-gray-400">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+        <p className="text-sm">Preparing demo data…</p>
+      </div>
+    );
+  }
+
+  return (
+    <DashboardViewer
+      config={buildPreviewConfig(template)}
+      onBack={onBack}
+    />
+  );
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
@@ -131,22 +198,7 @@ export default function TimeSeriesPage() {
 
   // ── Template preview ──
   if (appState.mode === 'template-preview') {
-    const template = getTemplate(appState.templateId);
-    if (!template) return <NotFound onBack={goHome} />;
-
-    const previewConfig = buildPreviewConfig(template);
-    const demoDataMap = Object.fromEntries(
-      Object.entries(template.demoData).map(([k, v]) => [k, v as Record<string, unknown>]),
-    );
-
-    return (
-      <DashboardViewer
-        config={previewConfig}
-        demoMode
-        templateDemoData={demoDataMap}
-        onBack={goHome}
-      />
-    );
+    return <TemplatePreviewPage templateId={appState.templateId} onBack={goHome} />;
   }
 
   // ── Dashboard viewer ──
@@ -187,7 +239,7 @@ export default function TimeSeriesPage() {
         // Build a dashboard from the template with unconfigured (empty) datasources
         // and drop the user straight into the builder so they can configure each widget inline.
         const emptyDs: DataSourceConfig = {
-          schema: 'doc', table: '', timestampCol: '', metricCol: '', aggregation: 'AVG', limit: 50,
+          schema: 'monkdb', table: '', timestampCol: '', metricCol: '', aggregation: 'AVG', limit: 50,
         };
         const now = new Date().toISOString();
         const config: DashboardConfig = {

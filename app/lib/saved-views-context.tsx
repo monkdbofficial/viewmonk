@@ -69,8 +69,8 @@ export function SavedViewsProvider({ children }: { children: React.ReactNode }) 
       if (savedTables) {
         setRecentTables(JSON.parse(savedTables));
       }
-    } catch (error) {
-      console.error('[SavedViews] Error loading from localStorage:', error);
+    } catch {
+      // ignore malformed localStorage data
     }
   }, []);
 
@@ -86,7 +86,7 @@ export function SavedViewsProvider({ children }: { children: React.ReactNode }) 
 
       // Create new entry
       const newQuery: RecentQuery = {
-        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id: crypto.randomUUID(),
         query: query.trim(),
         timestamp: Date.now(),
         rowCount,
@@ -99,8 +99,8 @@ export function SavedViewsProvider({ children }: { children: React.ReactNode }) 
       // Save to localStorage
       try {
         localStorage.setItem(STORAGE_KEYS.RECENT_QUERIES, JSON.stringify(updated));
-      } catch (error) {
-        console.error('[SavedViews] Error saving queries to localStorage:', error);
+      } catch {
+        // storage quota exceeded — ignore
       }
 
       return updated;
@@ -119,7 +119,7 @@ export function SavedViewsProvider({ children }: { children: React.ReactNode }) 
 
       // Create new entry
       const newTable: RecentTable = {
-        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id: crypto.randomUUID(),
         schema,
         table,
         timestamp: Date.now(),
@@ -131,8 +131,8 @@ export function SavedViewsProvider({ children }: { children: React.ReactNode }) 
       // Save to localStorage
       try {
         localStorage.setItem(STORAGE_KEYS.RECENT_TABLES, JSON.stringify(updated));
-      } catch (error) {
-        console.error('[SavedViews] Error saving tables to localStorage:', error);
+      } catch {
+        // storage quota exceeded — ignore
       }
 
       return updated;
@@ -147,8 +147,8 @@ export function SavedViewsProvider({ children }: { children: React.ReactNode }) 
       const updated = prev.filter((q) => q.id !== id);
       try {
         localStorage.setItem(STORAGE_KEYS.RECENT_QUERIES, JSON.stringify(updated));
-      } catch (error) {
-        console.error('[SavedViews] Error removing query from localStorage:', error);
+      } catch {
+        // storage quota exceeded — ignore
       }
       return updated;
     });
@@ -162,8 +162,8 @@ export function SavedViewsProvider({ children }: { children: React.ReactNode }) 
       const updated = prev.filter((t) => t.id !== id);
       try {
         localStorage.setItem(STORAGE_KEYS.RECENT_TABLES, JSON.stringify(updated));
-      } catch (error) {
-        console.error('[SavedViews] Error removing table from localStorage:', error);
+      } catch {
+        // storage quota exceeded — ignore
       }
       return updated;
     });
@@ -176,8 +176,8 @@ export function SavedViewsProvider({ children }: { children: React.ReactNode }) 
     setRecentQueries([]);
     try {
       localStorage.removeItem(STORAGE_KEYS.RECENT_QUERIES);
-    } catch (error) {
-      console.error('[SavedViews] Error clearing queries from localStorage:', error);
+    } catch {
+      // ignore
     }
   }, []);
 
@@ -188,8 +188,8 @@ export function SavedViewsProvider({ children }: { children: React.ReactNode }) 
     setRecentTables([]);
     try {
       localStorage.removeItem(STORAGE_KEYS.RECENT_TABLES);
-    } catch (error) {
-      console.error('[SavedViews] Error clearing tables from localStorage:', error);
+    } catch {
+      // ignore
     }
   }, []);
 

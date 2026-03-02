@@ -38,7 +38,9 @@ export function exportSearchResults(
   const a = document.createElement('a');
   a.href = url;
   a.download = `fts-search-${Date.now()}.json`;
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
@@ -96,7 +98,9 @@ export function exportToCSV(
   const a = document.createElement('a');
   a.href = url;
   a.download = `fts-search-${Date.now()}.csv`;
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
@@ -111,10 +115,15 @@ export function highlightedHTML(
   query: string,
   searchColumns: string[]
 ): void {
-  const highlightTerms = (text: string, terms: string[]): string => {
-    let highlighted = text;
+  const escapeRegExp = (string: string): string => {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  };
+
+  // highlightTerms expects pre-HTML-escaped text; it highlights on the escaped string
+  const highlightTerms = (escapedText: string, terms: string[]): string => {
+    let highlighted = escapedText;
     terms.forEach((term) => {
-      const regex = new RegExp(`(${escapeRegExp(term)})`, 'gi');
+      const regex = new RegExp(`(${escapeRegExp(escapeHTMLStr(term))})`, 'gi');
       highlighted = highlighted.replace(
         regex,
         '<mark style="background-color: #fef08a; padding: 2px 4px; border-radius: 2px;">$1</mark>'
@@ -123,16 +132,15 @@ export function highlightedHTML(
     return highlighted;
   };
 
-  const escapeRegExp = (string: string): string => {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  };
-
   // Extract search terms
   const terms = query
     .toLowerCase()
     .replace(/[+\-"]/g, ' ')
     .split(/\s+/)
     .filter((t) => t.length > 2);
+
+  const escapeHTMLStr = (s: string): string =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
   // Build HTML
   const html = `
@@ -212,7 +220,7 @@ export function highlightedHTML(
 <body>
   <h1>Full-Text Search Results</h1>
   <div class="meta">
-    <strong>Query:</strong> ${query}<br>
+    <strong>Query:</strong> ${escapeHTMLStr(query)}<br>
     <strong>Results:</strong> ${results.length}<br>
     <strong>Exported:</strong> ${new Date().toLocaleString()}
   </div>
@@ -221,11 +229,11 @@ export function highlightedHTML(
       const fields = searchColumns
         .filter((col) => result[col])
         .map((col) => {
-          const value = String(result[col]);
-          const highlighted = highlightTerms(value, terms);
+          const escaped = escapeHTMLStr(String(result[col]));
+          const highlighted = highlightTerms(escaped, terms);
           return `
             <div class="field">
-              <div class="field-name">${col}</div>
+              <div class="field-name">${escapeHTMLStr(col)}</div>
               <div class="field-value">${highlighted}</div>
             </div>
           `;
@@ -252,7 +260,9 @@ export function highlightedHTML(
   const a = document.createElement('a');
   a.href = url;
   a.download = `fts-search-${Date.now()}.html`;
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 

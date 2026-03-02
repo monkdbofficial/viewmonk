@@ -148,8 +148,6 @@ export default function ConnectionDialog({
   const checkMonkDBStatus = async () => {
     setMonkDBStatus('checking');
     try {
-      console.log('[ConnectionDialog] Checking MonkDB status on', formData.host + ':' + formData.port);
-
       // Use MonkDBClient which automatically handles Tauri commands in desktop mode
       const client = new MonkDBClient({
         host: formData.host,
@@ -161,10 +159,8 @@ export default function ConnectionDialog({
       // Try a simple query
       await client.query('SELECT 1');
 
-      console.log('[ConnectionDialog] MonkDB is online');
       setMonkDBStatus('online');
-    } catch (error) {
-      console.error('[ConnectionDialog] MonkDB check failed:', error);
+    } catch {
       setMonkDBStatus('offline');
     }
   };
@@ -174,8 +170,6 @@ export default function ConnectionDialog({
     setTestMessage('');
 
     try {
-      console.log('[ConnectionDialog] Testing connection to', formData.host + ':' + formData.port);
-
       // Create a temporary MonkDB client with the form data
       const client = new MonkDBClient({
         host: formData.host,
@@ -187,8 +181,7 @@ export default function ConnectionDialog({
       });
 
       // Try a simple query to test the connection
-      const result = await client.query('SELECT 1');
-      console.log('[ConnectionDialog] Test connection successful:', result);
+      await client.query('SELECT 1');
 
       setTestStatus('success');
       setTestMessage('Connection successful!');
@@ -198,7 +191,6 @@ export default function ConnectionDialog({
         setTestMessage('');
       }, 3000);
     } catch (error) {
-      console.error('[ConnectionDialog] Test connection failed:', error);
       setTestStatus('error');
 
       let errorMessage = 'Unknown error occurred';
@@ -207,15 +199,7 @@ export default function ConnectionDialog({
       if (error instanceof Error) {
         errorMessage = error.message;
         isAuthError = (error as any).isAuthError || (error as any).category === 'auth';
-        console.error('[ConnectionDialog] Error details:', {
-          message: error.message,
-          stack: error.stack,
-          name: error.name,
-          category: (error as any).category,
-          isAuthError
-        });
       } else {
-        console.error('[ConnectionDialog] Non-Error object:', error);
         errorMessage = String(error);
       }
 
@@ -260,8 +244,6 @@ export default function ConnectionDialog({
     }
 
     try {
-      console.log('[ConnectionDialog] Creating new MonkDB user:', newUsername);
-
       // Connect as superuser (no password, localhost only)
       const superuserClient = new MonkDBClient({
         host: formData.host,
@@ -272,26 +254,25 @@ export default function ConnectionDialog({
         timeout: 10000,
       });
 
+      const safeUsername = '"' + newUsername.replace(/"/g, '""') + '"';
+      const safePassword = newPassword.replace(/'/g, "''");
+
       // Create the user
-      console.log('[ConnectionDialog] Executing CREATE USER...');
       await superuserClient.query(
-        `CREATE USER ${newUsername} WITH (password = '${newPassword}')`
+        `CREATE USER ${safeUsername} WITH (password = '${safePassword}')`
       );
 
       // Grant privileges based on role
-      console.log('[ConnectionDialog] Granting privileges based on role:', userRole);
       if (userRole === 'superuser') {
         // Grant AL (Admin Level) privilege for superuser access
-        await superuserClient.query(`GRANT AL TO ${newUsername}`);
+        await superuserClient.query(`GRANT AL TO ${safeUsername}`);
       } else if (userRole === 'read-write') {
-        await superuserClient.query(`GRANT ALL PRIVILEGES TO ${newUsername}`);
+        await superuserClient.query(`GRANT ALL PRIVILEGES TO ${safeUsername}`);
       } else if (userRole === 'read-only') {
         // For read-only, grant SELECT on all tables
-        await superuserClient.query(`GRANT SELECT ON ALL TABLES IN SCHEMA doc TO ${newUsername}`);
-        await superuserClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA doc GRANT SELECT ON TABLES TO ${newUsername}`);
+        await superuserClient.query(`GRANT SELECT ON ALL TABLES IN SCHEMA doc TO ${safeUsername}`);
+        await superuserClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA doc GRANT SELECT ON TABLES TO ${safeUsername}`);
       }
-
-      console.log('[ConnectionDialog] User created successfully!');
       setCreateUserStatus('success');
       setCreateUserMessage(`✅ User "${newUsername}" created successfully!\n\nCredentials have been filled in the form. You can now click "Finish".`);
 
@@ -314,7 +295,6 @@ export default function ConnectionDialog({
       }, 2000);
 
     } catch (error) {
-      console.error('[ConnectionDialog] Failed to create user:', error);
       setCreateUserStatus('error');
 
       let errorMessage = 'Failed to create user';
@@ -363,8 +343,6 @@ export default function ConnectionDialog({
     }
 
     try {
-      console.log('[ConnectionDialog] Resetting password for user:', newUsername);
-
       // Connect as superuser (no password, localhost only)
       const superuserClient = new MonkDBClient({
         host: formData.host,
@@ -375,10 +353,13 @@ export default function ConnectionDialog({
         timeout: 10000,
       });
 
+      const safeUsername = '"' + newUsername.replace(/"/g, '""') + '"';
+      const safePassword = newPassword.replace(/'/g, "''");
+
       // Check if user exists
-      console.log('[ConnectionDialog] Checking if user exists...');
       const userCheck = await superuserClient.query(
-        `SELECT usename FROM pg_user WHERE usename = '${newUsername}'`
+        `SELECT usename FROM pg_user WHERE usename = ?`,
+        [newUsername]
       );
 
       if (!userCheck.rows || userCheck.rows.length === 0) {
@@ -388,12 +369,9 @@ export default function ConnectionDialog({
       }
 
       // Reset the password
-      console.log('[ConnectionDialog] Resetting password...');
       await superuserClient.query(
-        `ALTER USER ${newUsername} WITH (password = '${newPassword}')`
+        `ALTER USER ${safeUsername} WITH (password = '${safePassword}')`
       );
-
-      console.log('[ConnectionDialog] Password reset successfully!');
       setCreateUserStatus('success');
       setCreateUserMessage(`✅ Password reset for "${newUsername}" successful!\n\nCredentials have been filled in the form. You can now click "Finish".`);
 
@@ -416,7 +394,6 @@ export default function ConnectionDialog({
       }, 2000);
 
     } catch (error) {
-      console.error('[ConnectionDialog] Failed to reset password:', error);
       setCreateUserStatus('error');
 
       let errorMessage = 'Failed to reset password';

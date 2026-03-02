@@ -102,8 +102,6 @@ export class MonkDBClient {
     try {
       // Desktop app: Use Tauri command instead of fetch
       if (!this.useProxy && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-        // console.log('[MonkDBClient] Using Tauri command (Desktop mode)');
-
         // Dynamically import Tauri invoke
         const { invoke } = await import('@tauri-apps/api/core');
 
@@ -165,14 +163,6 @@ export class MonkDBClient {
         }
       }
 
-      // Only log requests in development for debugging
-      // console.log('[MonkDBClient] Query Request:', {
-      //   baseUrl: this.baseUrl,
-      //   useProxy: this.useProxy,
-      //   stmt: stmt.substring(0, 100),
-      //   hasAuth: !!headers['Authorization'],
-      // });
-
       const response = await fetch(this.baseUrl, {
         method: 'POST',
         headers,
@@ -182,9 +172,6 @@ export class MonkDBClient {
 
       clearTimeout(timeoutId);
 
-      // Only log errors, not successful responses (reduces console noise)
-      // console.log('[MonkDBClient] Response Status:', response.status, response.statusText);
-
       if (!response.ok) {
         const errorText = await response.text();
 
@@ -192,42 +179,20 @@ export class MonkDBClient {
         try {
           errorData = JSON.parse(errorText);
         } catch {
-          console.error('[MonkDBClient] ❌ Invalid error response format');
           throw new Error(`HTTP ${response.status}: ${response.statusText}\nResponse: ${errorText}`);
         }
 
         const errorMessage = errorData.error?.message || errorData.message || `HTTP ${response.status}: ${response.statusText}`;
 
-        // Parse user-friendly error for console
-        if (errorMessage.includes('RelationUnknown') || (errorMessage.includes('Relation') && errorMessage.includes('unknown'))) {
-          const tableMatch = errorMessage.match(/Relation '([^']+)' unknown/i);
-          const tableName = tableMatch ? tableMatch[1] : 'table';
-          console.warn(`[MonkDBClient] ⚠️ Table Not Found: "${tableName}" does not exist. Create it first or check the name.`);
-        } else if (errorMessage.includes('ColumnUnknown') || (errorMessage.includes('Column') && errorMessage.includes('unknown'))) {
-          const columnMatch = errorMessage.match(/Column '([^']+)' unknown/i);
-          const columnName = columnMatch ? columnMatch[1] : 'column';
-          console.warn(`[MonkDBClient] ⚠️ Column Not Found: "${columnName}" does not exist. Check column name or table schema.`);
-        } else if (errorMessage.includes('SQLParseException') || errorMessage.includes('syntax error')) {
-          console.warn('[MonkDBClient] ⚠️ SQL Syntax Error: Check your query syntax.');
-        } else if (errorMessage.includes('DuplicateKey') || errorMessage.includes('duplicate key')) {
-          console.warn('[MonkDBClient] ⚠️ Duplicate Entry: This primary key or unique value already exists.');
-        } else {
-          console.warn('[MonkDBClient] ⚠️ Query Error:', errorMessage);
-        }
-
         throw new Error(errorMessage);
       }
 
       const responseText = await response.text();
-      // Only log in development for debugging
-      // console.log('[MonkDBClient] Response Text:', responseText.substring(0, 200));
 
       let data: SQLResponse<T>;
       try {
         data = JSON.parse(responseText);
       } catch (parseError) {
-        console.warn('[MonkDBClient] ⚠️ Unable to parse server response. The server may be unavailable.');
-        console.warn('[MonkDBClient] Response text:', responseText.substring(0, 200));
 
         // Check if this is an authentication error (catch all variations)
         const lowerText = responseText.toLowerCase();
@@ -335,7 +300,7 @@ export class MonkDBClient {
 
     return result.rows.map((row) => ({
       name: row[0],
-      uptime: row[1],
+      uptime: Math.floor((row[1] || 0) / 1000), // os['uptime'] is in ms → convert to seconds
       hostname: row[2],
       heap_used: row[3],
       heap_max: row[4],
@@ -345,13 +310,23 @@ export class MonkDBClient {
   }
 
   /**
-   * Get cluster uptime (minimum uptime across all nodes)
+   * Get cluster uptime — time since MonkDB process was started.
+   *
+   * Uses the earliest entry in sys.jobs_log as a proxy for the MonkDB
+   * process start time, which is accurate as long as the jobs_log hasn't
+   * been fully cycled (default: 10,000 entries).
+   *
+   * Falls back to os['uptime'] / 1000 if jobs_log is empty.
    */
   async getClusterUptime(): Promise<number> {
-    const result = await this.query<any>("SELECT min(os['uptime']) AS cluster_uptime_seconds FROM sys.nodes");
-    const uptimeMs = result.rows[0]?.[0] || 0;
-    // Convert from milliseconds to seconds
-    return Math.floor(uptimeMs / 1000);
+    const result = await this.query<any>("SELECT min(started) AS monkdb_start_ms FROM sys.jobs_log");
+    const monkdbStartMs: number | null = result.rows[0]?.[0] ?? null;
+    if (monkdbStartMs != null && monkdbStartMs > 0) {
+      return Math.floor((Date.now() - monkdbStartMs) / 1000);
+    }
+    // Fallback: use OS uptime (ms → seconds)
+    const fallback = await this.query<any>("SELECT min(os['uptime']) FROM sys.nodes");
+    return Math.floor((fallback.rows[0]?.[0] || 0) / 1000);
   }
 
   /**
@@ -368,7 +343,7 @@ export class MonkDBClient {
     const row = result.rows[0];
     return {
       name: row[0],
-      uptime: row[1],
+      uptime: Math.floor((row[1] || 0) / 1000), // os['uptime'] is in ms → convert to seconds
       hostname: row[2],
       heap_used: row[3],
       heap_max: row[4],

@@ -46,7 +46,7 @@ export default function WidgetRenderer({
   useEffect(() => {
     if (!demoMode) run(timeRange, activeFilter, refreshTick > 0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeRange.from.getTime(), timeRange.to.getTime(), activeFilter?.value, refreshTick, demoMode]);
+  }, [timeRange.from.getTime(), timeRange.to.getTime(), activeFilter?.column, activeFilter?.value, refreshTick, demoMode]);
 
   const displayStatus = demoMode ? 'loaded' : state.status;
 
@@ -69,7 +69,11 @@ export default function WidgetRenderer({
             series={result.series ?? []}
             style={widget.style}
             theme={theme}
-            onDrillDown={onDrillDown ? (col, val) => onDrillDown({ column: col, value: val, sourceWidgetId: widget.id }) : undefined}
+            onDrillDown={onDrillDown
+              // Map the SQL alias ('category') back to the actual table column name.
+              // widget.dataSource.groupCol is the real column; fall back to the alias only when unset.
+              ? (_alias, val) => onDrillDown({ column: widget.dataSource.groupCol ?? _alias, value: val, sourceWidgetId: widget.id })
+              : undefined}
           />
         );
       case 'pie-chart':
@@ -79,13 +83,15 @@ export default function WidgetRenderer({
           ? <GaugeWidget data={result.gaugeValue} style={widget.style} theme={theme} />
           : null;
       case 'heatmap':
-        return <HeatmapWidget series={result.series ?? []} theme={theme} />;
+        return <HeatmapWidget series={result.series ?? []} style={widget.style} theme={theme} />;
       case 'data-table':
         return <DataTableWidget columns={result.columns} rows={result.tableRows ?? []} theme={theme} />;
       case 'scatter-chart':
         return (
           <ScatterChartWidget
-            points={(result.series?.[0]?.data ?? []).map(([, v], i) => [i, v] as [number, number])}
+            points={result.scatterPoints ?? []}
+            xLabel={widget.dataSource.xCol}
+            yLabel={widget.dataSource.yCol}
             style={widget.style}
             theme={theme}
           />
@@ -93,11 +99,13 @@ export default function WidgetRenderer({
       case 'funnel-chart':
         return <FunnelChartWidget slices={result.pieSlices ?? []} style={widget.style} theme={theme} />;
       case 'treemap':
-        return <TreemapWidget nodes={(result.pieSlices ?? []).map((s) => ({ name: s.name, value: s.value }))} style={widget.style} theme={theme} />;
+        return <TreemapWidget
+          nodes={result.treemapNodes ?? (result.pieSlices ?? []).map((s) => ({ name: s.name, value: s.value }))}
+          style={widget.style} theme={theme} />;
       case 'candlestick':
         return <CandlestickWidget candles={(result.candleData ?? []) as CandlePoint[]} style={widget.style} theme={theme} />;
       case 'progress-kpi':
-        return <ProgressKPIWidget items={(result.progressItems ?? []) as ProgressItem[]} theme={theme} />;
+        return <ProgressKPIWidget items={(result.progressItems ?? []) as ProgressItem[]} style={widget.style} theme={theme} />;
       default:
         return null;
     }
@@ -164,7 +172,7 @@ function renderDemoWidget(
         ? <GaugeWidget data={d.gaugeValue} style={widget.style} theme={theme} />
         : null;
     case 'heatmap':
-      return <HeatmapWidget series={d.series ?? []} theme={theme} />;
+      return <HeatmapWidget series={d.series ?? []} style={widget.style} theme={theme} />;
     case 'data-table':
       return (
         <DataTableWidget
@@ -188,7 +196,7 @@ function renderDemoWidget(
     case 'candlestick':
       return <CandlestickWidget candles={d.candleData ?? []} style={widget.style} theme={theme} />;
     case 'progress-kpi':
-      return <ProgressKPIWidget items={d.progressItems ?? []} theme={theme} />;
+      return <ProgressKPIWidget items={d.progressItems ?? []} style={widget.style} theme={theme} />;
     default:
       return null;
   }

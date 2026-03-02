@@ -33,14 +33,10 @@ export function useAccessibleSchemas() {
         const client = activeConnection.client;
         const username = activeConnection.config.username || 'monkdb';
 
-        console.log('[useAccessibleSchemas] Fetching schemas for user:', username);
-
         // Special case: superuser sees all schemas
         const isSuperuser = activeConnection.config.role === 'superuser';
 
         if (isSuperuser) {
-          console.log('[useAccessibleSchemas] User is superuser, fetching all schemas');
-
           // Get all schemas
           const allSchemas = await client.query(`
             SELECT schema_name
@@ -54,11 +50,8 @@ export function useAccessibleSchemas() {
             privileges: ['DQL', 'DML', 'DDL', 'AL'], // Superuser has all
           }));
 
-          console.log('[useAccessibleSchemas] Superuser schemas:', schemaList);
           setSchemas(schemaList);
         } else {
-          console.log('[useAccessibleSchemas] User is NOT superuser, filtering by privileges');
-
           // Query accessible schemas based on sys.privileges
           const result = await client.query(`
             SELECT DISTINCT ident, type
@@ -69,8 +62,6 @@ export function useAccessibleSchemas() {
               AND ident NOT IN ('information_schema', 'pg_catalog', 'sys')
             ORDER BY ident
           `, [username]);
-
-          console.log('[useAccessibleSchemas] Privilege rows:', result.rows.length);
 
           // Group privileges by schema
           const schemaMap = new Map<string, string[]>();
@@ -88,13 +79,11 @@ export function useAccessibleSchemas() {
             privileges: Array.from(new Set(privileges)), // Deduplicate
           }));
 
-          console.log('[useAccessibleSchemas] Accessible schemas:', schemaList);
           setSchemas(schemaList);
         }
 
         setLoading(false);
       } catch (err) {
-        console.error('[useAccessibleSchemas] Error:', err);
         setError(err instanceof Error ? err.message : 'Failed to load schemas');
         setSchemas([]);
         setLoading(false);

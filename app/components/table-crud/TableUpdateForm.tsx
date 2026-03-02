@@ -176,8 +176,6 @@ export default function TableUpdateForm({
       const whereCondition = whereClause.trim() ? ` WHERE ${whereClause.trim()}` : '';
       const sql = `UPDATE "${schema}"."${tableName}" SET ${setClause}${whereCondition}`;
 
-      console.log('[Update Query]', sql, 'Values:', setValues);
-
       // Execute query
       const client = activeConnection.client;
       const result = await client.query(sql, setValues);
@@ -198,7 +196,6 @@ export default function TableUpdateForm({
       // Close dialog
       onClose();
     } catch (error) {
-      console.error('Update failed:', error);
       const errorMessage = error instanceof Error ? error.message : 'Could not update rows';
       toast.error('Update Failed', errorMessage);
     } finally {

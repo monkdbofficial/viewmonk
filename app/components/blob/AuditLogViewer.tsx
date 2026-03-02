@@ -42,8 +42,8 @@ export default function AuditLogViewer({ onClose }: AuditLogViewerProps) {
 
       setLogs(filteredLogs);
       setSummary(auditSummary);
-    } catch (error) {
-      console.error('Failed to load audit data:', error);
+    } catch {
+      // load failure — show empty state
     } finally {
       setLoading(false);
     }

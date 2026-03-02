@@ -295,11 +295,11 @@ export default function EnterpriseDataPanel({ onDataChange }: EnterpriseDataPane
       // If creating a new schema, create it first
       if (isNewSchema && customSchemaName) {
         try {
-          await activeConnection.client.query(`CREATE SCHEMA IF NOT EXISTS ${customSchemaName}`);
+          const safeSchema = customSchemaName.replace(/"/g, '""');
+          await activeConnection.client.query(`CREATE SCHEMA IF NOT EXISTS "${safeSchema}"`);
           toast.success('Schema Created', `Schema ${customSchemaName} created successfully`);
-        } catch (schemaError: any) {
-          // Schema might already exist, continue
-          console.log('Schema creation note:', schemaError.message);
+        } catch {
+          // Schema might already exist — continue
         }
       }
 

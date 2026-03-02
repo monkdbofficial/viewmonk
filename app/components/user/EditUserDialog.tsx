@@ -54,12 +54,14 @@ export default function EditUserDialog({ user, onClose, onSuccess }: EditUserDia
     setSaving(true);
 
     try {
+      const safeUsername = '"' + user.name.replace(/"/g, '""') + '"';
       let hasChanges = false;
 
       // Update password if provided - use CrateDB/MonkDB syntax
       if (newPassword) {
+        const safePassword = newPassword.replace(/'/g, "''");
         await activeConnection.client.query(
-          `ALTER USER ${user.name} WITH (password = '${newPassword.replace(/'/g, "''")}')`
+          `ALTER USER ${safeUsername} WITH (password = '${safePassword}')`
         );
         hasChanges = true;
       }
@@ -67,9 +69,9 @@ export default function EditUserDialog({ user, onClose, onSuccess }: EditUserDia
       // Update superuser status if changed - use AL (Admin Level) privilege
       if (isSuperuser !== user.superuser) {
         if (isSuperuser) {
-          await activeConnection.client.query(`GRANT AL TO ${user.name}`);
+          await activeConnection.client.query(`GRANT AL TO ${safeUsername}`);
         } else {
-          await activeConnection.client.query(`REVOKE AL FROM ${user.name}`);
+          await activeConnection.client.query(`REVOKE AL FROM ${safeUsername}`);
         }
         hasChanges = true;
       }
@@ -82,7 +84,6 @@ export default function EditUserDialog({ user, onClose, onSuccess }: EditUserDia
         onClose();
       }
     } catch (err) {
-      console.error('Failed to update user:', err);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       setError(errorMessage);
       toast.error('Failed to update user', errorMessage);

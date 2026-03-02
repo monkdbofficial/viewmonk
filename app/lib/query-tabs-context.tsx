@@ -55,8 +55,8 @@ export function QueryTabsProvider({ children }: { children: ReactNode }) {
           return;
         }
       }
-    } catch (error) {
-      console.error('Failed to load tabs from localStorage:', error);
+    } catch {
+      // malformed localStorage data — fall through to create default tab
     }
 
     // Create default tab if none exist
@@ -70,8 +70,8 @@ export function QueryTabsProvider({ children }: { children: ReactNode }) {
     if (tabs.length > 0) {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(tabs));
-      } catch (error) {
-        console.error('Failed to save tabs to localStorage:', error);
+      } catch {
+        // storage quota exceeded — in-memory state still intact
       }
     }
   }, [tabs]);
@@ -81,8 +81,8 @@ export function QueryTabsProvider({ children }: { children: ReactNode }) {
     if (activeTabId) {
       try {
         localStorage.setItem(ACTIVE_TAB_KEY, activeTabId);
-      } catch (error) {
-        console.error('Failed to save active tab to localStorage:', error);
+      } catch {
+        // storage quota exceeded — in-memory state still intact
       }
     }
   }, [activeTabId]);

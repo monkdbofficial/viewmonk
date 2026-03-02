@@ -365,8 +365,8 @@ WHERE intersects(${fieldName}, '${geometry}')`;
     if (saved) {
       try {
         setSavedCustomQueries(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to load saved queries:', e);
+      } catch {
+        // malformed localStorage data — start with empty saved queries
       }
     }
   }, []);

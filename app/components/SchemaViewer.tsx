@@ -63,6 +63,9 @@ interface TableStats {
 type ViewType = 'columns' | 'preview' | 'indexes' | 'details' | 'ddl' | 'query-form' | 'insert-form' | 'update-form' | 'delete-form' | 'import-form';
 type FilterType = 'all' | 'user' | 'system';
 
+// Escape a SQL identifier by doubling any embedded double-quotes
+const escIdent = (s: string) => s.replace(/"/g, '""');
+
 export default function SchemaViewer() {
   const activeConnection = useActiveConnection();
   const toast = useToast();
@@ -106,6 +109,7 @@ export default function SchemaViewer() {
   // Fetch tables for each schema
   const [schemaTableMap, setSchemaTableMap] = useState<Record<string, any[]>>({});
   const [loadingTables, setLoadingTables] = useState<Set<string>>(new Set());
+  const [schemaErrors, setSchemaErrors] = useState<Record<string, string>>({});
   const [editColumnModal, setEditColumnModal] = useState<{open: boolean; column: ColumnMetadata | null}>({open: false, column: null});
   const [deleteColumnModal, setDeleteColumnModal] = useState<{open: boolean; column: ColumnMetadata | null}>({open: false, column: null});
   const [showExportModal, setShowExportModal] = useState(false);
@@ -120,66 +124,61 @@ export default function SchemaViewer() {
   useEffect(() => {
     if (!activeConnection || !schemas) return;
 
-    expandedSchemas.forEach(async (schema) => {
+    let mounted = true;
+
+    const loadSchema = async (schema: string) => {
       if (schemaTableMap[schema]) return; // Already loaded
-
       setLoadingTables((prev) => new Set(prev).add(schema));
-
       try {
-        const client = activeConnection.client;
-        const tables = await client.getTables(schema);
+        const tables = await activeConnection.client.getTables(schema);
+        if (!mounted) return;
         setSchemaTableMap((prev) => ({ ...prev, [schema]: tables }));
-      } catch (error) {
-        console.error(`Failed to load tables for schema ${schema}:`, error);
+        setSchemaErrors((prev) => { const n = { ...prev }; delete n[schema]; return n; });
+      } catch {
+        if (!mounted) return;
+        setSchemaErrors((prev) => ({ ...prev, [schema]: 'Failed to load tables' }));
       } finally {
-        setLoadingTables((prev) => {
-          const newSet = new Set(prev);
-          newSet.delete(schema);
-          return newSet;
+        if (mounted) setLoadingTables((prev) => {
+          const next = new Set(prev); next.delete(schema); return next;
         });
       }
-    });
+    };
+
+    expandedSchemas.forEach((schema) => { void loadSchema(schema); });
+
+    return () => { mounted = false; };
   }, [expandedSchemas, activeConnection, schemas]);
 
   // Load table statistics
   useEffect(() => {
     if (!selectedTable || !activeConnection) return;
 
+    let mounted = true;
+
     const loadStats = async () => {
       setLoadingStats(true);
       try {
         const client = activeConnection.client;
 
-        // Get row count and size from sys.shards (primary shards only)
-        const shardsQuery = `
-          SELECT
-            SUM(num_docs) as row_count,
-            SUM(size) as total_bytes
-          FROM sys.shards
-          WHERE schema_name = '${selectedTable.schema}'
-            AND table_name = '${selectedTable.name}'
-            AND "primary" = true
-        `;
+        const shardsResult = await client.query(
+          `SELECT SUM(num_docs), SUM(size) FROM sys.shards
+           WHERE schema_name = ? AND table_name = ? AND "primary" = true`,
+          [selectedTable.schema, selectedTable.name],
+        );
 
-        const shardsResult = await client.query(shardsQuery);
+        const tableInfoResult = await client.query(
+          `SELECT number_of_shards, number_of_replicas
+           FROM information_schema.tables
+           WHERE table_schema = ? AND table_name = ?`,
+          [selectedTable.schema, selectedTable.name],
+        );
 
-        // Get shards and replicas from information_schema.tables
-        const tableInfoQuery = `
-          SELECT
-            number_of_shards,
-            number_of_replicas
-          FROM information_schema.tables
-          WHERE table_schema = '${selectedTable.schema}'
-            AND table_name = '${selectedTable.name}'
-        `;
-
-        const tableInfoResult = await client.query(tableInfoQuery);
+        if (!mounted) return;
 
         if (shardsResult.rows && shardsResult.rows.length > 0) {
           const shardsRow = shardsResult.rows[0];
           const bytes = shardsRow[1] || 0;
 
-          // Format size
           let size = '0 bytes';
           if (bytes >= 1099511627776) {
             size = `${(bytes / 1099511627776).toFixed(2)} TB`;
@@ -204,20 +203,21 @@ export default function SchemaViewer() {
             replicas: tableInfoRow[1] || 0,
           });
         }
-      } catch (error) {
-        console.error('Failed to load table stats:', error);
-        setTableStats(null);
+      } catch {
+        if (mounted) setTableStats(null);
       } finally {
-        setLoadingStats(false);
+        if (mounted) setLoadingStats(false);
       }
     };
 
     loadStats();
+    return () => { mounted = false; };
   }, [selectedTable, activeConnection]);
 
   // Fetch actual primary key columns from information_schema
   useEffect(() => {
     if (!selectedTable || !activeConnection) { setPkColumnNames([]); return; }
+    let mounted = true;
     const fetchPKs = async () => {
       try {
         const result = await activeConnection.client.query(
@@ -228,15 +228,17 @@ export default function SchemaViewer() {
              AND tc.table_schema = kcu.table_schema
              AND tc.table_name = kcu.table_name
            WHERE tc.constraint_type = 'PRIMARY KEY'
-             AND tc.table_schema = '${selectedTable.schema}'
-             AND tc.table_name = '${selectedTable.name}'`
+             AND tc.table_schema = ?
+             AND tc.table_name = ?`,
+          [selectedTable.schema, selectedTable.name],
         );
-        setPkColumnNames(result.rows ? result.rows.map((r: any[]) => r[0]) : []);
+        if (mounted) setPkColumnNames(result.rows ? result.rows.map((r: any[]) => r[0]) : []);
       } catch {
-        setPkColumnNames([]);
+        if (mounted) setPkColumnNames([]);
       }
     };
     fetchPKs();
+    return () => { mounted = false; };
   }, [selectedTable, activeConnection]);
 
   const toggleSchema = (schemaName: string) => {
@@ -290,8 +292,9 @@ export default function SchemaViewer() {
     const t0 = Date.now();
     try {
       const client = activeConnection.client;
-      const offset = (page - 1) * pageSize;
-      const query = `SELECT * FROM "${selectedTable.schema}"."${selectedTable.name}" LIMIT ${pageSize} OFFSET ${offset}`;
+      const safePageSize = Math.max(1, Math.min(10_000, Math.trunc(Number(pageSize)) || 50));
+      const safeOffset  = Math.max(0, Math.trunc((page - 1) * safePageSize));
+      const query = `SELECT * FROM "${escIdent(selectedTable.schema)}"."${escIdent(selectedTable.name)}" LIMIT ${safePageSize} OFFSET ${safeOffset}`;
       const result = await client.query(query);
       setPreviewData(result);
       setPreviewSortConfig(null);
@@ -301,8 +304,7 @@ export default function SchemaViewer() {
       setPreviewExecTime(Date.now() - t0);
       // Use tableStats rowCount as total if available
       if (tableStats) setPreviewTotal(tableStats.rowCount);
-    } catch (error) {
-      console.error('Failed to load preview data:', error);
+    } catch {
       toast.error('Preview Failed', 'Could not load sample data');
       setPreviewData(null);
     } finally {
@@ -439,9 +441,9 @@ export default function SchemaViewer() {
     }
     setSavingRow(true);
     try {
-      const sql = `UPDATE "${selectedTable.schema}"."${selectedTable.name}" SET ${setClauses} WHERE ${whereClause}`;
+      const sql = `UPDATE "${escIdent(selectedTable.schema)}"."${escIdent(selectedTable.name)}" SET ${setClauses} WHERE ${whereClause}`;
       await activeConnection.client.query(sql);
-      await activeConnection.client.query(`REFRESH TABLE "${selectedTable.schema}"."${selectedTable.name}"`);
+      await activeConnection.client.query(`REFRESH TABLE "${escIdent(selectedTable.schema)}"."${escIdent(selectedTable.name)}"`);
       toast.success('Row Updated', 'Row updated successfully');
       setEditRowOpen(false);
       setSelectedRows(new Set());
@@ -459,9 +461,9 @@ export default function SchemaViewer() {
     const whereClauses = [...selectedRows].map(rowIdx => `(${buildRowWhereClause(sortedPreviewData.rows[rowIdx], cols)})`);
     setDeletingRow(true);
     try {
-      const sql = `DELETE FROM "${selectedTable.schema}"."${selectedTable.name}" WHERE ${whereClauses.join(' OR ')}`;
+      const sql = `DELETE FROM "${escIdent(selectedTable.schema)}"."${escIdent(selectedTable.name)}" WHERE ${whereClauses.join(' OR ')}`;
       await activeConnection.client.query(sql);
-      await activeConnection.client.query(`REFRESH TABLE "${selectedTable.schema}"."${selectedTable.name}"`);
+      await activeConnection.client.query(`REFRESH TABLE "${escIdent(selectedTable.schema)}"."${escIdent(selectedTable.name)}"`);
       toast.success('Deleted', `${selectedRows.size} row${selectedRows.size !== 1 ? 's' : ''} deleted successfully`);
       setSelectedRows(new Set());
       setDeleteRowConfirm(false);
@@ -501,9 +503,9 @@ export default function SchemaViewer() {
     });
     setInsertingRow(true);
     try {
-      const sql = `INSERT INTO "${selectedTable.schema}"."${selectedTable.name}" (${colNames.map(c => `"${c}"`).join(', ')}) VALUES (${vals.join(', ')})`;
+      const sql = `INSERT INTO "${escIdent(selectedTable.schema)}"."${escIdent(selectedTable.name)}" (${colNames.map(c => `"${escIdent(c)}"`).join(', ')}) VALUES (${vals.join(', ')})`;
       await activeConnection.client.query(sql);
-      await activeConnection.client.query(`REFRESH TABLE "${selectedTable.schema}"."${selectedTable.name}"`);
+      await activeConnection.client.query(`REFRESH TABLE "${escIdent(selectedTable.schema)}"."${escIdent(selectedTable.name)}"`);
       toast.success('Row Inserted', 'New row added successfully');
       setInsertRowOpen(false);
       loadDataPreview();
@@ -658,6 +660,8 @@ export default function SchemaViewer() {
 
                   if (searchTerm && filteredTables.length === 0 && !isExpanded) return null;
 
+                  const schemaErr = schemaErrors[schemaName];
+
                   return (
                     <div key={schemaName}>
                       {/* Schema Node */}
@@ -680,6 +684,8 @@ export default function SchemaViewer() {
                         </span>
                         {isLoading ? (
                           <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin text-gray-400" />
+                        ) : schemaErr ? (
+                          <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" title={schemaErr} />
                         ) : tables.length > 0 ? (
                           <span className="flex-shrink-0 rounded-full bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-400">
                             {filteredTables.length}
@@ -715,6 +721,11 @@ export default function SchemaViewer() {
                           ) : isLoading ? (
                             <div className="flex items-center justify-center py-2">
                               <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                            </div>
+                          ) : schemaErr ? (
+                            <div className="flex items-center gap-1.5 px-2 py-2 text-xs text-red-500 dark:text-red-400">
+                              <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                              Failed to load tables
                             </div>
                           ) : (
                             <div className="px-2 py-2 text-sm text-gray-500 dark:text-gray-400">

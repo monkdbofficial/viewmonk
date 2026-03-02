@@ -56,11 +56,8 @@ export default function ConnectionManager() {
       let detectedRole: 'read-only' | 'read-write' | 'superuser' = 'superuser'; // Default to superuser for better UX
 
       try {
-        console.log('[ConnectionManager] Detecting role for user:', connectionData.username);
-
         // Special case: "monkdb" user is always superuser (default trust auth user)
         if (connectionData.username === 'monkdb' || connectionData.username === '' || !connectionData.username) {
-          console.log('[ConnectionManager] User is "monkdb" or empty → superuser');
           detectedRole = 'superuser';
         } else {
           // For MonkDB/CrateDB, check sys.users table first (most reliable)
@@ -69,16 +66,12 @@ export default function ConnectionManager() {
               `SELECT superuser FROM sys.users WHERE name = ?`,
               [connectionData.username]
             );
-            console.log('[ConnectionManager] sys.users query result:', superuserCheck);
 
             const isSuperuser = superuserCheck.rows[0]?.[0] === true;
 
             if (isSuperuser) {
-              console.log('[ConnectionManager] User has superuser=true → superuser');
               detectedRole = 'superuser';
             } else {
-              console.log('[ConnectionManager] User is NOT superuser, checking MonkDB privileges (DQL/DML/DDL/AL)...');
-
               // Check MonkDB privilege types using sys.privileges table
               const privCheck = await tempClient.query(`
                 SELECT DISTINCT type
@@ -86,50 +79,38 @@ export default function ConnectionManager() {
                 WHERE grantee = ?
               `, [connectionData.username]);
 
-              console.log('[ConnectionManager] Privilege rows:', privCheck.rows);
-
               const privileges = new Set(privCheck.rows.map(r => r[0]));
-              console.log('[ConnectionManager] Unique privileges:', Array.from(privileges));
 
               // AL (Admin Level) = Superuser
               if (privileges.has('AL')) {
-                console.log('[ConnectionManager] User has AL privilege → superuser');
                 detectedRole = 'superuser';
               }
               // DDL (Data Definition Language: CREATE, ALTER, DROP) = Superuser
               else if (privileges.has('DDL')) {
-                console.log('[ConnectionManager] User has DDL privilege → superuser');
                 detectedRole = 'superuser';
               }
               // DML (Data Manipulation Language: INSERT, UPDATE, DELETE) = Read-Write
               else if (privileges.has('DML')) {
-                console.log('[ConnectionManager] User has DML privilege (no DDL) → read-write');
                 detectedRole = 'read-write';
               }
               // Only DQL (Data Query Language: SELECT) = Read-Only
               else if (privileges.has('DQL')) {
-                console.log('[ConnectionManager] User has only DQL privilege → read-only');
                 detectedRole = 'read-only';
               }
               // No privileges found - assume full access (enterprise: trust by default)
               else {
-                console.log('[ConnectionManager] No MonkDB privileges found, assuming superuser (fail-safe)');
                 detectedRole = 'superuser';
               }
             }
-          } catch (queryError) {
-            console.error('[ConnectionManager] Error querying user info:', queryError);
-            console.log('[ConnectionManager] Permission query failed, defaulting to superuser (enterprise fail-safe)');
+          } catch {
+            // permission query failed — default to superuser (enterprise fail-safe)
             detectedRole = 'superuser';
           }
         }
-      } catch (error) {
-        console.error('[ConnectionManager] Failed to detect user role:', error);
-        // If detection completely fails, default to superuser (enterprise-grade: trust the user)
+      } catch {
+        // role detection failed — default to superuser (enterprise-grade: trust the user)
         detectedRole = 'superuser';
       }
-
-      console.log('[ConnectionManager] ✅ Final detected role:', detectedRole);
 
       // Create unique connection name with timestamp if needed
       let connectionName = `${connectionData.host}:${connectionData.port} (${connectionData.username})`;
@@ -152,7 +133,6 @@ export default function ConnectionManager() {
 
       setShowAddModal(false);
     } catch (error) {
-      console.error('Failed to add connection:', error);
       alert('Failed to add connection: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   };

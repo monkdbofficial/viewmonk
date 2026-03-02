@@ -88,8 +88,8 @@ export default function UserManagementPage() {
           toast.error('Access Denied', 'Only superusers can manage users');
           router.push('/dashboard');
         }
-      } catch (err) {
-        console.error('Failed to check superuser status:', err);
+      } catch {
+        // superuser check failed — access remains restricted
       }
     };
 
@@ -140,15 +140,12 @@ export default function UserManagementPage() {
 
           // Update superuser flag if user has AL privilege but sys.users doesn't reflect it yet
           if (hasClusterAL && !user.superuser) {
-            console.log(`[User Management] Detected AL privilege for ${user.name}, updating superuser status`);
             user.superuser = true;
           } else if (!hasClusterAL && user.superuser) {
             // If sys.users shows superuser but no AL privilege, trust the privilege system
-            console.log(`[User Management] No AL privilege for ${user.name}, updating superuser status`);
             user.superuser = false;
           }
-        } catch (err) {
-          console.error(`Failed to fetch privileges for ${user.name}:`, err);
+        } catch {
           user.privileges = [];
         }
       }
@@ -156,7 +153,6 @@ export default function UserManagementPage() {
       setUsers(userList);
       setFilteredUsers(userList);
     } catch (err) {
-      console.error('Failed to fetch users:', err);
       toast.error('Failed to load users', err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
@@ -199,11 +195,11 @@ export default function UserManagementPage() {
     }
 
     try {
-      await activeConnection.client.query(`DROP USER IF EXISTS ${username}`);
+      const safeUsername = '"' + username.replace(/"/g, '""') + '"';
+      await activeConnection.client.query(`DROP USER IF EXISTS ${safeUsername}`);
       toast.success('User deleted', `User "${username}" has been deleted successfully`);
       fetchUsers();
     } catch (err) {
-      console.error('Failed to delete user:', err);
       toast.error('Failed to delete user', err instanceof Error ? err.message : 'Unknown error');
     }
   };
@@ -214,15 +210,14 @@ export default function UserManagementPage() {
 
     try {
       const newStatus = !currentStatus;
-
-      console.log(`[User Management] ${newStatus ? 'Granting' : 'Revoking'} AL privilege for ${username}`);
+      const safeUsername = '"' + username.replace(/"/g, '""') + '"';
 
       if (newStatus) {
         // Grant AL privilege at cluster level
-        await activeConnection.client.query(`GRANT AL TO ${username}`);
+        await activeConnection.client.query(`GRANT AL TO ${safeUsername}`);
       } else {
         // Revoke AL privilege from cluster level
-        await activeConnection.client.query(`REVOKE AL FROM ${username}`);
+        await activeConnection.client.query(`REVOKE AL FROM ${safeUsername}`);
       }
 
       toast.success(
@@ -235,7 +230,6 @@ export default function UserManagementPage() {
         fetchUsers();
       }, 500);
     } catch (err) {
-      console.error('Failed to update superuser status:', err);
       toast.error('Failed to update superuser status', err instanceof Error ? err.message : 'Unknown error');
     }
   };

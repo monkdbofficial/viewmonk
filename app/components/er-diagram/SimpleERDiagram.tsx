@@ -333,7 +333,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
           m.set(n.id, { x: n.x + 80, y: n.y + 80 });
       });
       if (m.size > 0) setPositions(m);
-    } catch (e) { console.error('ELK error', e); }
+    } catch { /* ELK layout failed — positions remain unchanged */ }
     finally { setIsComputing(false); }
   }, []);
 

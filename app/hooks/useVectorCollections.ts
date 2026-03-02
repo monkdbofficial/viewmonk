@@ -106,12 +106,10 @@ export function useVectorCollections(): UseVectorCollectionsResult {
             } else {
               // No data yet, use common default (384 for all-MiniLM-L6-v2)
               dimension = 384;
-              console.log(`[useVectorCollections] No data in ${schema}.${row.table_name}, assuming dimension 384`);
             }
-          } catch (err) {
+          } catch {
             // If query fails, assume 384 (most common embedding dimension)
             dimension = 384;
-            console.warn(`[useVectorCollections] Could not detect dimension for ${schema}.${row.table_name}, assuming 384`);
           }
         }
 
@@ -135,8 +133,7 @@ export function useVectorCollections(): UseVectorCollectionsResult {
             `;
             const countResult = await client.query(countQuery);
             collection.documentCount = parseInt(countResult.rows[0]?.[0] || '0', 10);
-          } catch (err) {
-            console.warn(`Failed to fetch count for ${collection.schema}.${collection.table}:`, err);
+          } catch {
             collection.documentCount = 0;
           }
         })
@@ -144,18 +141,6 @@ export function useVectorCollections(): UseVectorCollectionsResult {
 
       setCollections(parsedCollections);
 
-      // Log helpful debug info
-      if (parsedCollections.length === 0) {
-        console.warn('[useVectorCollections] No vector collections found. This could mean:');
-        console.warn('1. No tables have FLOAT_VECTOR columns');
-        console.warn('2. Tables are in schemas you don\'t have access to');
-        console.warn('3. The data_type format is different than expected');
-        console.warn(`Found ${rows.length} total vector columns, but ${accessibleSchemaSet.size} accessible schemas`);
-      } else {
-        console.log(`[useVectorCollections] Found ${parsedCollections.length} vector collection(s):`,
-          parsedCollections.map(c => `${c.schema}.${c.table}.${c.columnName} (${c.dimension}D)`)
-        );
-      }
     } catch (err) {
       let errorMessage = 'Failed to fetch vector collections';
 
@@ -173,7 +158,6 @@ export function useVectorCollections(): UseVectorCollectionsResult {
       }
 
       setError(errorMessage);
-      console.error('[useVectorCollections] Error:', errorMessage, err);
     } finally {
       setLoading(false);
     }

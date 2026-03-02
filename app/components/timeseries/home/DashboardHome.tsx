@@ -1,8 +1,8 @@
 'use client';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import {
   Plus, LayoutDashboard, Layers, TrendingUp,
-  Sparkles, Search, SortAsc, Trash2, ChevronDown, X,
+  Sparkles, Search, SortAsc, Trash2, ChevronDown, X, Upload, AlertTriangle,
 } from 'lucide-react';
 import DashboardCard from './DashboardCard';
 import TemplateGallery from './TemplateGallery';
@@ -295,6 +295,8 @@ export default function DashboardHome({
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [search,          setSearch]          = useState('');
   const [sortMode,        setSortMode]        = useState<SortMode>('newest');
+  const [importError,     setImportError]     = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const editingConfig = editDetailsId ? dashboards.find((d) => d.id === editDetailsId) ?? null : null;
 
@@ -320,19 +322,56 @@ export default function DashboardHome({
     }
   };
 
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset input so the same file can be re-imported if needed
+    e.target.value = '';
+    setImportError(null);
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const raw = JSON.parse(ev.target?.result as string) as DashboardConfig;
+        if (!raw.id || !raw.name || !Array.isArray(raw.widgets)) {
+          throw new Error('File does not look like a valid dashboard export.');
+        }
+        // Give it a fresh ID to avoid stomping an existing dashboard
+        const imported: DashboardConfig = {
+          ...raw,
+          id:        `dash_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          name:      raw.name.endsWith(' (imported)') ? raw.name : `${raw.name} (imported)`,
+          updatedAt: new Date().toISOString(),
+        };
+        save(imported);
+      } catch (err) {
+        setImportError(err instanceof Error ? err.message : 'Invalid dashboard file.');
+        setTimeout(() => setImportError(null), 5000);
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const handleExportDashboard = (config: DashboardConfig) => {
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
     a.download = `${config.name.toLowerCase().replace(/\s+/g, '-')}-dashboard.json`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
+  const searchLower = search.trim().toLowerCase();
   const filteredDashboards = sortDashboards(
-    search.trim()
-      ? dashboards.filter((d) => d.name.toLowerCase().includes(search.toLowerCase()))
+    searchLower
+      ? dashboards.filter((d) =>
+          d.name.toLowerCase().includes(searchLower) ||
+          (d.description ?? '').toLowerCase().includes(searchLower),
+        )
       : dashboards,
     sortMode,
   );
@@ -371,6 +410,21 @@ export default function DashboardHome({
 
         {/* Primary actions */}
         <div className="flex flex-shrink-0 items-center gap-2.5 pt-1">
+          {/* Hidden file input for JSON import */}
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".json,application/json"
+            onChange={handleImport}
+            className="hidden"
+          />
+          <button
+            onClick={() => importInputRef.current?.click()}
+            className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-600 shadow-sm transition-colors hover:border-gray-300 hover:text-gray-900 dark:border-white/[0.10] dark:bg-white/[0.04] dark:text-white/55 dark:hover:border-white/[0.22] dark:hover:text-white/80"
+          >
+            <Upload className="h-4 w-4" />
+            Import
+          </button>
           <button
             onClick={() => setShowNewDialog(true)}
             className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition-colors hover:bg-blue-500"
@@ -577,6 +631,17 @@ export default function DashboardHome({
           onClose={() => setEditDetailsId(null)}
           onSave={handleSaveDetails}
         />
+      )}
+
+      {/* Import error toast */}
+      {importError && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 flex items-center gap-3 rounded-xl border border-red-200 bg-white px-5 py-3.5 shadow-xl dark:border-red-900/50 dark:bg-gray-900">
+          <AlertTriangle className="h-4 w-4 flex-shrink-0 text-red-500" />
+          <p className="text-sm font-medium text-red-700 dark:text-red-400">{importError}</p>
+          <button onClick={() => setImportError(null)} className="text-gray-400 hover:text-gray-600">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       )}
     </div>
   );

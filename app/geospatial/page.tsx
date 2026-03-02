@@ -89,13 +89,12 @@ export default function GeospatialPage() {
             setMapFilters(JSON.parse(savedFilters));
           }
         } else {
-          console.warn('Invalid saved table data, clearing localStorage');
+          // Saved data is malformed — clear it
           localStorage.removeItem('geospatial_map_table');
           localStorage.removeItem('geospatial_map_filters');
         }
       }
-    } catch (error) {
-      console.error('Failed to load saved map data:', error);
+    } catch {
       // Clear invalid data
       localStorage.removeItem('geospatial_map_table');
       localStorage.removeItem('geospatial_map_filters');
@@ -129,13 +128,9 @@ export default function GeospatialPage() {
 
     // Validate columns array exists
     if (!selection.columns || !Array.isArray(selection.columns) || selection.columns.length === 0) {
-      console.error('Invalid selection: columns missing or empty', selection);
       toast.error('Invalid Selection', 'Table columns data is missing. Please select the table again.');
       return;
     }
-
-    console.log('Map table selection:', selection);
-    console.log('Available columns:', selection.columns);
 
     // Build query to load all data from selected table
     const geoCol = selection.columns.find(c => c.type.toLowerCase().includes('geo'));
@@ -207,42 +202,41 @@ export default function GeospatialPage() {
 
     selectColumns = selectColumns.concat(otherCols);
 
-    // Build WHERE clause from filters
+    // Build parameterized WHERE clause (prevents SQL injection via filter values)
     let whereClause = '';
+    const filterParams: unknown[] = [];
     if (mapFilters.length > 0) {
       const conditions = mapFilters.map(filter => {
-        const column = selection.columns.find(c => c.name === filter.column);
-        const isNumeric = column?.type.toLowerCase().includes('int') ||
-                          column?.type.toLowerCase().includes('double') ||
-                          column?.type.toLowerCase().includes('float');
-
+        const safeCol = `"${filter.column.replace(/"/g, '""')}"`;
         switch (filter.operator) {
-          case 'equals':
-            return isNumeric ? `${filter.column} = ${filter.value}` : `${filter.column} = '${filter.value}'`;
           case 'contains':
-            return `${filter.column} LIKE '%${filter.value}%'`;
+            filterParams.push(`%${filter.value}%`);
+            return `${safeCol} LIKE ?`;
           case 'starts_with':
-            return `${filter.column} LIKE '${filter.value}%'`;
+            filterParams.push(`${filter.value}%`);
+            return `${safeCol} LIKE ?`;
           case 'greater_than':
-            return `${filter.column} > ${filter.value}`;
+            filterParams.push(filter.value);
+            return `${safeCol} > ?`;
           case 'less_than':
-            return `${filter.column} < ${filter.value}`;
-          default:
-            return isNumeric ? `${filter.column} = ${filter.value}` : `${filter.column} = '${filter.value}'`;
+            filterParams.push(filter.value);
+            return `${safeCol} < ?`;
+          default: // 'equals'
+            filterParams.push(filter.value);
+            return `${safeCol} = ?`;
         }
       });
       whereClause = `\nWHERE ${conditions.join(' AND ')}`;
     }
 
+    const safeSchema = selection.schema.replace(/"/g, '""');
+    const safeTable = selection.table.replace(/"/g, '""');
     const query = `SELECT
   ${selectColumns.join(',\n  ')}
-FROM ${selection.schema}.${selection.table}${whereClause}
+FROM "${safeSchema}"."${safeTable}"${whereClause}
 LIMIT 1000;`;
 
-    console.log('Generated query:', query);
-    console.log('Select columns:', selectColumns);
-
-    await handleQueryExecute(query);
+    await handleQueryExecute(query, filterParams.length > 0 ? filterParams : undefined);
     toast.success('Table Loaded', `Loaded data from ${selection.schema}.${selection.table}`);
   };
 
@@ -254,7 +248,7 @@ LIMIT 1000;`;
     }
   }, [isRestoringFromStorage, mapTableSelection, activeConnection]);
 
-  const handleQueryExecute = async (query: string) => {
+  const handleQueryExecute = async (query: string, params?: unknown[]) => {
     if (!activeConnection) {
       toast.error('No Database Connection', 'Please connect to a MonkDB database first.');
       return;
@@ -271,8 +265,7 @@ LIMIT 1000;`;
     });
 
     try {
-      console.log('Executing geospatial query:', query);
-      const result = await activeConnection.client.query(query);
+      const result = await activeConnection.client.query(query, params);
 
       // Transform database results - CrateDB returns rows as arrays
       // Dynamically map columns based on result.cols metadata
@@ -310,8 +303,6 @@ LIMIT 1000;`;
           properties: r,
         }));
 
-      console.log('Transformed points:', newPoints.length, newPoints);
-
       if (newPoints.length > 0) {
         setGeoPoints(newPoints);
         toast.success('Query Executed', `Found ${results.length} results, ${newPoints.length} mapped points`);
@@ -320,7 +311,6 @@ LIMIT 1000;`;
         toast.success('Query Executed', `${results.length} results returned`);
       }
     } catch (error) {
-      console.error('Failed to execute geospatial query:', error);
       const errorMessage = (error as Error).message;
       setError(errorMessage);
       setQueryResults([]);
@@ -331,7 +321,6 @@ LIMIT 1000;`;
   };
 
   const handleDataImport = (data: any[]) => {
-    console.log('Importing data:', data);
     const newPoints: GeoPoint[] = data
       .filter((item) => item.type === 'Point')
       .map((item) => ({
@@ -360,7 +349,6 @@ LIMIT 1000;`;
 
   const handleDrawComplete = (geometry: any) => {
     setDrawnGeometry(geometry);
-    console.log('Drawn geometry:', geometry);
   };
 
   const handleCopyTemplate = (template: string, templateName: string) => {

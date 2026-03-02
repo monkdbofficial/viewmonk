@@ -161,8 +161,6 @@ export default function TableInsertForm({
       const placeholders = columnsToInsert.map((_, idx) => `$${idx + 1}`).join(', ');
       const sql = `INSERT INTO "${schema}"."${tableName}" (${columnList}) VALUES (${placeholders})`;
 
-      console.log('[Insert Query]', sql, 'Values:', valuesToInsert);
-
       // Execute query
       const client = activeConnection.client;
       const result = await client.query(sql, valuesToInsert);
@@ -178,7 +176,6 @@ export default function TableInsertForm({
       // Close dialog
       onClose();
     } catch (error) {
-      console.error('Insert failed:', error);
       const errorMessage = error instanceof Error ? error.message : 'Could not insert row';
       toast.error('Insert Failed', errorMessage);
     } finally {

@@ -69,9 +69,7 @@ export default function TableColumnSelector({
       // In normal mode, respect showGeoColumnsOnly flag
       if (showGeoColumnsOnly && !compact) {
         const lowerType = c.type.toLowerCase();
-        const isGeoCol = lowerType.includes('geo') || lowerType.includes('point') || lowerType.includes('shape');
-        console.log(`[TableColumnSelector] Filtering column ${c.name} (${c.type}): isGeo=${isGeoCol}, compact=${compact}, showGeoOnly=${showGeoColumnsOnly}`);
-        return isGeoCol;
+        return lowerType.includes('geo') || lowerType.includes('point') || lowerType.includes('shape');
       }
 
       return true;
@@ -81,8 +79,6 @@ export default function TableColumnSelector({
       type: c.type,
       isGeo: isGeoType(c.type),
     }));
-
-  console.log(`[TableColumnSelector] columnsForTable for ${selectedSchema}.${selectedTable}:`, columnsForTable, `compact=${compact}, showGeoOnly=${showGeoColumnsOnly}`);
 
   // Auto-select geo column if only one exists
   useEffect(() => {
