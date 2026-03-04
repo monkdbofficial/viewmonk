@@ -58,12 +58,15 @@ export function useFTSIndexes(): UseFTSIndexesResult {
     setError(null);
 
     try {
-      // Step 1: Get all base tables in accessible schemas
+      // Step 1: Get all base tables in accessible schemas.
+      // Exclude built-in and special schemas:
+      //   sys, information_schema, pg_catalog — system metadata (no user tables)
+      //   blob — MonkDB BLOB-table schema; SHOW CREATE TABLE is not supported there
       const tableResult = await client.query(`
         SELECT table_schema, table_name
         FROM information_schema.tables
         WHERE table_type = 'BASE TABLE'
-          AND table_schema NOT IN ('sys', 'information_schema', 'pg_catalog')
+          AND table_schema NOT IN ('sys', 'information_schema', 'pg_catalog', 'blob')
         ORDER BY table_schema, table_name
       `);
 

@@ -7,6 +7,26 @@ import { useState, useEffect } from 'react';
 import { useMonkDBClient } from '@/app/lib/monkdb-context';
 import { useAccessibleSchemas } from './useAccessibleSchemas';
 
+// ── localStorage key constants ────────────────────────────────────────────────
+const LS_VECTOR_FAVORITES = 'monkdb-vector-favorites';
+const LS_VECTOR_RECENT    = 'monkdb-vector-recent';
+
+// ── Concurrency helpers ───────────────────────────────────────────────────────
+/** Run async tasks in batches to avoid overwhelming the DB. */
+async function batchedMap<T, R>(
+  items: T[],
+  batchSize: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await Promise.all(batch.map(fn));
+    results.push(...batchResults);
+  }
+  return results;
+}
+
 export interface VectorCollection {
   schema: string;
   table: string;
@@ -123,21 +143,16 @@ export function useVectorCollections(): UseVectorCollectionsResult {
         }
       }
 
-      // Fetch document counts for each collection
-      await Promise.all(
-        parsedCollections.map(async (collection) => {
-          try {
-            const countQuery = `
-              SELECT COUNT(*) as count
-              FROM "${collection.schema}"."${collection.table}"
-            `;
-            const countResult = await client.query(countQuery);
-            collection.documentCount = parseInt(countResult.rows[0]?.[0] || '0', 10);
-          } catch {
-            collection.documentCount = 0;
-          }
-        })
-      );
+      // Fetch document counts in batches of 10 to avoid overwhelming the DB
+      await batchedMap(parsedCollections, 10, async (collection) => {
+        try {
+          const countQuery = `SELECT COUNT(*) FROM "${collection.schema}"."${collection.table}"`;
+          const countResult = await client.query(countQuery);
+          collection.documentCount = parseInt(String(countResult.rows[0]?.[0] ?? '0'), 10);
+        } catch {
+          collection.documentCount = 0;
+        }
+      });
 
       setCollections(parsedCollections);
 
@@ -180,8 +195,10 @@ export function useVectorCollections(): UseVectorCollectionsResult {
  */
 export function getVectorFavorites(): string[] {
   if (typeof window === 'undefined') return [];
-  const stored = localStorage.getItem('monkdb-vector-favorites');
-  return stored ? JSON.parse(stored) : [];
+  try {
+    const stored = localStorage.getItem(LS_VECTOR_FAVORITES);
+    return stored ? JSON.parse(stored) : [];
+  } catch { return []; }
 }
 
 /**
@@ -192,7 +209,7 @@ export function addVectorFavorite(schema: string, table: string): void {
   const favorites = getVectorFavorites();
   if (!favorites.includes(key)) {
     favorites.push(key);
-    localStorage.setItem('monkdb-vector-favorites', JSON.stringify(favorites));
+    localStorage.setItem(LS_VECTOR_FAVORITES, JSON.stringify(favorites));
   }
 }
 
@@ -201,17 +218,15 @@ export function addVectorFavorite(schema: string, table: string): void {
  */
 export function removeVectorFavorite(schema: string, table: string): void {
   const key = `${schema}.${table}`;
-  const favorites = getVectorFavorites();
-  const filtered = favorites.filter(f => f !== key);
-  localStorage.setItem('monkdb-vector-favorites', JSON.stringify(filtered));
+  const filtered = getVectorFavorites().filter(f => f !== key);
+  localStorage.setItem(LS_VECTOR_FAVORITES, JSON.stringify(filtered));
 }
 
 /**
  * Check if a collection is favorited
  */
 export function isVectorFavorite(schema: string, table: string): boolean {
-  const key = `${schema}.${table}`;
-  return getVectorFavorites().includes(key);
+  return getVectorFavorites().includes(`${schema}.${table}`);
 }
 
 /**
@@ -219,8 +234,10 @@ export function isVectorFavorite(schema: string, table: string): boolean {
  */
 export function getRecentVectorCollections(): string[] {
   if (typeof window === 'undefined') return [];
-  const stored = localStorage.getItem('monkdb-vector-recent');
-  return stored ? JSON.parse(stored) : [];
+  try {
+    const stored = localStorage.getItem(LS_VECTOR_RECENT);
+    return stored ? JSON.parse(stored) : [];
+  } catch { return []; }
 }
 
 /**
@@ -228,16 +245,7 @@ export function getRecentVectorCollections(): string[] {
  */
 export function addRecentVectorCollection(schema: string, table: string): void {
   const key = `${schema}.${table}`;
-  const recent = getRecentVectorCollections();
-
-  // Remove if already exists
-  const filtered = recent.filter(r => r !== key);
-
-  // Add to front
+  const filtered = getRecentVectorCollections().filter(r => r !== key);
   filtered.unshift(key);
-
-  // Keep only last 10
-  const trimmed = filtered.slice(0, 10);
-
-  localStorage.setItem('monkdb-vector-recent', JSON.stringify(trimmed));
+  localStorage.setItem(LS_VECTOR_RECENT, JSON.stringify(filtered.slice(0, 10)));
 }

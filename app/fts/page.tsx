@@ -45,14 +45,18 @@ function persistUserSnippets(snippets: UserSnippet[]): void {
 
 const LIMIT_PRESETS = [10, 25, 50, 100, 500, 1000];
 
+// MonkDB MATCH syntax — verified against MonkDB 6.0.
+// Notes:
+//  - Minus exclusion  (error -warning)         ✗  not enforced by MonkDB
+//  - Must-include     (+term otherTerm)         ✗  not enforced when mixed with optional terms
+//  - Wildcard prefix  must match the *stemmed*  form (english analyzer: connection → connect*)
 const QUERY_SYNTAX_TIPS = [
-  { label: 'Single Term',  code: 'error',               desc: 'Match documents containing "error"' },
-  { label: 'Phrase Match', code: '"connection timeout"', desc: 'Exact phrase in sequence' },
-  { label: 'Boolean OR',  code: 'error OR warning',     desc: 'Either term must match' },
-  { label: 'Must Include', code: '+database error',      desc: '"database" must be present' },
-  { label: 'Must Exclude', code: 'error -warning',       desc: 'Exclude docs with "warning"' },
-  { label: 'Prefix Match', code: 'conn*',                desc: 'Matches connect, connection…' },
-  { label: 'Proximity',    code: '"db error"~5',         desc: 'Terms within 5 positions' },
+  { label: 'Single Term',  code: 'error',               desc: 'Documents containing "error"' },
+  { label: 'Phrase',       code: '"connection timeout"', desc: 'Exact phrase in sequence' },
+  { label: 'Boolean OR',   code: 'error OR warning',     desc: 'Either term matches' },
+  { label: 'Boolean AND',  code: 'error AND database',   desc: 'Both terms must be present' },
+  { label: 'Prefix Match', code: 'connect*',             desc: 'Matches connect, connecting… (use stemmed root)' },
+  { label: 'Proximity',    code: '"database error"~5',   desc: 'Terms within 5 positions' },
 ];
 
 const ANALYZER_DOCS = [
@@ -68,8 +72,8 @@ const SQL_SNIPPETS = [
     sql: `CREATE TABLE t (\n  id INTEGER PRIMARY KEY,\n  title TEXT,\n  INDEX idx_fts USING FULLTEXT (title)\n  WITH (analyzer = 'english')\n);`,
   },
   {
-    label: 'Multi-field with boost',
-    sql: `WHERE MATCH(\n  (title 2.0, body 1.0),\n  'search query'\n)\nORDER BY _score DESC;`,
+    label: 'FTS search query',
+    sql: `SELECT *, _score\nFROM "schema"."table"\nWHERE MATCH("index_name", ?)\nORDER BY _score DESC\nLIMIT 50;`,
   },
   { label: 'Refresh before search', sql: `REFRESH TABLE schema.table;` },
 ];

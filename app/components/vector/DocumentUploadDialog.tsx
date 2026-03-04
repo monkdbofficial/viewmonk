@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import { X, Upload, FileText, Loader2, CheckCircle, AlertCircle, Pause, Play } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import {
+  X, Upload, Loader2, CheckCircle, AlertCircle,
+  ArrowRight, ArrowLeft, ChevronRight,
+} from 'lucide-react';
 import { VectorCollection } from '@/app/hooks/useVectorCollections';
-import { batchGenerateEmbeddings } from '@/app/lib/vector/embedding';
-import { BatchDocumentProcessor, formatTimeRemaining } from '@/app/lib/vector/batch-processor';
 import { useMonkDBClient } from '@/app/lib/monkdb-context';
 import { useToast } from '@/app/components/ToastContext';
 
@@ -14,9 +15,12 @@ interface DocumentUploadDialogProps {
   onSuccess: () => void;
 }
 
-interface Document {
-  id: string;
-  content: string;
+type Step = 'load' | 'map' | 'upload';
+
+interface TableColumn {
+  name: string;
+  type: string;
+  isVector: boolean;
 }
 
 export default function DocumentUploadDialog({
@@ -26,215 +30,211 @@ export default function DocumentUploadDialog({
 }: DocumentUploadDialogProps) {
   const client = useMonkDBClient();
   const toast = useToast();
-  const [documents, setDocuments] = useState<Document[]>([]);
+
+  const [step, setStep] = useState<Step>('load');
+
+  // Step 1: Load
+  const [rawRecords, setRawRecords] = useState<Record<string, unknown>[]>([]);
+  const [fileFields, setFileFields] = useState<string[]>([]);
+  const [fileName, setFileName] = useState('');
+
+  // Step 2: Map columns
+  const [tableColumns, setTableColumns] = useState<TableColumn[]>([]);
+  const [colsLoading, setColsLoading] = useState(false);
+  // mapping[tableColName] = fileFieldName | '__skip__' | '__auto__'
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+
+  // Step 3: Upload
   const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState({ current: 0, total: 0, stage: '', estimatedTime: 0 });
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [errors, setErrors] = useState<string[]>([]);
-  const [paused, setPaused] = useState(false);
-  const batchProcessorRef = useRef<BatchDocumentProcessor | null>(null);
+  const [done, setDone] = useState(false);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Load table columns when entering map step
+  useEffect(() => {
+    if (step !== 'map' || !client) return;
+    setColsLoading(true);
+    client
+      .query(
+        `SELECT column_name, data_type FROM information_schema.columns
+         WHERE table_schema = ? AND table_name = ?
+         ORDER BY ordinal_position`,
+        [collection.schema, collection.table]
+      )
+      .then((r) => {
+        const cols: TableColumn[] = r.rows.map((row: unknown[]) => ({
+          name: String(row[0]),
+          type: String(row[1]),
+          isVector: String(row[1]).toLowerCase().includes('float_vector'),
+        }));
+        setTableColumns(cols);
 
+        // Auto-suggest mapping: exact name match, or skip
+        const autoMap: Record<string, string> = {};
+        cols.forEach((col) => {
+          if (fileFields.includes(col.name)) {
+            autoMap[col.name] = col.name;
+          } else {
+            autoMap[col.name] = '__skip__';
+          }
+        });
+        setMapping(autoMap);
+      })
+      .catch(() => {
+        toast.error('Schema Error', 'Could not load table columns');
+      })
+      .finally(() => setColsLoading(false));
+  }, [step, client]);
+
+  // ── Parse file ───────────────────────────────────────────────────────────────
+  const parseFile = async (file: File) => {
     try {
       const text = await file.text();
       const ext = file.name.split('.').pop()?.toLowerCase();
-
-      let parsed: Document[] = [];
+      let records: Record<string, unknown>[] = [];
 
       if (ext === 'json') {
         const data = JSON.parse(text);
-        // Support both array and object with documents field
-        const items = Array.isArray(data) ? data : data.documents || [];
-        parsed = items.map((item: any, idx: number) => ({
-          id: item.id || `doc_${Date.now()}_${idx}`,
-          content: item.content || item.text || JSON.stringify(item),
-        }));
+        const items: unknown[] = Array.isArray(data) ? data : data.documents || [];
+        records = items.map((item, idx) => {
+          if (typeof item === 'object' && item !== null) return item as Record<string, unknown>;
+          return { _value: item, _idx: idx };
+        });
       } else if (ext === 'csv') {
         const lines = text.split('\n').filter(l => l.trim());
-        const hasHeader = lines[0].toLowerCase().includes('id') || lines[0].toLowerCase().includes('content');
-        const dataLines = hasHeader ? lines.slice(1) : lines;
-
-        parsed = dataLines.map((line, idx) => {
+        if (lines.length < 2) throw new Error('CSV must have a header row and at least one data row');
+        const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+        records = lines.slice(1).map(line => {
           const parts = line.split(',').map(p => p.trim().replace(/^"|"$/g, ''));
-          return {
-            id: parts[0] || `doc_${Date.now()}_${idx}`,
-            content: parts.slice(1).join(',') || parts[0],
-          };
+          const obj: Record<string, unknown> = {};
+          headers.forEach((h, i) => { obj[h] = parts[i] ?? ''; });
+          return obj;
         });
       } else if (ext === 'txt') {
         const lines = text.split('\n').filter(l => l.trim());
-        parsed = lines.map((line, idx) => ({
+        records = lines.map((line, idx) => ({
           id: `doc_${Date.now()}_${idx}`,
           content: line.trim(),
         }));
       } else {
-        throw new Error('Unsupported file format. Use JSON, CSV, or TXT');
+        throw new Error('Unsupported format. Use JSON, CSV, or TXT');
       }
 
-      if (parsed.length === 0) {
-        throw new Error('No documents found in file');
-      }
+      if (records.length === 0) throw new Error('No records found in file');
 
-      setDocuments(parsed);
-      toast.success('Documents Loaded', `Loaded ${parsed.length} documents from file`);
+      // Collect all field names
+      const fields = Array.from(new Set(records.flatMap(r => Object.keys(r))));
+      setRawRecords(records);
+      setFileFields(fields);
+      setFileName(file.name);
+      toast.success('File Loaded', `${records.length} records from ${file.name}`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to parse file';
-      toast.error('Parse Failed', message);
-      setErrors([message]);
+      toast.error('Parse Failed', err instanceof Error ? err.message : 'Unknown error');
     }
   };
 
-  const handleTextInput = (text: string) => {
-    if (!text.trim()) {
-      setDocuments([]);
+  const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) await parseFile(file);
+  };
+
+  const handleTextPaste = (text: string) => {
+    if (!text.trim()) { setRawRecords([]); setFileFields([]); return; }
+    try {
+      const data = JSON.parse(text);
+      const items: unknown[] = Array.isArray(data) ? data : data.documents || [];
+      const records: Record<string, unknown>[] = items.map((item, idx) => {
+        if (typeof item === 'object' && item !== null) return item as Record<string, unknown>;
+        return { id: `doc_${idx}`, content: String(item) };
+      });
+      const fields = Array.from(new Set(records.flatMap(r => Object.keys(r))));
+      setRawRecords(records);
+      setFileFields(fields);
+      setFileName('pasted input');
+      toast.success('Data Loaded', `${records.length} records from pasted JSON`);
+    } catch {
+      const lines = text.split('\n').filter(l => l.trim());
+      const records = lines.map((line, idx) => ({ id: `doc_${Date.now()}_${idx}`, content: line.trim() }));
+      const fields = ['id', 'content'];
+      setRawRecords(records);
+      setFileFields(fields);
+      setFileName('pasted text');
+      toast.success('Data Loaded', `${records.length} lines loaded`);
+    }
+  };
+
+  // ── Upload ───────────────────────────────────────────────────────────────────
+  const handleUpload = async () => {
+    if (!client || rawRecords.length === 0) return;
+
+    // Build list of mapped columns
+    const mappedCols = tableColumns.filter(
+      c => mapping[c.name] && mapping[c.name] !== '__skip__'
+    );
+
+    if (mappedCols.length === 0) {
+      toast.error('Mapping Error', 'Please map at least one column');
       return;
     }
 
-    try {
-      // Try parsing as JSON first
-      const data = JSON.parse(text);
-      const items = Array.isArray(data) ? data : data.documents || [];
-      const parsed = items.map((item: any, idx: number) => ({
-        id: item.id || `doc_${Date.now()}_${idx}`,
-        content: item.content || item.text || JSON.stringify(item),
-      }));
-      setDocuments(parsed);
-    } catch {
-      // Treat as plain text, one document per line
-      const lines = text.split('\n').filter(l => l.trim());
-      const parsed = lines.map((line, idx) => ({
-        id: `doc_${Date.now()}_${idx}`,
-        content: line.trim(),
-      }));
-      setDocuments(parsed);
-    }
-  };
-
-  const handleUpload = async () => {
-    if (!client || documents.length === 0) return;
-
     setUploading(true);
     setErrors([]);
+    setProgress({ current: 0, total: rawRecords.length });
+    setDone(false);
 
-    try {
-      // Use batch processor for large uploads (>1000 docs)
-      if (documents.length > 1000) {
-        const processor = new BatchDocumentProcessor(
-          documents,
-          client,
-          collection,
-          {
-            chunkSize: 500,
-            pauseBetweenChunks: 100,
-            onProgress: (batchProgress) => {
-              setProgress({
-                current: batchProgress.processedDocuments,
-                total: batchProgress.totalDocuments,
-                stage: batchProgress.stage,
-                estimatedTime: batchProgress.estimatedTimeRemaining || 0,
-              });
+    const qi = (n: string) => `"${n.replace(/"/g, '""')}"`;
+    const schema = qi(collection.schema);
+    const table = qi(collection.table);
+    const colNames = mappedCols.map(c => qi(c.name)).join(', ');
+    const uploadErrors: string[] = [];
 
-              if (batchProgress.errors.length > 0) {
-                setErrors(batchProgress.errors.map(e => `${e.documentId}: ${e.error}`));
-              }
+    // Batch insert in chunks of 100
+    const CHUNK = 100;
+    for (let i = 0; i < rawRecords.length; i += CHUNK) {
+      const chunk = rawRecords.slice(i, Math.min(i + CHUNK, rawRecords.length));
+      const placeholders = chunk.map(() => `(${mappedCols.map(() => '?').join(', ')})`).join(', ');
+      const args: unknown[] = [];
 
-              if (batchProgress.stage === 'paused') {
-                setPaused(true);
-              }
-            },
+      chunk.forEach(record => {
+        mappedCols.forEach(col => {
+          const fieldName = mapping[col.name];
+          let val = fieldName === '__auto__' ? `${crypto.randomUUID()}` : record[fieldName] ?? null;
+          // Parse vector fields
+          if (col.isVector && typeof val === 'string') {
+            try {
+              val = JSON.parse(val);
+            } catch {
+              /* keep as-is */
+            }
           }
+          args.push(val);
+        });
+      });
+
+      try {
+        await client.query(
+          `INSERT INTO ${schema}.${table} (${colNames}) VALUES ${placeholders}`,
+          args
         );
-
-        batchProcessorRef.current = processor;
-
-        const result = await processor.process();
-
-        if (result.errors.length === 0) {
-          toast.success('Upload Complete', `Successfully uploaded ${documents.length} documents`);
-          onSuccess();
-          onClose();
-        } else {
-          toast.warning(
-            'Partial Upload',
-            `Uploaded ${documents.length - result.errors.length}/${documents.length} documents`
-          );
-        }
-      } else {
-        // Simple upload for small batches
-        setProgress({ current: 0, total: documents.length, stage: 'Generating embeddings', estimatedTime: 0 });
-
-        const embeddings = await batchGenerateEmbeddings(
-          documents.map(d => d.content),
-          (completed, total) => {
-            setProgress({ current: completed, total, stage: 'Generating embeddings', estimatedTime: 0 });
-          }
+      } catch (err) {
+        uploadErrors.push(
+          `Rows ${i + 1}–${i + chunk.length}: ${err instanceof Error ? err.message : 'Unknown error'}`
         );
-
-        setProgress({ current: 0, total: documents.length, stage: 'Uploading documents', estimatedTime: 0 });
-
-        const uploadErrors: string[] = [];
-
-        for (let i = 0; i < documents.length; i++) {
-          const doc = documents[i];
-          const embedding = embeddings[i];
-
-          try {
-            const query = `
-              INSERT INTO "${collection.schema}"."${collection.table}" (id, content, ${collection.columnName})
-              VALUES ($1, $2, $3)
-              ON CONFLICT (id) DO UPDATE SET
-                content = EXCLUDED.content,
-                ${collection.columnName} = EXCLUDED.${collection.columnName}
-            `;
-
-            await client.query(query, [doc.id, doc.content, embedding]);
-          } catch (err) {
-            const message = `Document ${doc.id}: ${err instanceof Error ? err.message : 'Unknown error'}`;
-            uploadErrors.push(message);
-          }
-
-          setProgress({
-            current: i + 1,
-            total: documents.length,
-            stage: 'Uploading documents',
-            estimatedTime: 0,
-          });
-        }
-
-        if (uploadErrors.length === 0) {
-          toast.success('Upload Complete', `Successfully uploaded ${documents.length} documents`);
-          onSuccess();
-          onClose();
-        } else {
-          setErrors(uploadErrors);
-          toast.warning(
-            'Partial Upload',
-            `Uploaded ${documents.length - uploadErrors.length}/${documents.length} documents`
-          );
-        }
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Upload failed';
-      toast.error('Upload Failed', message);
-      setErrors([message]);
-    } finally {
-      setUploading(false);
-      setPaused(false);
-      batchProcessorRef.current = null;
+
+      setProgress({ current: Math.min(i + CHUNK, rawRecords.length), total: rawRecords.length });
     }
-  };
 
-  const handlePauseResume = () => {
-    if (batchProcessorRef.current) {
-      if (paused) {
-        batchProcessorRef.current.resume();
-        setPaused(false);
-      } else {
-        batchProcessorRef.current.pause();
-        setPaused(true);
-      }
+    setUploading(false);
+    setErrors(uploadErrors);
+
+    if (uploadErrors.length === 0) {
+      setDone(true);
+      toast.success('Upload Complete', `${rawRecords.length} records inserted into ${collection.table}`);
+      onSuccess();
+    } else {
+      const ok = rawRecords.length - uploadErrors.length * CHUNK;
+      toast.warning('Partial Upload', `${Math.max(0, ok)} records inserted, ${uploadErrors.length} batches failed`);
     }
   };
 
@@ -242,17 +242,19 @@ export default function DocumentUploadDialog({
     ? Math.round((progress.current / progress.total) * 100)
     : 0;
 
+  const canGoToMap = rawRecords.length > 0;
+  const canUpload = tableColumns.some(c => mapping[c.name] && mapping[c.name] !== '__skip__');
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-gray-700">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              Upload Documents
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              {collection.schema}.{collection.table} ({collection.dimension}D)
+            <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Upload Documents</h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              {collection.schema}.{collection.table} · {collection.dimension}D
             </p>
           </div>
           <button
@@ -264,179 +266,252 @@ export default function DocumentUploadDialog({
           </button>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* File Upload */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Upload File
-            </label>
-            <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-blue-400 dark:hover:border-blue-500 transition-colors">
-              <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-              <input
-                type="file"
-                accept=".json,.csv,.txt"
-                onChange={handleFileUpload}
-                disabled={uploading}
-                className="hidden"
-                id="file-upload"
-              />
-              <label
-                htmlFor="file-upload"
-                className="text-sm text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-              >
-                Choose file
-              </label>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                JSON, CSV, or TXT (max 10MB)
-              </p>
-            </div>
-          </div>
-
-          {/* Text Input */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Or Paste Documents
-            </label>
-            <textarea
-              placeholder={`JSON: [{"id": "1", "content": "text"}]\nor one document per line`}
-              onChange={(e) => handleTextInput(e.target.value)}
-              disabled={uploading}
-              className="w-full h-32 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-            />
-          </div>
-
-          {/* Document Preview */}
-          {documents.length > 0 && !uploading && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Documents ({documents.length})
+        {/* Step indicator */}
+        <div className="flex items-center gap-1 px-5 py-3 border-b border-gray-100 dark:border-gray-700/60 bg-gray-50/50 dark:bg-gray-800/50">
+          {(['load', 'map', 'upload'] as Step[]).map((s, i) => {
+            const labels: Record<Step, string> = { load: '1. Load File', map: '2. Map Columns', upload: '3. Upload' };
+            const active = step === s;
+            const done2 = (['load', 'map', 'upload'] as Step[]).indexOf(step) > i;
+            return (
+              <div key={s} className="flex items-center gap-1">
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                  active
+                    ? 'bg-blue-600 text-white'
+                    : done2
+                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                      : 'text-gray-400 dark:text-gray-500'
+                }`}>
+                  {labels[s]}
                 </span>
-                <button
-                  onClick={() => setDocuments([])}
-                  className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                {i < 2 && <ChevronRight className="h-3.5 w-3.5 text-gray-300 dark:text-gray-600" />}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+
+          {/* ── Step 1: Load ── */}
+          {step === 'load' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Upload File</label>
+                <label
+                  htmlFor="file-upload"
+                  className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-blue-400 dark:hover:border-blue-500 transition-colors cursor-pointer"
                 >
-                  Clear
-                </button>
+                  <Upload className="w-7 h-7 text-gray-400 mb-2" />
+                  <p className="text-sm text-blue-600 dark:text-blue-400">Choose file</p>
+                  <p className="text-xs text-gray-400 mt-1">JSON, CSV, or TXT</p>
+                </label>
+                <input
+                  type="file"
+                  id="file-upload"
+                  accept=".json,.csv,.txt"
+                  onChange={handleFileInput}
+                  className="hidden"
+                />
               </div>
-              <div className="border border-gray-200 dark:border-gray-700 rounded-lg max-h-48 overflow-y-auto">
-                {documents.slice(0, 5).map((doc) => (
-                  <div
-                    key={doc.id}
-                    className="p-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
-                  >
-                    <div className="text-xs font-mono text-gray-600 dark:text-gray-400">
-                      {doc.id}
-                    </div>
-                    <div className="text-sm text-gray-900 dark:text-gray-100 truncate mt-1">
-                      {doc.content}
-                    </div>
-                  </div>
-                ))}
-                {documents.length > 5 && (
-                  <div className="p-3 text-xs text-gray-500 dark:text-gray-400 text-center">
-                    +{documents.length - 5} more documents
-                  </div>
-                )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Or Paste JSON
+                </label>
+                <textarea
+                  placeholder={`[{"id": "1", "content": "text", "embedding": [0.1, 0.2, ...]}, ...]`}
+                  onChange={(e) => handleTextPaste(e.target.value)}
+                  className="w-full h-28 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                />
               </div>
-            </div>
+
+              {rawRecords.length > 0 && (
+                <div className="rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20 p-3">
+                  <p className="text-sm font-medium text-green-700 dark:text-green-300">
+                    {rawRecords.length} records loaded from <span className="font-mono">{fileName}</span>
+                  </p>
+                  <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                    Fields: {fileFields.join(', ')}
+                  </p>
+                </div>
+              )}
+            </>
           )}
 
-          {/* Progress */}
-          {uploading && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                {!paused ? (
-                  <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-                ) : (
-                  <Pause className="w-5 h-5 text-orange-600" />
-                )}
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      {paused ? 'Paused' : progress.stage}
+          {/* ── Step 2: Map ── */}
+          {step === 'map' && (
+            <>
+              {colsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Map each table column to a field from your file. Choose <em>Skip</em> to omit a column.
+                    Vector columns need a JSON array field (e.g. <code className="font-mono text-xs">[0.1, 0.2, ...]</code>).
+                  </p>
+                  <div className="space-y-2">
+                    {tableColumns.map((col) => (
+                      <div key={col.name} className="flex items-center gap-3">
+                        <div className="w-40 flex-shrink-0">
+                          <p className="text-xs font-mono font-medium text-gray-800 dark:text-gray-200">{col.name}</p>
+                          <p className="text-[10px] text-gray-400 dark:text-gray-500">{col.type}</p>
+                        </div>
+                        <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-gray-300 dark:text-gray-600" />
+                        <select
+                          value={mapping[col.name] ?? '__skip__'}
+                          onChange={(e) => setMapping(m => ({ ...m, [col.name]: e.target.value }))}
+                          className={`flex-1 rounded-md border px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 dark:bg-gray-900 dark:text-gray-100 ${
+                            col.isVector
+                              ? 'border-blue-200 dark:border-blue-800'
+                              : 'border-gray-300 dark:border-gray-600'
+                          }`}
+                        >
+                          <option value="__skip__">— Skip —</option>
+                          <option value="__auto__">⚡ Auto-generate ID</option>
+                          {fileFields.map(f => (
+                            <option key={f} value={f}>{f}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">
+                    {rawRecords.length} records will be inserted.
+                    {tableColumns.filter(c => c.isVector && mapping[c.name] === '__skip__').length > 0 && (
+                      <span className="ml-1 text-amber-600 dark:text-amber-400">
+                        Vector column is skipped — rows will have no embedding.
+                      </span>
+                    )}
+                  </p>
+                </>
+              )}
+            </>
+          )}
+
+          {/* ── Step 3: Upload ── */}
+          {step === 'upload' && (
+            <div className="space-y-4">
+              {uploading && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                      Inserting records...
                     </span>
-                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                    <span className="text-gray-500 dark:text-gray-400 font-mono text-xs">
                       {progress.current} / {progress.total}
                     </span>
                   </div>
                   <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-blue-600 transition-all duration-300"
+                      className="h-full bg-blue-600 transition-all duration-300 rounded-full"
                       style={{ width: `${progressPercent}%` }}
                     />
                   </div>
-                  {progress.estimatedTime > 0 && !paused && (
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      Estimated time remaining: {formatTimeRemaining(progress.estimatedTime)}
-                    </div>
-                  )}
                 </div>
-                {/* Pause/Resume button for large uploads */}
-                {documents.length > 1000 && batchProcessorRef.current && (
-                  <button
-                    onClick={handlePauseResume}
-                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                    title={paused ? 'Resume' : 'Pause'}
-                  >
-                    {paused ? (
-                      <Play className="w-5 h-5 text-green-600" />
-                    ) : (
-                      <Pause className="w-5 h-5 text-orange-600" />
-                    )}
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
+              )}
 
-          {/* Errors */}
-          {errors.length > 0 && (
-            <div className="border border-red-200 dark:border-red-800 rounded-lg p-4 bg-red-50 dark:bg-red-950/30">
-              <div className="flex items-start gap-2 mb-2">
-                <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 mt-0.5" />
-                <span className="text-sm font-medium text-red-800 dark:text-red-200">
-                  {errors.length} Error{errors.length > 1 ? 's' : ''}
-                </span>
-              </div>
-              <div className="max-h-32 overflow-y-auto space-y-1">
-                {errors.map((error, idx) => (
-                  <div key={idx} className="text-xs text-red-700 dark:text-red-300">
-                    {error}
+              {done && (
+                <div className="flex items-center gap-3 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20 p-4">
+                  <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0" />
+                  <p className="text-sm font-medium text-green-700 dark:text-green-300">
+                    Upload complete — {rawRecords.length} records inserted
+                  </p>
+                </div>
+              )}
+
+              {errors.length > 0 && (
+                <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-4">
+                  <div className="flex items-start gap-2 mb-2">
+                    <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                    <span className="text-sm font-medium text-red-800 dark:text-red-200">
+                      {errors.length} batch{errors.length > 1 ? 'es' : ''} failed
+                    </span>
                   </div>
-                ))}
-              </div>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {errors.map((e, i) => (
+                      <p key={i} className="text-xs text-red-700 dark:text-red-300 font-mono">{e}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!uploading && !done && errors.length === 0 && (
+                <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 text-center">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Ready to insert <strong>{rawRecords.length}</strong> records into{' '}
+                    <strong className="font-mono">{collection.table}</strong>
+                  </p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                    Mapped columns: {tableColumns.filter(c => mapping[c.name] && mapping[c.name] !== '__skip__').map(c => c.name).join(', ')}
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
-          <button
-            onClick={onClose}
-            disabled={uploading}
-            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleUpload}
-            disabled={uploading || documents.length === 0}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-          >
-            {uploading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Uploading...
-              </>
-            ) : (
-              <>
-                <Upload className="w-4 h-4" />
-                Upload {documents.length} Document{documents.length !== 1 ? 's' : ''}
-              </>
+        <div className="flex items-center justify-between gap-3 p-5 border-t border-gray-200 dark:border-gray-700">
+          <div>
+            {step !== 'load' && (
+              <button
+                onClick={() => {
+                  if (step === 'map') setStep('load');
+                  if (step === 'upload') { setStep('map'); setErrors([]); setDone(false); }
+                }}
+                disabled={uploading}
+                className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 disabled:opacity-50 transition-colors"
+              >
+                <ArrowLeft className="h-4 w-4" /> Back
+              </button>
             )}
-          </button>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onClose}
+              disabled={uploading}
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            >
+              {done ? 'Close' : 'Cancel'}
+            </button>
+
+            {step === 'load' && (
+              <button
+                onClick={() => setStep('map')}
+                disabled={!canGoToMap}
+                className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Map Columns <ArrowRight className="h-4 w-4" />
+              </button>
+            )}
+
+            {step === 'map' && (
+              <button
+                onClick={() => setStep('upload')}
+                disabled={!canUpload || colsLoading}
+                className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Review &amp; Upload <ArrowRight className="h-4 w-4" />
+              </button>
+            )}
+
+            {step === 'upload' && !done && (
+              <button
+                onClick={handleUpload}
+                disabled={uploading}
+                className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {uploading ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" />Uploading...</>
+                ) : (
+                  <><Upload className="h-4 w-4" />Upload {rawRecords.length} Records</>
+                )}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

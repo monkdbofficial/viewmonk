@@ -143,31 +143,33 @@ export class BatchDocumentProcessor {
 
       const errors: BatchError[] = [];
 
-      // Build bulk insert query
-      const values: any[] = [];
+      // MonkDB uses ? placeholders (not $1/$2/... PostgreSQL style).
+      // Column name is double-quoted to handle reserved words and special chars.
+      const colRef = `"${this.collection.columnName.replace(/"/g, '""')}"`;
+
+      // Build bulk insert: one (?, ?, ?) group per document, flat args array.
+      const values: unknown[] = [];
       const valuePlaceholders: string[] = [];
-      let paramIndex = 1;
 
       chunk.forEach((doc, idx) => {
-        valuePlaceholders.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2})`);
+        valuePlaceholders.push(`(?, ?, ?)`);
         values.push(doc.id, doc.content, embeddings[idx]);
-        paramIndex += 3;
       });
 
       const bulkQuery = `
         INSERT INTO "${this.collection.schema}"."${this.collection.table}"
-        (id, content, ${this.collection.columnName})
+        (id, content, ${colRef})
         VALUES ${valuePlaceholders.join(', ')}
         ON CONFLICT (id) DO UPDATE SET
-          content = EXCLUDED.content,
-          ${this.collection.columnName} = EXCLUDED.${this.collection.columnName}
+          content = excluded.content,
+          ${colRef} = excluded.${colRef}
       `;
 
       try {
         await this.client.query(bulkQuery, values);
         this.progress.processedDocuments = startIndex + chunk.length;
       } catch (err) {
-        // Fallback: Insert one by one
+        // Fallback: Insert one by one using ? placeholders
         for (let i = 0; i < chunk.length; i++) {
           const doc = chunk[i];
           const embedding = embeddings[i];
@@ -175,11 +177,11 @@ export class BatchDocumentProcessor {
           try {
             const singleQuery = `
               INSERT INTO "${this.collection.schema}"."${this.collection.table}"
-              (id, content, ${this.collection.columnName})
-              VALUES ($1, $2, $3)
+              (id, content, ${colRef})
+              VALUES (?, ?, ?)
               ON CONFLICT (id) DO UPDATE SET
-                content = EXCLUDED.content,
-                ${this.collection.columnName} = EXCLUDED.${this.collection.columnName}
+                content = excluded.content,
+                ${colRef} = excluded.${colRef}
             `;
 
             await this.client.query(singleQuery, [doc.id, doc.content, embedding]);
