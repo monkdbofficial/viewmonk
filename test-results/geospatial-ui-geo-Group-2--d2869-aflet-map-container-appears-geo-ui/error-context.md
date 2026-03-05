@@ -1,0 +1,188 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - navigation [ref=e3]:
+      - generic [ref=e5]:
+        - link "MonkDB" [ref=e6] [cursor=pointer]:
+          - /url: /
+          - img "MonkDB" [ref=e7]
+        - generic [ref=e8]:
+          - button "Open command palette (⌘K or Ctrl+K)" [ref=e9]:
+            - img [ref=e10]
+          - button "1" [ref=e13]:
+            - img [ref=e14]
+            - generic [ref=e16]: "1"
+          - button "Toggle theme" [ref=e17]:
+            - img [ref=e18]
+          - generic [ref=e22]:
+            - generic [ref=e23]: Playwright Geo Test
+            - generic [ref=e24]: localhost:4200
+    - generic [ref=e25]:
+      - complementary [ref=e26]:
+        - generic [ref=e27]:
+          - generic [ref=e28]:
+            - heading "Workbench" [level=2] [ref=e29]
+            - button "Collapse sidebar" [ref=e30]:
+              - img [ref=e31]
+          - navigation [ref=e33]:
+            - generic [ref=e34]:
+              - link "Dashboard" [ref=e35] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e37]
+                - generic [ref=e39]: Dashboard
+              - link "Schema Viewer" [ref=e40] [cursor=pointer]:
+                - /url: /unified-browser
+                - img [ref=e42]
+                - generic [ref=e44]: Schema Viewer
+              - link "Query Editor" [ref=e45] [cursor=pointer]:
+                - /url: /query-editor
+                - img [ref=e47]
+                - generic [ref=e49]: Query Editor
+              - link "Table Designer" [ref=e50] [cursor=pointer]:
+                - /url: /table-designer
+                - img [ref=e52]
+                - generic [ref=e54]: Table Designer
+              - link "Time-Series" [ref=e55] [cursor=pointer]:
+                - /url: /timeseries
+                - img [ref=e57]
+                - generic [ref=e59]: Time-Series
+              - link "Geospatial" [ref=e60] [cursor=pointer]:
+                - /url: /geospatial
+                - img [ref=e63]
+                - generic [ref=e65]: Geospatial
+              - link "Vector Search" [ref=e66] [cursor=pointer]:
+                - /url: /vector-ops
+                - img [ref=e68]
+                - generic [ref=e70]: Vector Search
+              - link "Full-Text Search" [ref=e71] [cursor=pointer]:
+                - /url: /fts
+                - img [ref=e73]
+                - generic [ref=e75]: Full-Text Search
+              - link "BLOB Storage" [ref=e76] [cursor=pointer]:
+                - /url: /blob-storage
+                - img [ref=e78]
+                - generic [ref=e80]: BLOB Storage
+              - link "ER Diagram" [ref=e81] [cursor=pointer]:
+                - /url: /er-diagram
+                - img [ref=e83]
+                - generic [ref=e85]: ER Diagram
+              - link "Connections" [ref=e86] [cursor=pointer]:
+                - /url: /connections
+                - img [ref=e88]
+                - generic [ref=e90]: Connections
+            - generic [ref=e91]:
+              - paragraph [ref=e92]: Developer Tools
+              - link "API Playground" [ref=e94] [cursor=pointer]:
+                - /url: /api-playground
+                - img [ref=e96]
+                - generic [ref=e98]: API Playground
+            - generic [ref=e99]:
+              - paragraph [ref=e100]: System
+              - generic [ref=e101]:
+                - link "User Management" [ref=e102] [cursor=pointer]:
+                  - /url: /user-management
+                  - img [ref=e104]
+                  - generic [ref=e106]: User Management
+                - link "Settings" [ref=e107] [cursor=pointer]:
+                  - /url: /settings
+                  - img [ref=e109]
+                  - generic [ref=e112]: Settings
+      - main [ref=e113]:
+        - generic [ref=e115]:
+          - generic [ref=e117]:
+            - generic [ref=e118]:
+              - img [ref=e120]
+              - generic [ref=e122]:
+                - heading "Geospatial Data Tools" [level=1] [ref=e123]
+                - paragraph [ref=e124]: Visualize, query, and manage geospatial data with MonkDB
+            - generic [ref=e125]:
+              - button "Demo Queries" [ref=e126]:
+                - img [ref=e127]
+                - generic [ref=e130]: Demo Queries
+              - button "Usage Guide" [ref=e131]:
+                - img [ref=e132]
+                - generic [ref=e134]: Usage Guide
+              - generic [ref=e135]:
+                - img [ref=e136]
+                - generic [ref=e139]: Connected
+              - generic [ref=e141]:
+                - generic [ref=e143]: 0 Points
+                - generic [ref=e146]: 0 Shapes
+          - generic [ref=e148]:
+            - navigation [ref=e150]:
+              - button "Map View" [ref=e151]:
+                - img [ref=e152]
+                - text: Map View
+              - button "Query Builder" [ref=e154]:
+                - img [ref=e155]
+                - text: Query Builder
+              - button "Data Management" [ref=e159]:
+                - img [ref=e160]
+                - text: Data Management
+            - generic [ref=e165]:
+              - generic [ref=e167]:
+                - img [ref=e169]
+                - generic [ref=e171]:
+                  - heading "Geospatial Data Visualization" [level=2] [ref=e172]
+                  - paragraph [ref=e173]: Visualize location data on interactive maps with filtering, clustering, and heatmap analysis
+                - generic [ref=e174]:
+                  - generic [ref=e175]: 🗺️ Maps
+                  - generic [ref=e176]: 🔍 Filters
+                  - generic [ref=e177]: 🔥 Heatmap
+              - generic [ref=e178]:
+                - generic [ref=e179]:
+                  - img [ref=e181]
+                  - generic [ref=e185]:
+                    - heading "Select Data Source" [level=3] [ref=e186]
+                    - paragraph [ref=e187]: Choose a table with GEO_POINT or GEO_SHAPE columns
+                - generic [ref=e189]:
+                  - button "Schema" [ref=e191]:
+                    - generic [ref=e192]:
+                      - generic [ref=e193]: Schema
+                      - img [ref=e195]
+                  - button "Table" [disabled] [ref=e198]:
+                    - generic [ref=e199]:
+                      - generic [ref=e200]: Table
+                      - img [ref=e202]
+              - generic [ref=e204]:
+                - button "Custom Query Builder Advanced Write SQL for proximity searches & spatial analysis →" [ref=e205]:
+                  - img [ref=e207]
+                  - generic [ref=e210]:
+                    - generic [ref=e211]:
+                      - generic [ref=e212]: Custom Query Builder
+                      - generic [ref=e213]: Advanced
+                    - generic [ref=e214]: Write SQL for proximity searches & spatial analysis
+                  - generic [ref=e215]: →
+                - button "Import Data CSV/GeoJSON Import from CSV, GeoJSON, Shapefiles & more →" [ref=e216]:
+                  - img [ref=e218]
+                  - generic [ref=e221]:
+                    - generic [ref=e222]:
+                      - generic [ref=e223]: Import Data
+                      - generic [ref=e224]: CSV/GeoJSON
+                    - generic [ref=e225]: Import from CSV, GeoJSON, Shapefiles & more
+                  - generic [ref=e226]: →
+  - button "Open Next.js Dev Tools" [ref=e232] [cursor=pointer]:
+    - img [ref=e233]
+  - alert [ref=e236]
+  - generic [ref=e237]:
+    - generic [ref=e239]:
+      - img [ref=e240]
+      - textbox "Search..." [active] [ref=e243]
+    - generic [ref=e244]:
+      - button "aqi_platform" [ref=e245]:
+        - generic [ref=e246]: aqi_platform
+      - button "blob" [ref=e247]:
+        - generic [ref=e248]: blob
+      - button "demo" [ref=e249]:
+        - generic [ref=e250]: demo
+      - button "doc" [ref=e251]:
+        - generic [ref=e252]: doc
+      - button "ecommerce" [ref=e253]:
+        - generic [ref=e254]: ecommerce
+      - button "monkdb" [ref=e255]:
+        - generic [ref=e256]: monkdb
+      - button "shop" [ref=e257]:
+        - generic [ref=e258]: shop
+```

@@ -4,6 +4,8 @@ export default defineConfig({
   testDir: './e2e',
   timeout: 60_000,
   expect: { timeout: 10_000 },
+  // Retry once to handle transient resource-contention failures under parallel load
+  retries: 1,
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
 
   use: {

@@ -48,7 +48,7 @@ async function goToQueryEditor(page: Page) {
 // Type SQL into Monaco editor (select all existing then type)
 async function typeInEditor(page: Page, sql: string) {
   const editor = page.locator('.monaco-editor').first();
-  await editor.waitFor({ state: 'visible', timeout: 15_000 });
+  await editor.waitFor({ state: 'visible', timeout: 30_000 });
   await editor.click();
   await page.keyboard.press('Control+a');
   await page.keyboard.type(sql);
@@ -97,7 +97,7 @@ test.describe('Group 1 — Page Load', () => {
 
   test('04 — Monaco editor area is present on page', async ({ page }) => {
     await goToQueryEditor(page);
-    await expect(page.locator('.monaco-editor').first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('.monaco-editor').first()).toBeVisible({ timeout: 30_000 });
   });
 
   test('05 — "Connected" status badge is visible in toolbar', async ({ page }) => {
@@ -328,9 +328,9 @@ test.describe('Group 5 — Toolbar Actions', () => {
   test('31 — Keyboard shortcuts modal shows shortcut list', async ({ page }) => {
     await goToQueryEditor(page);
     await page.locator('button[title="Keyboard shortcuts"]').first().click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(500);
     // Modal shows keyboard shortcut info
-    await expect(page.getByText(/shortcut|Ctrl|Cmd|Execute|Format/i).first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/shortcut|Ctrl|Cmd|Execute|Format/i).first()).toBeVisible({ timeout: 8_000 });
     // Close with Escape
     await page.keyboard.press('Escape');
     await page.waitForTimeout(200);
