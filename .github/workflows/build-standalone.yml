@@ -27,13 +27,25 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run standalone build script (without node_modules)
+      - name: Show environment info
         run: |
+          node --version
+          npm --version
+          uname -a
+
+      - name: Install dependencies
+        run: npm ci --verbose 2>&1 | tail -30
+
+      - name: Run Next.js build (verbose)
+        run: |
+          set -eo pipefail
+          npm run build 2>&1
+
+      - name: Run standalone packaging script
+        run: |
+          set -eo pipefail
           chmod +x build-standalone.sh
-          ./build-standalone.sh
+          bash -x build-standalone.sh 2>&1
 
       - name: Display build size (without node_modules)
         run: |
