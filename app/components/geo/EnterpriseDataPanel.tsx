@@ -36,7 +36,7 @@ export default function EnterpriseDataPanel({ onDataChange }: EnterpriseDataPane
   const [importPreview, setImportPreview] = useState<any[]>([]);
 
   // Export State
-  const [exportFormat, setExportFormat] = useState<'csv' | 'geojson' | 'json' | 'excel'>('csv');
+  const [exportFormat, setExportFormat] = useState<'csv' | 'geojson' | 'json'>('csv');
   const [exportQuery, setExportQuery] = useState('');
 
   // Create Table State
@@ -75,6 +75,8 @@ export default function EnterpriseDataPanel({ onDataChange }: EnterpriseDataPane
     setFormData(prev => ({ ...prev, [columnName]: value }));
   };
 
+  const qi = (n: string) => `"${n.replace(/"/g, '""')}"`;
+
   const handleAddData = async () => {
     if (!activeConnection || !selectedTable) {
       toast.error('Missing Information', 'Please select a table first');
@@ -83,18 +85,16 @@ export default function EnterpriseDataPanel({ onDataChange }: EnterpriseDataPane
 
     setLoading(true);
     try {
-      // Build INSERT query
-      const columns = Object.keys(formData);
-      const values = Object.values(formData).map(v => {
-        if (typeof v === 'string') return `'${v.replace(/'/g, "''")}'`;
-        if (v === null || v === undefined) return 'NULL';
-        return v;
-      });
+      // Build parameterized INSERT query
+      const colNames = Object.keys(formData).map(qi).join(', ');
+      const params = Object.values(formData).map(v => v ?? null);
+      const placeholders = params.map(() => '?').join(', ');
+      const safeSchema = qi(selectedTable.schema);
+      const safeTable = qi(selectedTable.table);
 
-      const query = `INSERT INTO ${selectedTable.fullTableName} (${columns.join(', ')})
-                     VALUES (${values.join(', ')})`;
+      const query = `INSERT INTO ${safeSchema}.${safeTable} (${colNames}) VALUES (${placeholders})`;
 
-      await activeConnection.client.query(query);
+      await activeConnection.client.query(query, params);
 
       toast.success('Data Added', 'Record successfully inserted');
       setFormData({});
@@ -150,21 +150,18 @@ export default function EnterpriseDataPanel({ onDataChange }: EnterpriseDataPane
   const insertBatch = async (records: any[]) => {
     if (!activeConnection || !selectedTable) return;
 
-    const columns = Object.keys(records[0]);
-    const valuesList = records.map(record => {
-      const values = columns.map(col => {
-        const value = record[col];
-        if (typeof value === 'string') return `'${value.replace(/'/g, "''")}'`;
-        if (value === null || value === undefined) return 'NULL';
-        return value;
-      });
-      return `(${values.join(', ')})`;
-    });
+    const columnNames = Object.keys(records[0]);
+    const colNames = columnNames.map(qi).join(', ');
+    const safeSchema = qi(selectedTable.schema);
+    const safeTable = qi(selectedTable.table);
 
-    const query = `INSERT INTO ${selectedTable.fullTableName} (${columns.join(', ')})
-                   VALUES ${valuesList.join(', ')}`;
+    // Build VALUES (?,?,...),(?,?,...) with flat params array
+    const placeholderRow = `(${columnNames.map(() => '?').join(', ')})`;
+    const allPlaceholders = records.map(() => placeholderRow).join(', ');
+    const params = records.flatMap(record => columnNames.map(col => record[col] ?? null));
 
-    await activeConnection.client.query(query);
+    const query = `INSERT INTO ${safeSchema}.${safeTable} (${colNames}) VALUES ${allPlaceholders}`;
+    await activeConnection.client.query(query, params);
   };
 
   const parseCSV = (csvData: string): any[] => {
@@ -304,10 +301,13 @@ export default function EnterpriseDataPanel({ onDataChange }: EnterpriseDataPane
       }
 
       const columnDefs = newTableColumns.map(col => {
-        return `${col.name} ${col.type}`;
+        const safeCol = col.name.replace(/"/g, '""');
+        return `"${safeCol}" ${col.type}`;
       }).join(',\n  ');
 
-      const query = `CREATE TABLE ${schemaToUse}.${newTableName} (
+      const safeSchemaCreate = schemaToUse.replace(/"/g, '""');
+      const safeTableCreate = newTableName.replace(/"/g, '""');
+      const query = `CREATE TABLE "${safeSchemaCreate}"."${safeTableCreate}" (
   ${columnDefs}
 )`;
 
@@ -554,7 +554,7 @@ export default function EnterpriseDataPanel({ onDataChange }: EnterpriseDataPane
                 Export Format
               </label>
               <div className="grid grid-cols-4 gap-3">
-                {(['csv', 'json', 'geojson', 'excel'] as const).map((format) => (
+                {(['csv', 'json', 'geojson'] as const).map((format) => (
                   <button
                     key={format}
                     onClick={() => setExportFormat(format)}

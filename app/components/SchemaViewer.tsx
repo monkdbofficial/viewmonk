@@ -685,7 +685,7 @@ export default function SchemaViewer() {
                         {isLoading ? (
                           <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin text-gray-400" />
                         ) : schemaErr ? (
-                          <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" title={schemaErr} />
+                          <span title={schemaErr}><AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" /></span>
                         ) : tables.length > 0 ? (
                           <span className="flex-shrink-0 rounded-full bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-400">
                             {filteredTables.length}

@@ -145,7 +145,7 @@ function BlobStorageContent() {
 
       // Auto-select first table if none selected, using functional update to avoid
       // needing currentTable in the dependency array (which would cause re-fetch loops)
-      setCurrentTable(prev => prev || tableNames[0] || null);
+      if (!currentTable && tableNames.length > 0) setCurrentTable(tableNames[0]);
     } catch {
       setTables([]);
     }

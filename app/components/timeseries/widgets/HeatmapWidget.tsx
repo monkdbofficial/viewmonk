@@ -39,7 +39,7 @@ export default function HeatmapWidget({ series, style, theme }: HeatmapWidgetPro
     let xIdx = 0;
     try {
       const day = new Date(d[0]).toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' });
-      xIdx = xLabels.indexOf(day);
+      xIdx = Math.max(0, xLabels.indexOf(day)); // guard: indexOf returns -1 for missing dates
     } catch { xIdx = 0; }
     let yIdx = 0;
     try { yIdx = new Date(d[0]).getHours(); } catch { yIdx = 0; }

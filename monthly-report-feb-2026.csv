@@ -1,0 +1,88 @@
+MONTHLY ACTIVITY REPORT - FEBRUARY 2026,,,,,,
+Project: MonkDB Workbench,,,,,,
+Developer: Suryakant Kumar (suryakant-monkdb),,,,,,
+Reporting Period: 01 Feb 2026 - 28 Feb 2026,,,,,,
+Total Commits: 31,,,,,,
+,,,,,,
+,,,,,,
+SECTION 1 - COMMIT LOG,,,,,,
+S.No,Commit ID,Date,Category,Feature Area,Commit Message,Files Changed,Lines Added,Lines Removed
+1,55aaacd,07-Feb-2026,Feature,Schema Security,Implement enterprise-grade schema filtering with permission-based isolation,62,5866,1207
+2,fa57d76,07-Feb-2026,Bug Fix,Schema Viewer,SchemaViewer schema.name extraction fix for object structure,1,11,10
+3,56816fe,07-Feb-2026,Bug Fix,User Management,Use sys.privileges instead of information_schema.table_privileges,3,46,29
+4,496adfe,07-Feb-2026,Feature,Enterprise Features,Add enterprise features - ER Diagram / Data Editor / Index Management / User Management,22,9007,0
+5,fc867c3,08-Feb-2026,Refactor,ER Diagram,Simplify ER diagram components and add sample data utilities,13,1808,1890
+6,232ef6c,08-Feb-2026,Feature,ER Diagram,Add fullscreen and PNG export to SimpleERDiagram,1,191,5
+7,aaa3dd5,08-Feb-2026,Feature,Search & Vector,Add Vector Operations / Full-Text Search / and enterprise search features,54,13957,1954
+8,b3e1cc0,09-Feb-2026,Feature,Build System,Add standalone build automation and fix TypeScript build error,5,1406,154
+9,5ade63f,09-Feb-2026,Merge,Branch Management,Merge feature/enterprise-schema-filtering into main,0,0,0
+10,92f63c8,09-Feb-2026,Feature,Build System,Add runtime environment variable support for standalone builds,3,207,14
+11,a94b4e2,09-Feb-2026,Feature,Build System,Optimize standalone build - exclude node_modules,2,35,9
+12,20df927,09-Feb-2026,Merge,Branch Management,Merge feature/enterprise-schema-filtering - Add runtime env support and optimize build,0,0,0
+13,dca3cf6,09-Feb-2026,Bug Fix,Maps,Fix: Wait for runtime environment to load before initializing Mapbox,1,19,6
+14,814ae97,09-Feb-2026,Bug Fix,Maps,Fix: Resolve Mapbox runtime environment race condition,0,0,0
+15,bfb33a3,09-Feb-2026,Feature,Build System,Add both LITE and FULL standalone build versions,1,80,27
+16,25a9266,09-Feb-2026,Feature,Build System,Add LITE and FULL standalone build options,0,0,0
+17,c618b7b,09-Feb-2026,Feature,Maps,Replace Mapbox with Leaflet for zero-dependency maps,4,214,5
+18,dddcb4e,09-Feb-2026,Feature,Maps,Complete Leaflet migration and remove Mapbox dependencies,6,249,240
+19,447b678,09-Feb-2026,Merge,Branch Management,Merge branch feature/enterprise-schema-filtering,0,0,0
+20,ae10f4d,09-Feb-2026,Feature,Release Automation,Auto-remove source code from releases,1,21,0
+21,8f07eab,09-Feb-2026,Docs,Documentation,Add clear warning about which files to download,1,21,14
+22,06a1c88,09-Feb-2026,Docs,Documentation,Add standalone build download section to README,1,24,1
+23,23f0eec,09-Feb-2026,Feature,Release,Publish releases to public repository,1,10,31
+24,2f09ad2,09-Feb-2026,Feature,Infrastructure,Replace GitHub releases with Cloudflare R2 storage,1,163,85
+25,01f8312,09-Feb-2026,Cleanup,Build System,Remove public repository dependency,1,0,99
+26,54a61a3,09-Feb-2026,Feature,Download Page,Add beautiful download page for standalone builds,2,431,0
+27,be14de6,09-Feb-2026,Feature,Branding,Rebrand to ViewMonk with enterprise-grade download page,2,578,197
+28,644fba8,12-Feb-2026,Feature,AQI Module,Added the new AQI (Air Quality Index) module,163,2837,8178
+29,794d46b,14-Feb-2026,Feature,AQI Module,Add setup script for MonkDB AQI Platform to execute SQL files via HTTP API,59,18583,658
+30,421a7f3,23-Feb-2026,Cleanup,UI / Layout,Remove Index Management page and update layout metadata,31,4637,9405
+31,ca7426b,26-Feb-2026,Feature,UI Enhancement,Enhance UI and functionality in Unified Browser and Vector Operations pages,78,6255,25172
+32,8ce8f9d,26-Feb-2026,Cleanup,Documentation,Remove outdated AQI Solution documentation and presentation files,59,8714,2501
+,,,,,,
+,,,,,,
+SECTION 2 - WORK SUMMARY BY FEATURE AREA,,,,,,
+S.No,Feature Area,Commits,Description,Status
+1,Schema Security & Permissions,2,Enterprise-grade schema filtering with permission-based isolation using sys.privileges,Completed
+2,Enterprise UI Features,3,ER Diagram (fullscreen + export) / Data Editor / Index Management / User Management,Completed
+3,Vector Operations & Full-Text Search,1,New Vector Ops page with KNN search / similarity / collection browser / FTS integration,Completed
+4,Maps - Leaflet Migration,3,Replaced Mapbox with Leaflet (zero token dependency) - full migration complete,Completed
+5,Standalone Build System,6,LITE and FULL build variants / runtime env vars / Cloudflare R2 distribution,Completed
+6,Release & Branding,4,Rebranded to ViewMonk / download page / GitHub + R2 release automation,Completed
+7,AQI Platform,2,New Air Quality Index module + HTTP API setup script for SQL execution,Completed
+8,Code Cleanup & Docs,4,Removed Index Management / stale AQI docs / outdated presentation files,Completed
+9,Bug Fixes,3,SchemaViewer fix / sys.privileges fix / Mapbox race condition fix,Completed
+,,,,,,
+,,,,,,
+SECTION 3 - COMMIT CATEGORY BREAKDOWN,,,,,,
+Category,Count,Percentage
+Feature / New Development,18,56%
+Bug Fix,3,9%
+Cleanup / Removal,4,13%
+Refactor,1,3%
+Documentation,2,6%
+Build / Release,3,9%
+Merge Commits,3,9%
+,,,,,,
+,,,,,,
+SECTION 4 - CODE CHURN SUMMARY,,,,,,
+Metric,Value
+Total Files Changed,577
+Total Lines Added,74,760
+Total Lines Removed,51,876
+Net Lines Added,22,884
+Largest Commit (lines added),794d46b - AQI Platform setup (18583 lines added)
+Most Files Changed,644fba8 - AQI module (163 files)
+,,,,,,
+,,,,,,
+SECTION 5 - WEEK-WISE ACTIVITY,,,,,,
+Week,Dates,Commits,Key Work
+Week 1,Feb 07 - Feb 09,25,Enterprise features / ER Diagram / Vector Search / Leaflet migration / Standalone build / ViewMonk rebrand
+Week 2,Feb 12 - Feb 14,2,AQI module development and HTTP API setup script
+Week 3,Feb 23 - Feb 26,4,Index Management removal / UI enhancements / Documentation cleanup
+,,,,,,
+,,,,,,
+Submitted by: Suryakant Kumar,,,,,,
+Date of Submission:,,,,,,
+Reviewed by (Sainath):,,,,,,
+Comments:,,,,,,

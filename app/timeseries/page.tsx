@@ -1,19 +1,21 @@
 'use client';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import DashboardHome from '@/app/components/timeseries/home/DashboardHome';
 import DashboardViewer from '@/app/components/timeseries/viewer/DashboardViewer';
 import DashboardBuilder from '@/app/components/timeseries/builder/DashboardBuilder';
 import { useDashboard, useDashboardList } from '@/app/hooks/timeseries/useDashboard';
-import { useDemoSetup } from '@/app/hooks/timeseries/useDemoSetup';
 import { getTemplate } from '@/app/lib/timeseries/templates';
 import { saveDashboard } from '@/app/lib/timeseries/dashboard-store';
 import { DEMO_TABLE_SCHEMAS } from '@/app/lib/timeseries/demo-setup';
+import { buildTemplateDemoData } from '@/app/lib/timeseries/template-mock-data';
 import type { DashboardConfig, TemplateDefinition, DataSourceConfig } from '@/app/lib/timeseries/types';
 
 // ── Navigation state ──────────────────────────────────────────────────────────
 
+type HomeTab = 'my-dashboards' | 'templates';
+
 type AppState =
-  | { mode: 'home' }
+  | { mode: 'home';             activeTab?: HomeTab }
   | { mode: 'view';             dashboardId: string }
   | { mode: 'builder';          dashboardId: string; fromTemplate?: boolean }
   | { mode: 'template-preview'; templateId: string };
@@ -102,7 +104,7 @@ function BuilderPage({
 
 function buildPreviewConfig(template: TemplateDefinition): DashboardConfig {
   const schema = DEMO_TABLE_SCHEMAS[template.demoTable];
-  const fallbackMetric = schema?.numericCols[0] ?? 'value';
+  const fallbackMetric = schema?.primaryMetric ?? 'value';
 
   const baseDs: DataSourceConfig = {
     schema:       'monkdb',
@@ -126,24 +128,21 @@ function buildPreviewConfig(template: TemplateDefinition): DashboardConfig {
       const role = schema?.widgetRoles[layout.id];
       if (!role || !schema) return { ...layout, dataSource: baseDs };
 
-      const metricCol = schema.numericCols[role.n] ?? fallbackMetric;
-      const groupCol  = role.g !== undefined ? schema.textCols[role.g] : undefined;
-
       return {
         ...layout,
         dataSource: {
           ...baseDs,
-          metricCol,
+          metricCol:   role.metricCol,
           aggregation: role.agg,
-          ...(groupCol  !== undefined && { groupCol }),
-          ...(role.limit !== undefined && { limit: role.limit }),
+          ...(role.groupCol !== undefined && { groupCol: role.groupCol }),
+          ...(role.limit    !== undefined && { limit:    role.limit }),
         },
       };
     }),
   };
 }
 
-// ── Template preview page — ensures demo tables exist, then runs real queries ──
+// ── Template preview page — shows mock data instantly, no MonkDB required ────
 
 function TemplatePreviewPage({
   templateId,
@@ -153,36 +152,16 @@ function TemplatePreviewPage({
   onBack: () => void;
 }) {
   const template = getTemplate(templateId);
-  const { ready, initializing, error, ensureReady } = useDemoSetup();
-
-  useEffect(() => {
-    ensureReady();
-  }, [ensureReady]);
-
   if (!template) return <NotFound onBack={onBack} />;
 
-  if (error) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 text-red-500">
-        <p className="text-sm font-medium">Demo setup failed</p>
-        <p className="max-w-sm text-center text-xs text-gray-500">{error}</p>
-        <button onClick={onBack} className="text-sm text-blue-600 underline">Go back</button>
-      </div>
-    );
-  }
-
-  if (initializing || !ready) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 text-gray-400">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
-        <p className="text-sm">Preparing demo data…</p>
-      </div>
-    );
-  }
+  const previewConfig  = buildPreviewConfig(template);
+  const templateDemoData = buildTemplateDemoData(previewConfig.widgets);
 
   return (
     <DashboardViewer
-      config={buildPreviewConfig(template)}
+      config={previewConfig}
+      demoMode
+      templateDemoData={templateDemoData}
       onBack={onBack}
     />
   );
@@ -194,11 +173,12 @@ export default function TimeSeriesPage() {
   const [appState, setAppState] = useState<AppState>({ mode: 'home' });
   const { save } = useDashboardList();
 
-  const goHome = useCallback(() => setAppState({ mode: 'home' }), []);
+  const goHome          = useCallback(() => setAppState({ mode: 'home' }), []);
+  const goHomeTemplates = useCallback(() => setAppState({ mode: 'home', activeTab: 'templates' }), []);
 
   // ── Template preview ──
   if (appState.mode === 'template-preview') {
-    return <TemplatePreviewPage templateId={appState.templateId} onBack={goHome} />;
+    return <TemplatePreviewPage templateId={appState.templateId} onBack={goHomeTemplates} />;
   }
 
   // ── Dashboard viewer ──
@@ -232,6 +212,7 @@ export default function TimeSeriesPage() {
   // ── Home (default) ──
   return (
     <DashboardHome
+      initialTab={appState.mode === 'home' ? appState.activeTab : undefined}
       onOpenDashboard={(id) => setAppState({ mode: 'view',    dashboardId: id })}
       onEditDashboard={(id) => setAppState({ mode: 'builder', dashboardId: id })}
       onPreviewTemplate={(t) => setAppState({ mode: 'template-preview', templateId: t.id })}

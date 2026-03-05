@@ -250,7 +250,7 @@ export default function WidgetShell({
               className="flex h-10 w-10 items-center justify-center rounded-full ring-1"
               style={{
                 background: 'rgba(239,68,68,0.12)',
-                ringColor: 'rgba(239,68,68,0.2)',
+                outline: '1px solid rgba(239,68,68,0.2)',
               }}
             >
               <AlertTriangle className="h-5 w-5 text-red-400" />

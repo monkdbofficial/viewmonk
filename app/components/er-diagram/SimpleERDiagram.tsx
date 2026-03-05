@@ -557,7 +557,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
     const q = commandSearch.toLowerCase();
     const tableItems: CmdItem[] = tables
       .filter(t => !q || t.name.toLowerCase().includes(q))
-      .map(t => ({
+      .map((t): CmdItem => ({
         id: `table:${t.name}`,
         label: t.name,
         description: `${t.columns.length} columns · ${t.columns.filter(c => c.isPrimaryKey).length} PK · ${t.columns.filter(c => c.isForeignKey).length} FK`,
@@ -576,7 +576,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
         category: 'table' as const,
       }));
 
-    const actions: CmdItem[] = [
+    const actions = ([
       {
         id: 'action:fit',
         label: 'Fit to screen',
@@ -625,7 +625,7 @@ export default function SimpleERDiagram({ tables, onTableClick }: SimpleERDiagra
         action: () => { exportPNG(); setShowCommandPalette(false); },
         category: 'action',
       },
-    ].filter(a => !q || a.label.toLowerCase().includes(q) || (a.description?.toLowerCase().includes(q)));
+    ] as CmdItem[]).filter(a => !q || a.label.toLowerCase().includes(q) || (a.description?.toLowerCase().includes(q)));
 
     return q
       ? [...tableItems, ...actions]

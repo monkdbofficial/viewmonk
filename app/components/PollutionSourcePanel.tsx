@@ -192,7 +192,7 @@ export default function PollutionSourcePanel({ stationId }: PollutionSourcePanel
         confine: false,
         position: function (point, params, dom, rect, size) {
           // Position tooltip at top of chart area, centered horizontally
-          const tooltipWidth = dom.offsetWidth || 400;
+          const tooltipWidth = (dom as HTMLDivElement).offsetWidth || 400;
           const chartWidth = size.viewSize[0];
           const centerX = (chartWidth - tooltipWidth) / 2;
           // Position at top of chart with small margin (stays visible)

@@ -109,6 +109,29 @@ export function createNewDashboard(
   return config;
 }
 
+// ── Cross-device merge ────────────────────────────────────────────────────────
+
+/**
+ * Merges remote (MonkDB) dashboards into localStorage using updatedAt as the
+ * tiebreaker — whichever copy is newer wins. Returns any local-only dashboards
+ * (not present in remote) so the caller can push them up to MonkDB.
+ */
+export function mergeDashboards(remote: DashboardConfig[]): DashboardConfig[] {
+  const remoteById = new Map(remote.map((d) => [d.id, d]));
+  const local = readLocal();
+
+  // Upsert each remote dashboard — only overwrite if remote is strictly newer
+  for (const remoteDash of remote) {
+    const localDash = local.find((d) => d.id === remoteDash.id);
+    if (!localDash || new Date(remoteDash.updatedAt) > new Date(localDash.updatedAt)) {
+      saveDashboard(remoteDash);
+    }
+  }
+
+  // Return local-only dashboards (offline creations not yet in MonkDB)
+  return local.filter((d) => !remoteById.has(d.id));
+}
+
 // ── MonkDB sync (enterprise persistence) ─────────────────────────────────────
 // Called when a MonkDB client is available — syncs to DB table for cross-device access
 
@@ -139,6 +162,9 @@ export async function syncToMonkDB(config: DashboardConfig, queryFn: QueryFn): P
       config.createdAt,
       new Date().toISOString(),
     ]);
+    // Force immediate visibility — MonkDB's ~1s background refresh is unreliable
+    // right after a write, so any loadFromMonkDB call that follows would miss the row.
+    await queryFn(`REFRESH TABLE monkdb._dashboards`);
   } catch {
     // Silently fall back to localStorage-only
   }

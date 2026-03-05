@@ -22,126 +22,151 @@ export const DEMO_TABLE = {
   marketing:      '_demo_marketing',
   supplyChain:    '_demo_supply_chain',
   energy:         '_demo_energy',
+  support:        '_demo_support',
 } as const;
 
 // ── CREATE TABLE definitions ──────────────────────────────────────────────────
 
 const CREATE_SQLS: string[] = [
   `CREATE TABLE IF NOT EXISTS "monkdb"."_demo_iot" (
-     ts TIMESTAMP WITH TIME ZONE,
-     location TEXT,
+     ts          TIMESTAMP WITH TIME ZONE NOT NULL,
+     location    TEXT NOT NULL,
      temperature DOUBLE,
-     humidity DOUBLE,
-     wind_speed DOUBLE
-   )`,
+     humidity    DOUBLE,
+     wind_speed  DOUBLE,
+     PRIMARY KEY (ts, location)
+   ) CLUSTERED BY ("ts") INTO 4 SHARDS WITH (number_of_replicas = '0-1')`,
 
   `CREATE TABLE IF NOT EXISTS "monkdb"."_demo_business" (
-     ts TIMESTAMP WITH TIME ZONE,
-     category TEXT,
+     ts       TIMESTAMP WITH TIME ZONE NOT NULL,
+     category TEXT NOT NULL,
      customer TEXT,
-     product TEXT,
-     amount DOUBLE,
-     status TEXT
-   )`,
+     product  TEXT,
+     amount   DOUBLE,
+     status   TEXT,
+     PRIMARY KEY (ts, category)
+   ) CLUSTERED BY ("ts") INTO 4 SHARDS WITH (number_of_replicas = '0-1')`,
 
   `CREATE TABLE IF NOT EXISTS "monkdb"."_demo_analytics" (
-     ts TIMESTAMP WITH TIME ZONE,
-     event_type TEXT,
-     source TEXT,
-     user_id TEXT,
-     event_value DOUBLE,
-     uptime DOUBLE,
-     satisfaction_score DOUBLE
-   )`,
+     ts                 TIMESTAMP WITH TIME ZONE NOT NULL,
+     event_type         TEXT NOT NULL,
+     source             TEXT,
+     user_id            TEXT,
+     event_value        DOUBLE,
+     uptime             DOUBLE,
+     satisfaction_score DOUBLE,
+     PRIMARY KEY (ts, event_type)
+   ) CLUSTERED BY ("ts") INTO 4 SHARDS WITH (number_of_replicas = '0-1')`,
 
   `CREATE TABLE IF NOT EXISTS "monkdb"."_demo_finance" (
-     ts TIMESTAMP WITH TIME ZONE,
-     asset TEXT,
-     trade_type TEXT,
-     amount DOUBLE,
-     price DOUBLE,
-     trade_total DOUBLE
-   )`,
+     ts          TIMESTAMP WITH TIME ZONE NOT NULL,
+     asset       TEXT NOT NULL,
+     trade_type  TEXT,
+     amount      DOUBLE,
+     price       DOUBLE,
+     trade_total DOUBLE,
+     PRIMARY KEY (ts, asset)
+   ) CLUSTERED BY ("ts") INTO 4 SHARDS WITH (number_of_replicas = '0-1')`,
 
   `CREATE TABLE IF NOT EXISTS "monkdb"."_demo_infrastructure" (
-     ts TIMESTAMP WITH TIME ZONE,
-     service TEXT,
-     cpu_pct DOUBLE,
-     memory_pct DOUBLE,
-     disk_pct DOUBLE,
+     ts           TIMESTAMP WITH TIME ZONE NOT NULL,
+     service      TEXT NOT NULL,
+     cpu_pct      DOUBLE,
+     memory_pct   DOUBLE,
+     disk_pct     DOUBLE,
      network_gbps DOUBLE,
-     processes BIGINT
-   )`,
+     processes    BIGINT,
+     PRIMARY KEY (ts, service)
+   ) CLUSTERED BY ("ts") INTO 4 SHARDS WITH (number_of_replicas = '0-1')`,
 
   `CREATE TABLE IF NOT EXISTS "monkdb"."_demo_weather" (
-     ts TIMESTAMP WITH TIME ZONE,
-     station TEXT,
+     ts          TIMESTAMP WITH TIME ZONE NOT NULL,
+     station     TEXT NOT NULL,
      temperature DOUBLE,
-     humidity DOUBLE,
-     wind_speed DOUBLE,
-     condition TEXT
-   )`,
+     humidity    DOUBLE,
+     wind_speed  DOUBLE,
+     condition   TEXT,
+     PRIMARY KEY (ts, station)
+   ) CLUSTERED BY ("ts") INTO 4 SHARDS WITH (number_of_replicas = '0-1')`,
 
   `CREATE TABLE IF NOT EXISTS "monkdb"."_demo_saas" (
-     ts TIMESTAMP WITH TIME ZONE,
-     plan TEXT,
-     company TEXT,
-     mrr DOUBLE,
+     ts           TIMESTAMP WITH TIME ZONE NOT NULL,
+     plan         TEXT NOT NULL,
+     company      TEXT NOT NULL,
+     mrr          DOUBLE,
      active_users BIGINT,
-     churn_rate DOUBLE
-   )`,
+     churn_rate   DOUBLE,
+     PRIMARY KEY (ts, plan, company)
+   ) CLUSTERED BY ("ts") INTO 4 SHARDS WITH (number_of_replicas = '0-1')`,
 
   `CREATE TABLE IF NOT EXISTS "monkdb"."_demo_ecommerce" (
-     ts TIMESTAMP WITH TIME ZONE,
-     category TEXT,
-     channel TEXT,
-     customer TEXT,
+     ts          TIMESTAMP WITH TIME ZONE NOT NULL,
+     category    TEXT NOT NULL,
+     channel     TEXT,
+     customer    TEXT,
      order_total DOUBLE,
-     items BIGINT,
-     status TEXT
-   )`,
+     items       BIGINT,
+     status      TEXT,
+     PRIMARY KEY (ts, category)
+   ) CLUSTERED BY ("ts") INTO 4 SHARDS WITH (number_of_replicas = '0-1')`,
 
   `CREATE TABLE IF NOT EXISTS "monkdb"."_demo_devops" (
-     ts TIMESTAMP WITH TIME ZONE,
-     service TEXT,
-     environment TEXT,
+     ts             TIMESTAMP WITH TIME ZONE NOT NULL,
+     service        TEXT NOT NULL,
+     environment    TEXT,
      build_duration DOUBLE,
-     success_rate DOUBLE,
-     deploys BIGINT,
-     mttr DOUBLE
-   )`,
+     success_rate   DOUBLE,
+     deploys        BIGINT,
+     mttr           DOUBLE,
+     PRIMARY KEY (ts, service)
+   ) CLUSTERED BY ("ts") INTO 4 SHARDS WITH (number_of_replicas = '0-1')`,
 
   `CREATE TABLE IF NOT EXISTS "monkdb"."_demo_marketing" (
-     ts TIMESTAMP WITH TIME ZONE,
-     channel TEXT,
-     campaign TEXT,
+     ts          TIMESTAMP WITH TIME ZONE NOT NULL,
+     channel     TEXT NOT NULL,
+     campaign    TEXT,
      impressions BIGINT,
-     clicks BIGINT,
+     clicks      BIGINT,
      conversions BIGINT,
-     spend DOUBLE,
-     ctr DOUBLE,
-     roas DOUBLE
-   )`,
+     spend       DOUBLE,
+     ctr         DOUBLE,
+     roas        DOUBLE,
+     PRIMARY KEY (ts, channel)
+   ) CLUSTERED BY ("ts") INTO 4 SHARDS WITH (number_of_replicas = '0-1')`,
 
   `CREATE TABLE IF NOT EXISTS "monkdb"."_demo_supply_chain" (
-     ts TIMESTAMP WITH TIME ZONE,
-     supplier TEXT,
-     category TEXT,
-     order_value DOUBLE,
+     ts           TIMESTAMP WITH TIME ZONE NOT NULL,
+     supplier     TEXT NOT NULL,
+     category     TEXT,
+     order_value  DOUBLE,
      on_time_rate DOUBLE,
-     lead_time DOUBLE,
-     fill_rate DOUBLE
-   )`,
+     lead_time    DOUBLE,
+     fill_rate    DOUBLE,
+     PRIMARY KEY (ts, supplier)
+   ) CLUSTERED BY ("ts") INTO 4 SHARDS WITH (number_of_replicas = '0-1')`,
 
   `CREATE TABLE IF NOT EXISTS "monkdb"."_demo_energy" (
-     ts TIMESTAMP WITH TIME ZONE,
-     source TEXT,
-     zone TEXT,
-     consumption_kw DOUBLE,
-     solar_kw DOUBLE,
+     ts               TIMESTAMP WITH TIME ZONE NOT NULL,
+     source           TEXT NOT NULL,
+     zone             TEXT,
+     consumption_kw   DOUBLE,
+     solar_kw         DOUBLE,
      carbon_intensity DOUBLE,
-     efficiency DOUBLE
-   )`,
+     efficiency       DOUBLE,
+     PRIMARY KEY (ts, source)
+   ) CLUSTERED BY ("ts") INTO 4 SHARDS WITH (number_of_replicas = '0-1')`,
+
+  `CREATE TABLE IF NOT EXISTS "monkdb"."_demo_support" (
+     ts              TIMESTAMP WITH TIME ZONE NOT NULL,
+     category        TEXT NOT NULL,
+     agent           TEXT,
+     priority        TEXT,
+     tickets         BIGINT,
+     resolution_time DOUBLE,
+     satisfaction    DOUBLE,
+     sla_met         DOUBLE,
+     PRIMARY KEY (ts, category)
+   ) CLUSTERED BY ("ts") INTO 4 SHARDS WITH (number_of_replicas = '0-1')`,
 ];
 
 // ── Math helpers (no hardcoded values — all computed) ─────────────────────────
@@ -434,24 +459,51 @@ function genEnergy(): Row[] {
   return rows;
 }
 
+function genSupport(): Row[] {
+  const AGENTS     = ['Alice J.', 'Bob C.', 'Carlos R.', 'Diana P.', 'Eve S.'];
+  const CATEGORIES = ['Technical', 'Billing', 'Account', 'Feature Request', 'General'];
+  const PRIORITIES = ['Critical', 'High', 'Medium', 'Low'];
+  // Avg resolution time per priority in minutes: Critical fastest, Low slowest
+  const PRI_RES_BASE = [35, 95, 210, 390];
+  const rows: Row[] = [];
+  let ai = 0;
+
+  for (const { ts, daysAgo } of makeTimePoints()) {
+    const dp = dailyPeak(ts.getHours());
+    const wf = weekFactor(ts.getDay());
+    for (let i = 0; i < CATEGORIES.length; i++) {
+      const priIdx    = Math.floor(Math.random() * 4);
+      const priority  = PRIORITIES[priIdx];
+      const tickets   = Math.round(clamp((3 + dp * 22) * wf * growthFactor(daysAgo) * noise(), 0, 80));
+      const resTime   = clamp(PRI_RES_BASE[priIdx] * noise(0.35), 5, 1200);
+      const sat       = clamp(5.1 - resTime / 450 + rnd(-0.4, 0.4), 1.0, 5.0);
+      const sla       = clamp(98 - priIdx * 7 - resTime / 60 * noise(0.1), 40, 100);
+      rows.push([ts.toISOString(), CATEGORIES[i], AGENTS[ai++ % AGENTS.length], priority, tickets, +resTime.toFixed(0), +sat.toFixed(1), +sla.toFixed(1)]);
+    }
+  }
+  return rows;
+}
+
 // ── Batch INSERT builder ──────────────────────────────────────────────────────
 
-function buildInserts(table: string, columns: string[], rows: Row[], batchSize = 400): string[] {
-  const sqls: string[] = [];
-  const colList = columns.map((c) => `"${c}"`).join(', ');
+interface BatchInsert { sql: string; args: unknown[]; }
+
+function buildInserts(table: string, columns: string[], pkCols: string[], rows: Row[], batchSize = 400): BatchInsert[] {
+  const batches: BatchInsert[] = [];
+  const colList      = columns.map((c) => `"${c}"`).join(', ');
+  const placeholder  = `(${columns.map(() => '?').join(', ')})`;
+  const conflictCols = pkCols.map((c) => `"${c}"`).join(', ');
 
   for (let i = 0; i < rows.length; i += batchSize) {
     const batch = rows.slice(i, i + batchSize);
-    const vals  = batch.map((row) => {
-      const cells = row.map((v) =>
-        typeof v === 'number' ? String(v) : `'${String(v).replace(/'/g, "''")}'`,
-      );
-      return `(${cells.join(', ')})`;
-    }).join(',\n');
-
-    sqls.push(`INSERT INTO "monkdb"."${table}" (${colList}) VALUES\n${vals}`);
+    const placeholders = batch.map(() => placeholder).join(',\n');
+    const args = batch.flatMap((row) => row as unknown[]);
+    batches.push({
+      sql:  `INSERT INTO "monkdb"."${table}" (${colList}) VALUES\n${placeholders}\nON CONFLICT (${conflictCols}) DO NOTHING`,
+      args,
+    });
   }
-  return sqls;
+  return batches;
 }
 
 // ── Table data manifest ────────────────────────────────────────────────────────
@@ -459,28 +511,31 @@ function buildInserts(table: string, columns: string[], rows: Row[], batchSize =
 interface TableManifest {
   table: string;
   columns: string[];
+  /** Primary key columns — used for ON CONFLICT DO NOTHING on each INSERT batch */
+  pkCols: string[];
   genFn: () => Row[];
 }
 
 const MANIFEST: TableManifest[] = [
-  { table: '_demo_iot',            columns: ['ts', 'location', 'temperature', 'humidity', 'wind_speed'],                                       genFn: genIot },
-  { table: '_demo_business',       columns: ['ts', 'category', 'customer', 'product', 'amount', 'status'],                                      genFn: genBusiness },
-  { table: '_demo_analytics',      columns: ['ts', 'event_type', 'source', 'user_id', 'event_value', 'uptime', 'satisfaction_score'],           genFn: genAnalytics },
-  { table: '_demo_finance',        columns: ['ts', 'asset', 'trade_type', 'amount', 'price', 'trade_total'],                                    genFn: genFinance },
-  { table: '_demo_infrastructure', columns: ['ts', 'service', 'cpu_pct', 'memory_pct', 'disk_pct', 'network_gbps', 'processes'],               genFn: genInfrastructure },
-  { table: '_demo_weather',        columns: ['ts', 'station', 'temperature', 'humidity', 'wind_speed', 'condition'],                            genFn: genWeather },
-  { table: '_demo_saas',           columns: ['ts', 'plan', 'company', 'mrr', 'active_users', 'churn_rate'],                                     genFn: genSaas },
-  { table: '_demo_ecommerce',      columns: ['ts', 'category', 'channel', 'customer', 'order_total', 'items', 'status'],                        genFn: genEcommerce },
-  { table: '_demo_devops',         columns: ['ts', 'service', 'environment', 'build_duration', 'success_rate', 'deploys', 'mttr'],              genFn: genDevops },
-  { table: '_demo_marketing',      columns: ['ts', 'channel', 'campaign', 'impressions', 'clicks', 'conversions', 'spend', 'ctr', 'roas'],      genFn: genMarketing },
-  { table: '_demo_supply_chain',   columns: ['ts', 'supplier', 'category', 'order_value', 'on_time_rate', 'lead_time', 'fill_rate'],            genFn: genSupplyChain },
-  { table: '_demo_energy',         columns: ['ts', 'source', 'zone', 'consumption_kw', 'solar_kw', 'carbon_intensity', 'efficiency'],           genFn: genEnergy },
+  { table: '_demo_iot',            pkCols: ['ts', 'location'],          columns: ['ts', 'location', 'temperature', 'humidity', 'wind_speed'],                                       genFn: genIot },
+  { table: '_demo_business',       pkCols: ['ts', 'category'],          columns: ['ts', 'category', 'customer', 'product', 'amount', 'status'],                                      genFn: genBusiness },
+  { table: '_demo_analytics',      pkCols: ['ts', 'event_type'],        columns: ['ts', 'event_type', 'source', 'user_id', 'event_value', 'uptime', 'satisfaction_score'],           genFn: genAnalytics },
+  { table: '_demo_finance',        pkCols: ['ts', 'asset'],             columns: ['ts', 'asset', 'trade_type', 'amount', 'price', 'trade_total'],                                    genFn: genFinance },
+  { table: '_demo_infrastructure', pkCols: ['ts', 'service'],           columns: ['ts', 'service', 'cpu_pct', 'memory_pct', 'disk_pct', 'network_gbps', 'processes'],               genFn: genInfrastructure },
+  { table: '_demo_weather',        pkCols: ['ts', 'station'],           columns: ['ts', 'station', 'temperature', 'humidity', 'wind_speed', 'condition'],                            genFn: genWeather },
+  { table: '_demo_saas',           pkCols: ['ts', 'plan', 'company'],   columns: ['ts', 'plan', 'company', 'mrr', 'active_users', 'churn_rate'],                                     genFn: genSaas },
+  { table: '_demo_ecommerce',      pkCols: ['ts', 'category'],          columns: ['ts', 'category', 'channel', 'customer', 'order_total', 'items', 'status'],                        genFn: genEcommerce },
+  { table: '_demo_devops',         pkCols: ['ts', 'service'],           columns: ['ts', 'service', 'environment', 'build_duration', 'success_rate', 'deploys', 'mttr'],              genFn: genDevops },
+  { table: '_demo_marketing',      pkCols: ['ts', 'channel'],           columns: ['ts', 'channel', 'campaign', 'impressions', 'clicks', 'conversions', 'spend', 'ctr', 'roas'],      genFn: genMarketing },
+  { table: '_demo_supply_chain',   pkCols: ['ts', 'supplier'],          columns: ['ts', 'supplier', 'category', 'order_value', 'on_time_rate', 'lead_time', 'fill_rate'],            genFn: genSupplyChain },
+  { table: '_demo_energy',         pkCols: ['ts', 'source'],            columns: ['ts', 'source', 'zone', 'consumption_kw', 'solar_kw', 'carbon_intensity', 'efficiency'],           genFn: genEnergy },
+  { table: '_demo_support',        pkCols: ['ts', 'category'],          columns: ['ts', 'category', 'agent', 'priority', 'tickets', 'resolution_time', 'satisfaction', 'sla_met'],   genFn: genSupport },
 ];
 
-// ── Public: run full setup ────────────────────────────────────────────────────
+/// ── Public: run full setup ────────────────────────────────────────────────────
 
 export async function runDemoSetup(
-  queryFn: (sql: string) => Promise<{ cols: string[]; rows: unknown[][] }>,
+  queryFn: (sql: string, args?: unknown[]) => Promise<{ cols: string[]; rows: unknown[][] }>,
 ): Promise<void> {
   // 1. Create all tables
   for (const sql of CREATE_SQLS) {
@@ -488,12 +543,19 @@ export async function runDemoSetup(
   }
 
   // 2. Generate rows at call time (computed from current Date, not statically embedded)
-  //    and bulk-insert in batches
-  for (const { table, columns, genFn } of MANIFEST) {
+  //    and bulk-insert in batches using parameterized ? placeholders + ON CONFLICT DO NOTHING
+  for (const { table, columns, pkCols, genFn } of MANIFEST) {
     const rows = genFn();
-    for (const sql of buildInserts(table, columns, rows)) {
-      await queryFn(sql);
+    for (const { sql, args } of buildInserts(table, columns, pkCols, rows)) {
+      await queryFn(sql, args);
     }
+  }
+
+  // 3. Explicitly refresh all tables so rows are immediately visible to queries.
+  //    MonkDB's default ~1s background refresh is unreliable right after bulk inserts
+  //    (idle tables may not refresh on schedule). REFRESH TABLE guarantees visibility.
+  for (const { table } of MANIFEST) {
+    await queryFn(`REFRESH TABLE "monkdb"."${table}"`);
   }
 }
 
@@ -511,196 +573,193 @@ export const DEMO_TABLE_NAMES = MANIFEST.map((m) => m.table);
 // Template files contain ZERO data configuration — only visual layout.
 // buildPreviewConfig() resolves everything from here at runtime.
 
-/** Per-widget role: indices into numericCols / textCols arrays. */
+/** Per-widget role: literal column names — no fragile index indirection. */
 interface WidgetRole {
-  /** Index into numericCols (0 = primary metric column) */
-  n: number;
+  metricCol: string;
   agg: AggregationType;
-  /** Index into textCols for group-by (omit for no grouping) */
-  g?: number;
+  groupCol?: string;
   limit?: number;
 }
 
 export interface DemoTableSchema {
-  numericCols: string[];
-  textCols: string[];
-  /**
-   * Widget ID → data role. buildPreviewConfig() in page.tsx resolves
-   * n/g indices to actual column names at runtime.
-   */
+  /** Fallback metric column used when no role is defined for a widget */
+  primaryMetric: string;
+  /** Widget ID → data role resolved directly to column names */
   widgetRoles: Record<string, WidgetRole>;
 }
 
 export const DEMO_TABLE_SCHEMAS: Record<string, DemoTableSchema> = {
   '_demo_iot': {
-    numericCols: ['temperature', 'humidity', 'wind_speed'],
-    textCols:    ['location'],
+    primaryMetric: 'temperature',
     widgetRoles: {
-      w1: { n: 0, agg: 'COUNT' },
-      w2: { n: 0, agg: 'AVG' },
-      w3: { n: 1, agg: 'AVG' },
-      w4: { n: 2, agg: 'MAX' },
-      w5: { n: 0, agg: 'AVG', g: 0 },
-      w6: { n: 0, agg: 'COUNT', g: 0 },
-      w7: { n: 0, agg: 'AVG' },
-      w8: { n: 0, agg: 'AVG', g: 0, limit: 100 },
+      w1: { metricCol: 'temperature', agg: 'COUNT' },
+      w2: { metricCol: 'temperature', agg: 'AVG' },
+      w3: { metricCol: 'humidity',    agg: 'AVG' },
+      w4: { metricCol: 'wind_speed',  agg: 'MAX' },
+      w5: { metricCol: 'temperature', agg: 'AVG',   groupCol: 'location' },
+      w6: { metricCol: 'temperature', agg: 'COUNT',  groupCol: 'location' },
+      w7: { metricCol: 'temperature', agg: 'AVG' },
+      w8: { metricCol: 'temperature', agg: 'AVG',   groupCol: 'location', limit: 100 },
     },
   },
 
   '_demo_business': {
-    numericCols: ['amount'],
-    textCols:    ['category', 'customer', 'product', 'status'],
+    primaryMetric: 'amount',
     widgetRoles: {
-      w1: { n: 0, agg: 'SUM' },
-      w2: { n: 0, agg: 'COUNT' },
-      w3: { n: 0, agg: 'SUM' },
-      w4: { n: 0, agg: 'AVG' },
-      w5: { n: 0, agg: 'SUM', g: 0 },
-      w6: { n: 0, agg: 'SUM', g: 0 },
-      w7: { n: 0, agg: 'SUM', g: 0, limit: 100 },
+      w1: { metricCol: 'amount', agg: 'SUM' },
+      w2: { metricCol: 'amount', agg: 'COUNT' },
+      w3: { metricCol: 'amount', agg: 'SUM' },
+      w4: { metricCol: 'amount', agg: 'AVG' },
+      w5: { metricCol: 'amount', agg: 'SUM', groupCol: 'category' },
+      w6: { metricCol: 'amount', agg: 'SUM', groupCol: 'category' },
+      w7: { metricCol: 'amount', agg: 'SUM', groupCol: 'category', limit: 100 },
     },
   },
 
   '_demo_analytics': {
-    numericCols: ['event_value', 'uptime', 'satisfaction_score'],
-    textCols:    ['event_type', 'source', 'user_id'],
+    primaryMetric: 'event_value',
     widgetRoles: {
-      w1: { n: 0, agg: 'SUM' },
-      w2: { n: 1, agg: 'AVG' },
-      w3: { n: 2, agg: 'AVG' },
-      w4: { n: 0, agg: 'SUM', g: 0 },
-      w5: { n: 0, agg: 'SUM', g: 0 },
-      w6: { n: 0, agg: 'SUM', g: 1 },
-      w7: { n: 0, agg: 'SUM', g: 0, limit: 100 },
+      w1: { metricCol: 'event_value',        agg: 'SUM' },
+      w2: { metricCol: 'uptime',             agg: 'AVG' },
+      w3: { metricCol: 'satisfaction_score', agg: 'AVG' },
+      w4: { metricCol: 'event_value',        agg: 'SUM', groupCol: 'event_type' },
+      w5: { metricCol: 'event_value',        agg: 'SUM', groupCol: 'event_type' },
+      w6: { metricCol: 'event_value',        agg: 'SUM', groupCol: 'source' },
+      w7: { metricCol: 'event_value',        agg: 'SUM', groupCol: 'event_type', limit: 100 },
     },
   },
 
   '_demo_finance': {
-    numericCols: ['amount', 'price', 'trade_total'],
-    textCols:    ['asset', 'trade_type'],
+    primaryMetric: 'trade_total',
     widgetRoles: {
-      w1: { n: 2, agg: 'SUM' },
-      w2: { n: 1, agg: 'AVG' },
-      w3: { n: 2, agg: 'COUNT' },
-      w4: { n: 1, agg: 'AVG', g: 0 },
-      w5: { n: 2, agg: 'SUM', g: 0 },
-      w6: { n: 1, agg: 'AVG', g: 0, limit: 100 },
+      w1: { metricCol: 'trade_total', agg: 'SUM' },
+      w2: { metricCol: 'price',       agg: 'AVG' },
+      w3: { metricCol: 'trade_total', agg: 'COUNT' },
+      w4: { metricCol: 'price',       agg: 'AVG', groupCol: 'asset' },
+      w5: { metricCol: 'trade_total', agg: 'SUM', groupCol: 'asset' },
+      w6: { metricCol: 'price',       agg: 'AVG', groupCol: 'asset', limit: 100 },
     },
   },
 
   '_demo_infrastructure': {
-    numericCols: ['cpu_pct', 'memory_pct', 'disk_pct', 'network_gbps', 'processes'],
-    textCols:    ['service'],
+    primaryMetric: 'cpu_pct',
     widgetRoles: {
-      w1: { n: 0, agg: 'AVG' },
-      w2: { n: 1, agg: 'AVG' },
-      w3: { n: 2, agg: 'AVG' },
-      w4: { n: 3, agg: 'AVG' },
-      w5: { n: 4, agg: 'SUM' },
-      w6: { n: 0, agg: 'AVG', g: 0 },
-      w7: { n: 1, agg: 'AVG', g: 0 },
-      w8: { n: 0, agg: 'AVG', g: 0, limit: 100 },
+      w1: { metricCol: 'cpu_pct',      agg: 'AVG' },
+      w2: { metricCol: 'memory_pct',   agg: 'AVG' },
+      w3: { metricCol: 'disk_pct',     agg: 'AVG' },
+      w4: { metricCol: 'network_gbps', agg: 'AVG' },
+      w5: { metricCol: 'processes',    agg: 'SUM' },
+      w6: { metricCol: 'cpu_pct',      agg: 'AVG', groupCol: 'service' },
+      w7: { metricCol: 'memory_pct',   agg: 'AVG', groupCol: 'service' },
+      w8: { metricCol: 'cpu_pct',      agg: 'AVG', groupCol: 'service', limit: 100 },
     },
   },
 
   '_demo_weather': {
-    numericCols: ['temperature', 'humidity', 'wind_speed'],
-    textCols:    ['station', 'condition'],
+    primaryMetric: 'temperature',
     widgetRoles: {
-      w1: { n: 0, agg: 'AVG' },
-      w2: { n: 1, agg: 'AVG' },
-      w3: { n: 2, agg: 'AVG' },
-      w4: { n: 0, agg: 'AVG', g: 0 },
-      w5: { n: 0, agg: 'AVG', g: 0 },
-      w6: { n: 0, agg: 'COUNT', g: 1 },
+      w1: { metricCol: 'temperature', agg: 'AVG' },
+      w2: { metricCol: 'humidity',    agg: 'AVG' },
+      w3: { metricCol: 'wind_speed',  agg: 'AVG' },
+      w4: { metricCol: 'temperature', agg: 'AVG',   groupCol: 'station' },
+      w5: { metricCol: 'temperature', agg: 'AVG',   groupCol: 'station' },
+      w6: { metricCol: 'temperature', agg: 'COUNT',  groupCol: 'condition' },
     },
   },
 
   '_demo_saas': {
-    numericCols: ['mrr', 'active_users', 'churn_rate'],
-    textCols:    ['plan', 'company'],
+    primaryMetric: 'mrr',
     widgetRoles: {
-      w1: { n: 0, agg: 'SUM' },
-      w2: { n: 0, agg: 'SUM' },
-      w3: { n: 2, agg: 'AVG' },
-      w4: { n: 0, agg: 'AVG' },
-      w5: { n: 0, agg: 'SUM', g: 0 },
-      w6: { n: 0, agg: 'SUM', g: 0 },
-      w7: { n: 1, agg: 'SUM', g: 0 },
-      w8: { n: 0, agg: 'SUM', g: 0, limit: 100 },
+      w1: { metricCol: 'mrr',          agg: 'SUM' },
+      w2: { metricCol: 'mrr',          agg: 'SUM' },
+      w3: { metricCol: 'churn_rate',   agg: 'AVG' },
+      w4: { metricCol: 'mrr',          agg: 'AVG' },
+      w5: { metricCol: 'mrr',          agg: 'SUM', groupCol: 'plan' },
+      w6: { metricCol: 'mrr',          agg: 'SUM', groupCol: 'plan' },
+      w7: { metricCol: 'active_users', agg: 'SUM', groupCol: 'plan' },
+      w8: { metricCol: 'mrr',          agg: 'SUM', groupCol: 'plan', limit: 100 },
     },
   },
 
   '_demo_ecommerce': {
-    numericCols: ['order_total', 'items'],
-    textCols:    ['category', 'channel', 'customer', 'status'],
+    primaryMetric: 'order_total',
     widgetRoles: {
-      w1: { n: 0, agg: 'SUM' },
-      w2: { n: 0, agg: 'COUNT' },
-      w3: { n: 1, agg: 'AVG' },
-      w4: { n: 0, agg: 'AVG' },
-      w5: { n: 0, agg: 'SUM', g: 0 },
-      w6: { n: 0, agg: 'SUM', g: 0 },
-      w7: { n: 0, agg: 'COUNT', g: 1 },
-      w8: { n: 0, agg: 'SUM', g: 1, limit: 100 },
+      w1: { metricCol: 'order_total', agg: 'SUM' },
+      w2: { metricCol: 'order_total', agg: 'COUNT' },
+      w3: { metricCol: 'items',       agg: 'AVG' },
+      w4: { metricCol: 'order_total', agg: 'AVG' },
+      w5: { metricCol: 'order_total', agg: 'SUM',   groupCol: 'category' },
+      w6: { metricCol: 'order_total', agg: 'SUM',   groupCol: 'category' },
+      w7: { metricCol: 'order_total', agg: 'COUNT',  groupCol: 'channel' },
+      w8: { metricCol: 'order_total', agg: 'SUM',   groupCol: 'channel', limit: 100 },
     },
   },
 
   '_demo_devops': {
-    numericCols: ['build_duration', 'success_rate', 'deploys', 'mttr'],
-    textCols:    ['service', 'environment'],
+    primaryMetric: 'success_rate',
     widgetRoles: {
-      w1: { n: 1, agg: 'AVG' },
-      w2: { n: 2, agg: 'SUM' },
-      w3: { n: 3, agg: 'AVG' },
-      w4: { n: 1, agg: 'AVG' },
-      w5: { n: 0, agg: 'AVG', g: 0 },
-      w6: { n: 2, agg: 'SUM', g: 0 },
-      w7: { n: 0, agg: 'AVG', g: 0, limit: 100 },
+      w1: { metricCol: 'success_rate',   agg: 'AVG' },
+      w2: { metricCol: 'deploys',        agg: 'SUM' },
+      w3: { metricCol: 'mttr',           agg: 'AVG' },
+      w4: { metricCol: 'success_rate',   agg: 'AVG' },
+      w5: { metricCol: 'build_duration', agg: 'AVG', groupCol: 'service' },
+      w6: { metricCol: 'deploys',        agg: 'SUM', groupCol: 'service' },
+      w7: { metricCol: 'build_duration', agg: 'AVG', groupCol: 'service', limit: 100 },
     },
   },
 
   '_demo_marketing': {
-    numericCols: ['impressions', 'clicks', 'conversions', 'spend', 'ctr', 'roas'],
-    textCols:    ['channel', 'campaign'],
+    primaryMetric: 'impressions',
     widgetRoles: {
-      w1: { n: 0, agg: 'SUM' },
-      w2: { n: 4, agg: 'AVG' },
-      w3: { n: 3, agg: 'AVG' },
-      w4: { n: 5, agg: 'AVG' },
-      w5: { n: 2, agg: 'SUM', g: 0 },
-      w6: { n: 0, agg: 'SUM', g: 0 },
-      w7: { n: 3, agg: 'SUM', g: 0 },
-      w8: { n: 3, agg: 'SUM', g: 1, limit: 100 },
+      w1: { metricCol: 'impressions',  agg: 'SUM' },
+      w2: { metricCol: 'ctr',         agg: 'AVG' },
+      w3: { metricCol: 'spend',       agg: 'AVG' },
+      w4: { metricCol: 'roas',        agg: 'AVG' },
+      w5: { metricCol: 'conversions', agg: 'SUM', groupCol: 'channel' },
+      w6: { metricCol: 'impressions', agg: 'SUM', groupCol: 'channel' },
+      w7: { metricCol: 'spend',       agg: 'SUM', groupCol: 'channel' },
+      w8: { metricCol: 'spend',       agg: 'SUM', groupCol: 'campaign', limit: 100 },
     },
   },
 
   '_demo_supply_chain': {
-    numericCols: ['order_value', 'on_time_rate', 'lead_time', 'fill_rate'],
-    textCols:    ['supplier', 'category'],
+    primaryMetric: 'order_value',
     widgetRoles: {
-      w1: { n: 0, agg: 'SUM' },
-      w2: { n: 3, agg: 'AVG' },
-      w3: { n: 1, agg: 'AVG' },
-      w4: { n: 2, agg: 'AVG' },
-      w5: { n: 0, agg: 'SUM', g: 1 },
-      w6: { n: 0, agg: 'SUM', g: 1 },
-      w7: { n: 1, agg: 'AVG', g: 0 },
-      w8: { n: 0, agg: 'SUM', g: 0, limit: 100 },
+      w1: { metricCol: 'order_value',  agg: 'SUM' },
+      w2: { metricCol: 'fill_rate',    agg: 'AVG' },
+      w3: { metricCol: 'on_time_rate', agg: 'AVG' },
+      w4: { metricCol: 'lead_time',    agg: 'AVG' },
+      w5: { metricCol: 'order_value',  agg: 'SUM', groupCol: 'category' },
+      w6: { metricCol: 'order_value',  agg: 'SUM', groupCol: 'category' },
+      w7: { metricCol: 'on_time_rate', agg: 'AVG', groupCol: 'supplier' },
+      w8: { metricCol: 'order_value',  agg: 'SUM', groupCol: 'supplier', limit: 100 },
     },
   },
 
   '_demo_energy': {
-    numericCols: ['consumption_kw', 'solar_kw', 'carbon_intensity', 'efficiency'],
-    textCols:    ['source', 'zone'],
+    primaryMetric: 'consumption_kw',
     widgetRoles: {
-      w1: { n: 0, agg: 'SUM' },
-      w2: { n: 0, agg: 'MAX' },
-      w3: { n: 2, agg: 'AVG' },
-      w4: { n: 3, agg: 'AVG' },
-      w5: { n: 0, agg: 'SUM', g: 0 },
-      w6: { n: 0, agg: 'SUM', g: 0 },
-      w7: { n: 0, agg: 'SUM', g: 1 },
+      w1: { metricCol: 'consumption_kw',   agg: 'SUM' },
+      w2: { metricCol: 'consumption_kw',   agg: 'MAX' },
+      w3: { metricCol: 'carbon_intensity', agg: 'AVG' },
+      w4: { metricCol: 'efficiency',       agg: 'AVG' },
+      w5: { metricCol: 'consumption_kw',   agg: 'SUM', groupCol: 'source' },
+      w6: { metricCol: 'consumption_kw',   agg: 'SUM', groupCol: 'source' },
+      w7: { metricCol: 'consumption_kw',   agg: 'SUM', groupCol: 'zone' },
+    },
+  },
+
+  '_demo_support': {
+    primaryMetric: 'tickets',
+    widgetRoles: {
+      w1: { metricCol: 'tickets',         agg: 'SUM' },
+      w2: { metricCol: 'resolution_time', agg: 'AVG' },
+      w3: { metricCol: 'satisfaction',    agg: 'AVG' },
+      w4: { metricCol: 'sla_met',         agg: 'AVG' },
+      w5: { metricCol: 'tickets',         agg: 'SUM', groupCol: 'category' },
+      w6: { metricCol: 'tickets',         agg: 'SUM', groupCol: 'priority' },
+      w7: { metricCol: 'tickets',         agg: 'SUM', groupCol: 'category' },
+      w8: { metricCol: 'resolution_time', agg: 'AVG', groupCol: 'agent',    limit: 100 },
     },
   },
 };

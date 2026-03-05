@@ -189,7 +189,8 @@ export type TemplateCategory =
   | 'business'
   | 'finance'
   | 'infrastructure'
-  | 'weather';
+  | 'weather'
+  | 'support';
 
 export interface TemplateRequiredSchema {
   needsTimestamp: boolean;

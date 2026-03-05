@@ -280,6 +280,7 @@ export interface DashboardHomeProps {
   onEditDashboard:   (id: string) => void;
   onPreviewTemplate: (template: TemplateDefinition) => void;
   onUseTemplate:     (template: TemplateDefinition) => void;
+  initialTab?:       HomeTab;
 }
 
 export default function DashboardHome({
@@ -287,9 +288,10 @@ export default function DashboardHome({
   onEditDashboard,
   onPreviewTemplate,
   onUseTemplate,
+  initialTab,
 }: DashboardHomeProps) {
   const { dashboards, loading, create, save, remove, duplicate } = useDashboardList();
-  const [tab,             setTab]             = useState<HomeTab>('my-dashboards');
+  const [tab,             setTab]             = useState<HomeTab>(initialTab ?? 'my-dashboards');
   const [showNewDialog,   setShowNewDialog]   = useState(false);
   const [editDetailsId,   setEditDetailsId]   = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);

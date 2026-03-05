@@ -178,12 +178,73 @@ export default function LeafletMapViewer({
       }
     });
 
-    // Fit bounds if we have markers
-    if (markersRef.current.length > 0) {
+    // Fit bounds if we have markers (shapes handled separately)
+    if (markersRef.current.length > 0 && geoShapes.length === 0) {
       const group = L.featureGroup(markersRef.current);
       mapRef.current.fitBounds(group.getBounds(), { padding: [50, 50] });
     }
-  }, [geoPoints, mapReady]);
+  }, [geoPoints, geoShapes, mapReady]);
+
+  // Render GeoShapes (Polygon, LineString, MultiPolygon)
+  useEffect(() => {
+    if (!mapRef.current || !mapReady) return;
+
+    const layers: L.Layer[] = [];
+    const style = { color: '#F59E0B', weight: 2, fillOpacity: 0.15 };
+
+    geoShapes.forEach((shape) => {
+      try {
+        let layer: L.Layer | null = null;
+
+        if (shape.type === 'Polygon') {
+          // GeoJSON: [[[lng, lat], ...]] → Leaflet: [[lat, lng], ...]
+          const latlngs = shape.coordinates[0].map(([lng, lat]: number[]) => [lat, lng] as L.LatLngTuple);
+          layer = L.polygon(latlngs, style);
+        } else if (shape.type === 'LineString') {
+          const latlngs = shape.coordinates.map(([lng, lat]: number[]) => [lat, lng] as L.LatLngTuple);
+          layer = L.polyline(latlngs, { color: '#F59E0B', weight: 3 });
+        } else if (shape.type === 'MultiPolygon') {
+          const group = L.layerGroup();
+          (shape.coordinates as number[][][][]).forEach((poly) => {
+            const latlngs = poly[0].map(([lng, lat]) => [lat, lng] as L.LatLngTuple);
+            L.polygon(latlngs, style).addTo(group);
+          });
+          layer = group;
+        }
+
+        if (layer) {
+          if (shape.properties && 'bindPopup' in layer) {
+            (layer as L.Path).bindPopup(
+              `<strong>${shape.properties.name ?? 'Shape'}</strong>`
+            );
+          }
+          layer.addTo(mapRef.current!);
+          layers.push(layer);
+        }
+      } catch {
+        // skip malformed shape
+      }
+    });
+
+    // Fit bounds to cover both points and shapes
+    if (layers.length > 0) {
+      const allLayers: L.Layer[] = [...markersRef.current, ...layers];
+      if (allLayers.length > 0) {
+        try {
+          const group = L.featureGroup(allLayers.filter(l => l instanceof L.Path || l instanceof L.CircleMarker));
+          if (group.getLayers().length > 0) {
+            mapRef.current!.fitBounds(group.getBounds(), { padding: [50, 50] });
+          }
+        } catch {
+          // bounds fit failed — map will stay at current view
+        }
+      }
+    }
+
+    return () => {
+      layers.forEach(l => mapRef.current?.removeLayer(l));
+    };
+  }, [geoShapes, mapReady]);
 
   return (
     <div className="relative" style={{ height }}>

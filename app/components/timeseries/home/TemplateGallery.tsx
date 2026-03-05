@@ -13,6 +13,7 @@ const CATEGORY_LABELS: Record<TemplateCategory | 'all', string> = {
   finance:        'Finance',
   infrastructure: 'Infrastructure',
   weather:        'Weather',
+  support:        'Support',
 };
 
 const CATEGORY_COUNTS: Record<TemplateCategory | 'all', number> = (() => {

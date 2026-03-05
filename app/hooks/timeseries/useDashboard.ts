@@ -2,7 +2,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   listDashboards, getDashboard, saveDashboard, deleteDashboard,
-  duplicateDashboard, createNewDashboard, syncToMonkDB, loadFromMonkDB, initMonkDBStore,
+  duplicateDashboard, createNewDashboard, syncToMonkDB, loadFromMonkDB,
+  initMonkDBStore, mergeDashboards, deleteFromMonkDB,
 } from '@/app/lib/timeseries/dashboard-store';
 import { useMonkDBClient } from '@/app/lib/monkdb-context';
 import type { DashboardConfig } from '@/app/lib/timeseries/types';
@@ -18,9 +19,11 @@ export function useDashboardList() {
       if (client) {
         await initMonkDBStore((sql, args) => client.query(sql, args));
         const fromDB = await loadFromMonkDB((sql) => client.query(sql));
-        if (fromDB.length > 0) {
-          // Merge DB dashboards into localStorage as source of truth
-          fromDB.forEach((d) => saveDashboard(d));
+        // Merge: remote wins when newer; returns dashboards only in localStorage (offline edits)
+        const localOnly = mergeDashboards(fromDB);
+        // Push local-only dashboards up to MonkDB so they're available on other devices
+        for (const d of localOnly) {
+          await syncToMonkDB(d, (sql, args) => client.query(sql, args));
         }
       }
     } catch { /* fall through to localStorage */ }
@@ -38,8 +41,9 @@ export function useDashboardList() {
 
   const remove = useCallback(async (id: string) => {
     deleteDashboard(id);
-    setDashboards(listDashboards());
-  }, []);
+    setDashboards(listDashboards()); // immediate UI update
+    if (client) await deleteFromMonkDB(id, (sql, args) => client.query(sql, args));
+  }, [client]);
 
   const duplicate = useCallback((id: string) => {
     const copy = duplicateDashboard(id);

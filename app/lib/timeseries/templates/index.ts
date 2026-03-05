@@ -10,6 +10,7 @@ import { devopsTemplate } from './devops-template';
 import { marketingTemplate } from './marketing-template';
 import { supplyChainTemplate } from './supply-chain-template';
 import { energyTemplate } from './energy-template';
+import { supportTemplate } from './support-template';
 import type { TemplateDefinition, TemplateCategory } from '../types';
 
 export const ALL_TEMPLATES: TemplateDefinition[] = [
@@ -31,6 +32,8 @@ export const ALL_TEMPLATES: TemplateDefinition[] = [
   energyTemplate,
   // Weather
   weatherTemplate,
+  // Support
+  supportTemplate,
 ];
 
 export function getTemplate(id: string): TemplateDefinition | undefined {
@@ -45,4 +48,5 @@ export {
   iotTemplate, analyticsTemplate, businessTemplate, financeTemplate,
   infrastructureTemplate, weatherTemplate, saasTemplate, ecommerceTemplate,
   devopsTemplate, marketingTemplate, supplyChainTemplate, energyTemplate,
+  supportTemplate,
 };

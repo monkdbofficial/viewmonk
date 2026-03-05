@@ -244,11 +244,12 @@ function buildSQL(
     // Build filter clause for customSql as well
     let customFilterClause = '';
     if (activeFilter) {
+      const safeCol = activeFilter.column.replace(/"/g, '""');
       const val =
         typeof activeFilter.value === 'string'
           ? `'${activeFilter.value.replace(/'/g, "''")}'`
           : String(activeFilter.value);
-      customFilterClause = `AND "${activeFilter.column}" = ${val}`;
+      customFilterClause = `AND "${safeCol}" = ${val}`;
     }
     if (ds.whereClause?.trim()) {
       customFilterClause += ` AND (${ds.whereClause.trim()})`;
@@ -292,11 +293,12 @@ function buildSQL(
   // Build cross-widget filter clause
   let filterClause = '';
   if (activeFilter) {
+    const safeCol = activeFilter.column.replace(/"/g, '""');
     const val =
       typeof activeFilter.value === 'string'
         ? `'${activeFilter.value.replace(/'/g, "''")}'`
         : String(activeFilter.value);
-    filterClause = `AND "${activeFilter.column}" = ${val}`;
+    filterClause = `AND "${safeCol}" = ${val}`;
   }
 
   // Append user-defined WHERE clause if set

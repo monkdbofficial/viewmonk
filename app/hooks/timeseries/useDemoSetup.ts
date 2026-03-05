@@ -24,30 +24,43 @@ export function useDemoSetup() {
     setError(null);
 
     try {
-      // Check how many _demo_* tables exist and have data.
-      // Use the first table in DEMO_TABLE_NAMES as the sentinel — if it exists
-      // and has rows, assume the full setup was already completed.
-      const sentinelTable = DEMO_TABLE_NAMES[0];
-      const check = await client.query(
-        `SELECT COUNT(*) FROM information_schema.tables
-         WHERE table_schema = 'monkdb' AND table_name = '${sentinelTable}'`,
-      );
-      const tableExists = Number(check.rows[0]?.[0] ?? 0) > 0;
+      // Verify that a spread of demo tables (first, middle, last) all exist AND have rows.
+      // Checking only the first table misses partial-setup failures where later tables
+      // were never created (e.g., network blip mid-run).
+      const checkTables = [
+        DEMO_TABLE_NAMES[0],                                          // _demo_iot
+        DEMO_TABLE_NAMES[Math.floor(DEMO_TABLE_NAMES.length / 2)],   // _demo_saas
+        DEMO_TABLE_NAMES[DEMO_TABLE_NAMES.length - 1],               // _demo_energy
+      ];
 
-      if (tableExists) {
-        const dataCheck = await client.query(
-          `SELECT COUNT(*) FROM "monkdb"."${sentinelTable}" LIMIT 1`,
-        );
-        if (Number(dataCheck.rows[0]?.[0] ?? 0) > 0) {
+      // Step 1: all three tables must exist in information_schema
+      const inList = checkTables.map((t) => `'${t}'`).join(', ');
+      const existsCheck = await client.query(
+        `SELECT COUNT(*) FROM information_schema.tables
+         WHERE table_schema = 'monkdb' AND table_name IN (${inList})`,
+      );
+      const tablesExist = Number(existsCheck.rows[0]?.[0] ?? 0) === checkTables.length;
+
+      // Step 2: each of the three tables must have at least one row
+      if (tablesExist) {
+        let allHaveData = true;
+        for (const t of checkTables) {
+          const dataCheck = await client.query(
+            `SELECT COUNT(*) FROM "monkdb"."${t}" LIMIT 1`,
+          );
+          if (Number(dataCheck.rows[0]?.[0] ?? 0) === 0) {
+            allHaveData = false;
+            break;
+          }
+        }
+        if (allHaveData) {
           setState('ready');
           return;
         }
       }
 
       // Tables missing or empty — run full setup for all DEMO_TABLE_NAMES tables
-      await runDemoSetup((sql) => client.query(sql));
-      // MonkDB needs a short moment to make freshly inserted rows visible
-      await new Promise<void>((r) => setTimeout(r, 600));
+      await runDemoSetup((sql, args) => client.query(sql, args));
       setState('ready');
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Demo setup failed';
