@@ -657,7 +657,7 @@ WHERE intersects(${fieldName}, '${geometry}')`;
         </div>
       </div>
 
-      {/* Query Parameters */}
+      {/* Scrollable body — Query Parameters + SQL section */}
       <div className="flex-1 overflow-y-auto p-4">
         <div className="space-y-4">
           {/* Table and Column Selection */}
@@ -951,10 +951,9 @@ WHERE intersects(${fieldName}, '${geometry}')`;
             )}
           </div>
         </div>
-      </div>
 
-      {/* SQL Query Section */}
-      <div className="border-t border-gray-200 bg-gradient-to-b from-gray-50 to-white p-4 dark:border-gray-700 dark:from-gray-900 dark:to-gray-800">
+        {/* SQL Query Section — inside scrollable area so parameters above are not squashed */}
+        <div className="mt-4 border-t border-gray-200 bg-gradient-to-b from-gray-50 to-white pt-4 dark:border-gray-700 dark:from-gray-900 dark:to-gray-800">
         {/* Mode Toggle */}
         <div className="mb-3 flex items-center justify-between">
           <label className="text-sm font-semibold text-gray-900 dark:text-white">
@@ -1151,7 +1150,8 @@ WHERE intersects(${fieldName}, '${geometry}')`;
             </span>
           </div>
         )}
-      </div>
+        </div>{/* end SQL section */}
+      </div>{/* end flex-1 scrollable */}
 
       {/* User Guidance Modal */}
       {showGuidance && (

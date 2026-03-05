@@ -386,7 +386,7 @@ export default function GeospatialPage() {
                       </div>
                     </div>
                     <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900">
-                      <TableColumnSelector onSelectionChange={handleMapTableSelection} showGeoColumnsOnly={true} compact={true} />
+                      <TableColumnSelector onSelectionChange={handleMapTableSelection} showGeoColumnsOnly={true} compact={true} initialTable={mapTableSelection?.fullTableName} />
                     </div>
 
                     {noGeoColumnError?.show && (
@@ -490,7 +490,7 @@ export default function GeospatialPage() {
                     )}
                     <div className="flex-1" />
                     <div className="flex items-center gap-2">
-                      <TableColumnSelector onSelectionChange={handleMapTableSelection} showGeoColumnsOnly={true} compact={true} />
+                      <TableColumnSelector onSelectionChange={handleMapTableSelection} showGeoColumnsOnly={true} compact={true} initialTable={mapTableSelection?.fullTableName} />
                       {mapTableSelection && (
                         <button
                           onClick={() => setShowMapFilters(!showMapFilters)}
