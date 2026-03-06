@@ -2,13 +2,16 @@
 
 echo "🚀 Building standalone Next.js application..."
 
-# Clean previous builds
-rm -rf .next
+# Clean previous dist only (preserve .next if already built by CI)
 rm -rf dist-standalone
 
-# Build the application
-echo "📦 Building Next.js app..."
-npm run build
+# Build only if .next does not already exist (CI builds it first)
+if [ ! -d ".next" ]; then
+  echo "📦 Building Next.js app..."
+  npm run build
+else
+  echo "✅ Using existing .next build (skipping rebuild)"
+fi
 
 # Create distribution directory
 echo "📁 Creating distribution package..."
