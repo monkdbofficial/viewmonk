@@ -253,7 +253,7 @@ jobs:
 
       - name: Upload download page
         run: |
-          echo "📄 Uploading ViewMonk download page..."
+          echo "📄 Uploading monkdb download page..."
 
           # Upload as index.html in downloads root
           aws s3 cp download-page.html \
@@ -262,7 +262,14 @@ jobs:
             --acl public-read \
             --content-type text/html
 
-          echo "✅ Download page uploaded!"
+          # Upload monkdb logo alongside the page
+          aws s3 cp public/image.png \
+            s3://${{ secrets.R2_BUCKET_NAME }}/downloads/logo.png \
+            --endpoint-url ${{ secrets.R2_ENDPOINT }} \
+            --acl public-read \
+            --content-type image/png
+
+          echo "✅ Download page and logo uploaded!"
           echo "🌐 Access at: ${{ secrets.R2_PUBLIC_URL }}/downloads/"
 
       - name: Generate changelog
@@ -297,3 +304,33 @@ jobs:
           echo ""
           echo "✨ No GitHub account needed to download!"
           echo "🎯 NO source code - only standalone builds!"
+
+  # Always keep the download page live — runs on every push to main
+  update-download-page:
+    name: Update Download Page on R2
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS CLI for R2
+        run: |
+          pip install awscli --quiet
+          aws configure set aws_access_key_id ${{ secrets.R2_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          aws configure set default.region auto
+
+      - name: Upload download page to R2
+        run: |
+          echo "📄 Uploading download-page.html → downloads/index.html"
+
+          aws s3 cp download-page.html \
+            s3://${{ secrets.R2_BUCKET_NAME }}/downloads/index.html \
+            --endpoint-url ${{ secrets.R2_ENDPOINT }} \
+            --acl public-read \
+            --content-type "text/html; charset=utf-8" \
+            --cache-control "no-cache, must-revalidate"
+
+          echo "✅ Download page live at: ${{ secrets.R2_PUBLIC_URL }}/downloads/"
