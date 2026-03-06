@@ -34,9 +34,16 @@ jobs:
           uname -a
 
       - name: Install dependencies
-        run: npm ci --verbose 2>&1 | tail -30
+        run: npm ci 2>&1
+
+      - name: Check disk & memory before build
+        run: |
+          df -h
+          free -m || vm_stat || true
 
       - name: Run Next.js build (verbose)
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
         run: |
           set -eo pipefail
           npm run build 2>&1
