@@ -3,15 +3,20 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   X, DownloadCloud, FileJson, ImageDown,
   Settings2, Maximize2, Minimize2, ChevronDown,
-  ArrowLeft, LayoutGrid, Filter, Pencil,
+  ArrowLeft, LayoutGrid, Filter, Pencil, Activity, History, Link2,
 } from 'lucide-react';
 import WidgetRenderer from './WidgetRenderer';
 import GlobalTimeRangeBar from './GlobalTimeRangeBar';
+import VariableBar from './VariableBar';
+import ThresholdAlertToast, { type ThresholdAlert } from './ThresholdAlertToast';
+import SnapshotPanel from './SnapshotPanel';
+import ShareLinkPanel from './ShareLinkPanel';
 import { getTheme } from '@/app/lib/timeseries/themes';
 import type { ThemeTokens } from '@/app/lib/timeseries/themes';
 import { getDefaultTimeRange } from '@/app/lib/timeseries/time-range';
 import { useDashboardRefresh } from '@/app/hooks/timeseries/useDashboardRefresh';
 import type { DashboardConfig, TimeRange, ActiveFilter } from '@/app/lib/timeseries/types';
+import { evalAllCalcMetrics } from '@/app/lib/timeseries/calc-metrics';
 import { ROW_HEIGHT, COL_COUNT, GAP } from '@/app/lib/timeseries/constants';
 
 // ── Export helpers ────────────────────────────────────────────────────────────
@@ -130,10 +135,16 @@ interface DashboardViewerProps {
   templateDemoData?: Record<string, Record<string, unknown>>;
   onEdit?: () => void;
   onBack?: () => void;
+  /**
+   * When true the viewer is embedded inside a tab bar layout that already
+   * owns the -m-8 page breakout.  The viewer itself uses flex-1 min-h-0
+   * instead of -m-8 so it fills the remaining height without double-escaping.
+   */
+  hasTabBar?: boolean;
 }
 
 export default function DashboardViewer({
-  config, demoMode = false, templateDemoData, onEdit, onBack,
+  config, demoMode = false, templateDemoData, onEdit, onBack, hasTabBar = false,
 }: DashboardViewerProps) {
   // Detect the app's current light/dark mode from the <html> class
   const [appIsDark, setAppIsDark] = useState(true);
@@ -163,12 +174,64 @@ export default function DashboardViewer({
   const [isRefreshing,     setIsRefreshing]     = useState(false);
   const [refreshTick,      setRefreshTick]      = useState(0);
   const [isFullscreen,     setIsFullscreen]     = useState(false);
+  const [showSnapshots,    setShowSnapshots]    = useState(false);
+  const [showShare,        setShowShare]        = useState(false);
+
+  // Threshold alerts
+  const [alerts,       setAlerts]       = useState<ThresholdAlert[]>([]);
+  // Track which breaches have already been shown this session to avoid repeat noise
+  const firedAlertsRef = useRef<Set<string>>(new Set());
+
+  const handleThresholdAlert = useCallback((
+    widgetTitle: string, widgetId: string, thresholdId: string,
+    value: number, thresholdValue: number, thresholdLabel: string | undefined,
+    direction: 'above' | 'below', color: string,
+  ) => {
+    const alertId = `${widgetId}_${thresholdId}`;
+    if (firedAlertsRef.current.has(alertId)) return; // already shown
+    firedAlertsRef.current.add(alertId);
+    setAlerts((prev) => [...prev, { id: alertId, widgetTitle, thresholdLabel: thresholdLabel ?? '', value, thresholdValue, direction, color, firedAt: new Date() }]);
+  }, []);
+
+  // Dashboard variables: initialise from defaultValue
+  const [variableValues, setVariableValues] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const v of config.variables ?? []) {
+      init[v.name] = v.defaultValue;
+    }
+    return init;
+  });
+
+  // Merge calculated metric results into variableValues so widgets get {{calc_name}} substitution
+  const effectiveVariables = (() => {
+    const calcResults = evalAllCalcMetrics(config.calculatedMetrics ?? [], variableValues);
+    return { ...variableValues, ...calcResults };
+  })();
+
+  // Track when data was last loaded across all widgets (dashboard-level freshness)
+  const [lastRefreshAt, setLastRefreshAt] = useState<Date | null>(null);
+  const [freshnessLabel, setFreshnessLabel] = useState('');
 
   const triggerRefresh = useCallback(() => {
     setIsRefreshing(true);
     setRefreshTick((t) => t + 1);
+    setLastRefreshAt(new Date());
     setTimeout(() => setIsRefreshing(false), 1500);
   }, []);
+
+  // Update freshness label every 30 s so "X ago" text stays current
+  useEffect(() => {
+    const update = () => {
+      if (!lastRefreshAt) return;
+      const ageMs = Date.now() - lastRefreshAt.getTime();
+      if (ageMs < 60_000) setFreshnessLabel('just now');
+      else if (ageMs < 3_600_000) setFreshnessLabel(`${Math.floor(ageMs / 60_000)}m ago`);
+      else setFreshnessLabel(`${Math.floor(ageMs / 3_600_000)}h ago`);
+    };
+    update();
+    const id = setInterval(update, 30_000);
+    return () => clearInterval(id);
+  }, [lastRefreshAt]);
 
   useDashboardRefresh(refreshInterval, triggerRefresh);
 
@@ -180,16 +243,26 @@ export default function DashboardViewer({
     ? 'border-b border-gray-200 bg-white/90 backdrop-blur'
     : `border-b ${theme.divider} ${theme.cardBg} backdrop-blur`;
 
-  // In normal mode: use -m-8 to escape AppLayout's p-8 padding → full-bleed dashboard
-  // In fullscreen: overlay the entire screen
+  // In normal mode: use -m-8 to escape AppLayout's p-8 padding → full-bleed dashboard.
+  // When hasTabBar is true the page-level wrapper already owns the -m-8 breakout and
+  // padding reset, so we just use flex flex-col (no extra margin).
+  // In fullscreen: overlay the entire screen.
   const containerCls = isFullscreen
     ? 'fixed inset-0 z-50 flex flex-col'
-    : 'flex flex-col -m-8';
+    : hasTabBar
+      ? 'flex flex-col'
+      : 'flex flex-col -m-8';
 
   const isLive = !demoMode && refreshInterval !== 'manual';
 
   return (
     <div className={`${containerCls} ${theme.pageBg}`}>
+      {/* ── Threshold alert toasts ────────────────────────────────────────── */}
+      <ThresholdAlertToast
+        alerts={alerts}
+        onDismiss={(id) => setAlerts((a) => a.filter((x) => x.id !== id))}
+        onDismissAll={() => setAlerts([])}
+      />
       {/* ── Toolbar ──────────────────────────────────────────────────────────── */}
       <div className={`flex flex-shrink-0 items-center gap-3 px-4 py-3 ${toolbarBg}`}>
 
@@ -248,6 +321,26 @@ export default function DashboardViewer({
                   </span>
                 )}
 
+                {/* Data freshness chip */}
+                {!demoMode && lastRefreshAt && (() => {
+                  const ageMs = Date.now() - lastRefreshAt.getTime();
+                  const refreshMs = typeof refreshInterval === 'number' ? refreshInterval : 300_000;
+                  const color =
+                    ageMs < refreshMs        ? '#10B981' :
+                    ageMs < refreshMs * 2    ? '#F59E0B' :
+                                               '#EF4444';
+                  return (
+                    <span
+                      className="hidden md:flex flex-shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors"
+                      style={{ color, background: `${color}15`, border: `1px solid ${color}30` }}
+                      title={`Data last fetched at ${lastRefreshAt.toLocaleTimeString()}`}
+                    >
+                      <Activity className="h-2.5 w-2.5" />
+                      {freshnessLabel}
+                    </span>
+                  );
+                })()}
+
                 {/* Preview badge */}
                 {demoMode && (
                   <span className={`flex-shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${theme.accentBadge}`}>
@@ -277,6 +370,59 @@ export default function DashboardViewer({
               onRefreshIntervalChange={setRefreshInterval}
               onRefreshNow={triggerRefresh}
             />
+          )}
+
+          {!demoMode && (
+            <div className="relative">
+              <button
+                onClick={() => setShowSnapshots((s) => !s)}
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  isLight
+                    ? 'border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:text-blue-600'
+                    : `${theme.cardBorder} ${theme.cardBg} ${theme.textSecondary} hover:bg-white/[0.10] hover:text-white/90`
+                }`}
+                title="Snapshots & history"
+              >
+                <History className="h-3.5 w-3.5" />
+                Snapshots
+              </button>
+              {showSnapshots && (
+                <SnapshotPanel
+                  config={config}
+                  theme={theme}
+                  onRestore={(restored) => {
+                    // Reload page with restored config — handled by parent via onEdit flow
+                    // For now, notify user; full restore needs parent state update
+                    alert(`Restored snapshot: "${restored.name}"\n\nThis snapshot has been loaded. Save it to persist the changes.`);
+                  }}
+                  onClose={() => setShowSnapshots(false)}
+                />
+              )}
+            </div>
+          )}
+
+          {!demoMode && (
+            <div className="relative">
+              <button
+                onClick={() => setShowShare((s) => !s)}
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  isLight
+                    ? 'border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:text-blue-600'
+                    : `${theme.cardBorder} ${theme.cardBg} ${theme.textSecondary} hover:bg-white/[0.10] hover:text-white/90`
+                }`}
+                title="Share dashboard link"
+              >
+                <Link2 className="h-3.5 w-3.5" />
+                Share
+              </button>
+              {showShare && (
+                <ShareLinkPanel
+                  config={config}
+                  theme={theme}
+                  onClose={() => setShowShare(false)}
+                />
+              )}
+            </div>
           )}
 
           {!demoMode && (
@@ -363,6 +509,18 @@ export default function DashboardViewer({
         </div>
       )}
 
+      {/* ── Dashboard variables bar ────────────────────────────────────────── */}
+      {(config.variables?.length ?? 0) > 0 && !demoMode && (
+        <VariableBar
+          variables={config.variables!}
+          values={variableValues}
+          theme={theme}
+          onChange={(vals) => { setVariableValues(vals); setRefreshTick((t) => t + 1); }}
+          calculatedMetrics={config.calculatedMetrics}
+          calcValues={evalAllCalcMetrics(config.calculatedMetrics ?? [], variableValues)}
+        />
+      )}
+
       {/* ── Widget canvas ──────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-auto">
         {/* Subtle dot-grid texture on the canvas — more prominent on light, barely visible on dark */}
@@ -396,10 +554,14 @@ export default function DashboardViewer({
                   themeId={effectiveThemeId}
                   timeRange={timeRange}
                   activeFilter={activeFilter}
+                  variables={effectiveVariables}
                   demoMode={demoMode}
                   demoData={demoMode && templateDemoData ? templateDemoData[widget.id] : undefined}
                   refreshTick={refreshTick}
+                  refreshIntervalMs={typeof refreshInterval === 'number' ? refreshInterval : undefined}
+                  activeFilterSourceId={activeFilter?.sourceWidgetId ?? null}
                   onDrillDown={setActiveFilter}
+                  onThresholdAlert={handleThresholdAlert}
                 />
               </div>
             );

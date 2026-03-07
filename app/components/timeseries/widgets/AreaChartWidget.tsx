@@ -1,17 +1,19 @@
 'use client';
 import ReactECharts from 'echarts-for-react';
 import type { ThemeTokens } from '@/app/lib/timeseries/themes';
-import type { WidgetStyle } from '@/app/lib/timeseries/types';
+import type { WidgetStyle, ChartAnnotation } from '@/app/lib/timeseries/types';
 import type { ChartSeries } from '@/app/lib/timeseries/widget-executor';
 import { buildEChartsTheme } from '@/app/lib/timeseries/themes';
+import { computeSeriesStats, detectAnomalies, buildBandMarkArea, buildMeanMarkLine, buildAnomalyMarkPoints } from '@/app/lib/timeseries/anomaly';
 
 interface AreaChartWidgetProps {
   series: ChartSeries[];
   style: WidgetStyle;
   theme: ThemeTokens;
+  annotations?: ChartAnnotation[];
 }
 
-export default function AreaChartWidget({ series, style, theme }: AreaChartWidgetProps) {
+export default function AreaChartWidget({ series, style, theme, annotations }: AreaChartWidgetProps) {
   const t = buildEChartsTheme(theme);
 
   const getColor = (i: number) =>
@@ -32,7 +34,7 @@ export default function AreaChartWidget({ series, style, theme }: AreaChartWidge
   const bottomAlpha = '00';
 
   // Threshold mark lines
-  const markLine = (style.thresholds ?? []).length > 0
+  const thresholdMarkLine = (style.thresholds ?? []).length > 0
     ? {
         silent: true,
         symbol: ['none', 'none'],
@@ -50,7 +52,29 @@ export default function AreaChartWidget({ series, style, theme }: AreaChartWidge
       }
     : undefined;
 
-  const smooth = style.smooth ?? true;
+  // Annotation mark lines (vertical event markers)
+  const annotationMarkLine = (annotations ?? []).length > 0
+    ? {
+        silent: false,
+        symbol: ['none', 'none'],
+        data: (annotations ?? []).map((ann) => ({
+          xAxis: ann.timestamp,
+          lineStyle: { color: ann.color, type: 'solid' as const, width: 1.5, opacity: 0.85 },
+          label: {
+            show: true,
+            formatter: ann.label,
+            color: ann.color,
+            fontSize: 10,
+            fontWeight: 600,
+            position: 'insideStartTop' as const,
+          },
+        })),
+      }
+    : undefined;
+
+  const smooth    = style.smooth ?? true;
+  const anomCfg   = style.anomalyDetection;
+  const anomalyOn = anomCfg?.enabled ?? false;
 
   // Format ISO timestamp strings from MonkDB DATE_TRUNC into readable axis labels
   const fmtTime = (s: string): string => {
@@ -104,33 +128,72 @@ export default function AreaChartWidget({ series, style, theme }: AreaChartWidge
         formatter: (v: number) => fmtVal(v),
       },
     },
-    series: series.map((s, i) => {
-      const color = getColor(i);
-      return {
-        name: s.name,
-        type: 'line',
-        smooth,
-        symbol: 'none',
-        data: s.data.map((d) => d[1]),
-        lineStyle: {
-          width: 2,
-          color,
-          ...(theme.glowEffect ? { shadowBlur: 10, shadowColor: color } : {}),
-        },
-        itemStyle: { color },
-        areaStyle: {
-          color: {
-            type: 'linear',
-            x: 0, y: 0, x2: 0, y2: 1,
-            colorStops: [
-              { offset: 0, color: color + topAlpha },
-              { offset: 1, color: color + bottomAlpha },
-            ],
+    series: [
+      ...series.map((s, i) => {
+        const isPrev = s.name.endsWith(' (prev)');
+        const baseIdx = isPrev
+          ? series.findIndex((x) => x.name === s.name.slice(0, -7))
+          : i;
+        const color = getColor(baseIdx >= 0 ? baseIdx : i);
+
+        const stats     = (!isPrev && anomalyOn) ? computeSeriesStats(s.data, anomCfg!.sensitivity ?? 2) : null;
+        const anomalies = stats ? detectAnomalies(s.data, stats) : [];
+
+        return {
+          name: s.name,
+          type: 'line',
+          smooth,
+          symbol: 'none',
+          data: s.data.map((d) => d[1]),
+          lineStyle: {
+            width: isPrev ? 1.5 : 2,
+            color,
+            type: isPrev ? 'dashed' as const : 'solid' as const,
+            opacity: isPrev ? 0.5 : 1,
+            ...(theme.glowEffect && !isPrev ? { shadowBlur: 10, shadowColor: color } : {}),
           },
-        },
-        markLine,
-      };
-    }),
+          itemStyle: { color, opacity: isPrev ? 0.5 : 1 },
+          areaStyle: isPrev ? {
+            color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+              colorStops: [
+                { offset: 0, color: color + '18' },
+                { offset: 1, color: color + '00' },
+              ],
+            },
+          } : {
+            color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+              colorStops: [
+                { offset: 0, color: color + topAlpha },
+                { offset: 1, color: color + bottomAlpha },
+              ],
+            },
+          },
+          markLine: isPrev
+            ? undefined
+            : (() => {
+                const lines = [];
+                if (thresholdMarkLine) lines.push(...(thresholdMarkLine.data ?? []));
+                if (stats) lines.push(...(buildMeanMarkLine(stats, color).data ?? []));
+                return lines.length
+                  ? { ...(thresholdMarkLine ?? {}), silent: true, symbol: ['none', 'none'], data: lines }
+                  : undefined;
+              })(),
+          markArea:  (stats && anomCfg!.showBands) ? buildBandMarkArea(stats, color) : undefined,
+          markPoint: stats ? buildAnomalyMarkPoints(anomalies) : undefined,
+        };
+      }),
+      ...(annotationMarkLine ? [{
+        name: '__annotations__',
+        type: 'line',
+        silent: true,
+        symbol: 'none',
+        data: [],
+        lineStyle: { width: 0 },
+        markLine: annotationMarkLine,
+        tooltip: { show: false },
+        legendHoverLink: false,
+      }] : []),
+    ],
   };
 
   return (

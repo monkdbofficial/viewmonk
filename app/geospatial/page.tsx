@@ -98,8 +98,20 @@ export default function GeospatialPage() {
 
   // ── Map table selection ───────────────────────────────────────────────────────
   const handleMapTableSelection = useCallback(async (selection: TableColumnSelection | null) => {
+    if (!selection || !activeConnection) {
+      setMapTableSelection(selection);
+      return;
+    }
+
+    // Skip re-querying if the same table is already selected (prevents re-render loops)
+    if (mapTableSelection &&
+        selection.schema === mapTableSelection.schema &&
+        selection.table === mapTableSelection.table &&
+        mapFilters.length === 0) {
+      return;
+    }
+
     setMapTableSelection(selection);
-    if (!selection || !activeConnection) return;
 
     if (!selection.columns || !Array.isArray(selection.columns) || selection.columns.length === 0) {
       toast.error('Invalid Selection', 'Table columns data is missing. Please select the table again.');
@@ -181,7 +193,7 @@ export default function GeospatialPage() {
 
     await handleQueryExecute(query, filterParams.length > 0 ? filterParams : undefined);
     toast.success('Table Loaded', `Loaded data from ${selection.schema}.${selection.table}`);
-  }, [mapFilters, activeConnection, handleQueryExecute, toast]);
+  }, [mapFilters, mapTableSelection, activeConnection, handleQueryExecute, toast]);
 
   // Auto-reload when restoring from localStorage
   useEffect(() => {
@@ -353,7 +365,7 @@ export default function GeospatialPage() {
               )}
 
               {/* Map Tab — empty state */}
-              {activeTab === 'map' && geoPoints.length === 0 && geoShapes.length === 0 && !loading && (
+              {activeTab === 'map' && geoPoints.length === 0 && geoShapes.length === 0 && (
                 <div className="flex h-full flex-col gap-4 overflow-auto p-6">
                   <div className="rounded-lg border border-blue-200 bg-gradient-to-r from-blue-50 via-white to-blue-50 p-6 dark:border-blue-900 dark:from-blue-950 dark:via-gray-800 dark:to-blue-950">
                     <div className="flex items-center gap-4">

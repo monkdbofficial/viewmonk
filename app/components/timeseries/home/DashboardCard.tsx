@@ -1,5 +1,5 @@
 'use client';
-import { BarChart2, Clock, Copy, Edit3, Trash2, Eye, Download, Settings2 } from 'lucide-react';
+import { BarChart2, Clock, Copy, Edit3, Trash2, Eye, Download, Settings2, Star, Tag } from 'lucide-react';
 import type { DashboardConfig } from '@/app/lib/timeseries/types';
 import { THEMES } from '@/app/lib/timeseries/themes';
 
@@ -11,12 +11,14 @@ interface DashboardCardProps {
   onDuplicate: () => void;
   onDelete: () => void;
   onExport?: () => void;
+  onToggleStar?: () => void;
 }
 
 
-export default function DashboardCard({ config, onOpen, onEdit, onEditDetails, onDuplicate, onDelete, onExport }: DashboardCardProps) {
+export default function DashboardCard({ config, onOpen, onEdit, onEditDetails, onDuplicate, onDelete, onExport, onToggleStar }: DashboardCardProps) {
   const theme     = THEMES[config.themeId];
   const updatedAt = new Date(config.updatedAt);
+  const tags      = config.tags?.filter(Boolean) ?? [];
 
   return (
     <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm ring-1 ring-black/[0.03] transition-all duration-200 hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-xl dark:border-white/[0.10] dark:bg-white/[0.07] dark:ring-0 dark:shadow-none dark:hover:border-white/[0.22] dark:hover:bg-white/[0.11]">
@@ -26,6 +28,19 @@ export default function DashboardCard({ config, onOpen, onEdit, onEditDetails, o
         className="absolute inset-x-0 top-0 h-[3px] z-10"
         style={{ background: `linear-gradient(90deg, ${theme.accentPrimary}, ${theme.accentPrimary}88)` }}
       />
+
+      {/* Star button */}
+      {onToggleStar && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggleStar(); }}
+          className="absolute right-3 top-3 z-20 rounded-full p-1.5 transition-colors hover:bg-white/20"
+          title={config.starred ? 'Unstar dashboard' : 'Star dashboard'}
+        >
+          <Star
+            className={`h-4 w-4 transition-colors ${config.starred ? 'fill-amber-400 text-amber-400' : 'text-white/60 hover:text-amber-300'}`}
+          />
+        </button>
+      )}
 
       {/* Thumbnail — adapts to app light/dark mode */}
       <div
@@ -110,6 +125,22 @@ export default function DashboardCard({ config, onOpen, onEdit, onEditDetails, o
         ) : (
           <p className="text-[13px] italic text-gray-300 dark:text-white/25">No description</p>
         )}
+        {/* Tags */}
+        {tags.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {tags.slice(0, 3).map((tag) => (
+              <span key={tag} className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-500 dark:border-gray-700/60 dark:bg-gray-800/50 dark:text-gray-400">
+                <Tag className="h-2.5 w-2.5" />{tag}
+              </span>
+            ))}
+            {tags.length > 3 && (
+              <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] text-gray-400 dark:border-gray-700/60 dark:bg-gray-800/50">
+                +{tags.length - 3}
+              </span>
+            )}
+          </div>
+        )}
+
         <div className="mt-auto flex items-center gap-2 pt-1">
           <span
             className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize"

@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import {
   AlertTriangle, Settings2, Trash2, GripVertical,
-  Clock, Database, Copy, Check,
+  Clock, Database, Copy, Check, Filter,
 } from 'lucide-react';
 import type { ThemeTokens } from '@/app/lib/timeseries/themes';
 import type { WidgetStatus } from '@/app/lib/timeseries/types';
@@ -68,7 +68,15 @@ interface WidgetShellProps {
   executionTime: number;
   theme: ThemeTokens;
   builderMode?: boolean;
+  fromCache?: boolean;
+  /** Age threshold (ms) at which the timestamp turns amber; 2× turns red. Default 5 min. */
+  staleThresholdMs?: number;
+  /** True when this widget is the source of the currently active cross-filter */
+  isFilterSource?: boolean;
+  /** True when an active cross-filter from another widget is applied to this widget */
+  isFiltered?: boolean;
   onRetry?: () => void;
+  onClearCache?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
   children: React.ReactNode;
@@ -76,14 +84,32 @@ interface WidgetShellProps {
 
 export default function WidgetShell({
   title, status, error, lastUpdated, executionTime, theme,
-  builderMode = false, onRetry, onEdit, onDelete, children,
+  builderMode = false, fromCache = false, staleThresholdMs = 300_000,
+  isFilterSource = false, isFiltered = false,
+  onRetry, onClearCache, onEdit, onDelete, children,
 }: WidgetShellProps) {
   useShimmerCSS();
   const [copied, setCopied] = useState(false);
 
+  // Tick every 60 s so "X ago" text stays current without parent re-rendering
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!lastUpdated || builderMode) return;
+    const id = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, [lastUpdated, builderMode]);
+
   const isRefreshing = status === 'refreshing';
   const isLoaded     = status === 'loaded' || status === 'refreshing';
   const isLight      = theme.id === 'light-clean';
+
+  // ── Freshness coloring ────────────────────────────────────────────────────
+  const ageMs = lastUpdated ? Date.now() - lastUpdated.getTime() : 0;
+  const tsColor =
+    !lastUpdated   ? undefined :
+    ageMs < staleThresholdMs       ? '#10B981' :   // green  — fresh
+    ageMs < staleThresholdMs * 2   ? '#F59E0B' :   // amber  — aging
+                                     '#EF4444';    // red    — stale
 
   // Always apply card bg + border + shadow — viewer and builder both get proper elevation.
   // Dark themes: card surface slightly lighter than page → depth.
@@ -148,10 +174,17 @@ export default function WidgetShell({
     );
   })();
 
+  // Cross-filter ring: source widget gets accent outline, filtered widgets get subtle tint
+  const filterRingStyle: React.CSSProperties = isFilterSource
+    ? { outline: `2px solid ${theme.accentPrimary}`, outlineOffset: '-2px' }
+    : isFiltered
+      ? { outline: `1px solid ${theme.accentPrimary}40`, outlineOffset: '-1px' }
+      : {};
+
   return (
     <div
       className={`flex h-full flex-col overflow-hidden transition-all duration-300 ${cardCls}`}
-      style={{ ...glowStyle, ...glassStyle }}
+      style={{ ...glowStyle, ...glassStyle, ...filterRingStyle }}
     >
 
       {/* ── Accent top bar ─────────────────────────────────────────────────── */}
@@ -195,8 +228,44 @@ export default function WidgetShell({
         </div>
 
         <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* Cross-filter source badge */}
+          {isFilterSource && !builderMode && (
+            <span
+              className="hidden sm:flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold"
+              style={{ background: `${theme.accentPrimary}22`, color: theme.accentPrimary, border: `1px solid ${theme.accentPrimary}40` }}
+              title="This widget is the active filter source"
+            >
+              <Filter className="h-2.5 w-2.5" />
+              FILTERING
+            </span>
+          )}
+          {/* Filtered indicator */}
+          {isFiltered && !isFilterSource && !builderMode && (
+            <span
+              className="hidden sm:flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium opacity-70"
+              style={{ background: `${theme.accentPrimary}12`, color: theme.accentPrimary }}
+              title="Results filtered by another widget"
+            >
+              <Filter className="h-2.5 w-2.5" />
+            </span>
+          )}
+          {fromCache && !builderMode && (
+            <button
+              onClick={onClearCache}
+              title="Serving cached result — click to refresh"
+              className="hidden sm:flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors hover:opacity-80"
+              style={{ background: `${theme.accentPrimary}18`, color: theme.accentPrimary, border: `1px solid ${theme.accentPrimary}30` }}
+            >
+              <Clock className="h-2.5 w-2.5" />
+              CACHED
+            </button>
+          )}
           {lastUpdated && !builderMode && (
-            <span className={`hidden sm:flex items-center gap-1 text-[11px] ${theme.textMuted} opacity-70`}>
+            <span
+              className="hidden sm:flex items-center gap-1 text-[11px] transition-colors"
+              style={{ color: tsColor ?? 'inherit', opacity: tsColor ? 0.9 : 0.7 }}
+              title={`Data loaded: ${lastUpdated.toLocaleTimeString()}`}
+            >
               <Clock className="h-2.5 w-2.5" />
               {formatRelativeTime(lastUpdated)}
             </span>

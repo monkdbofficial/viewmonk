@@ -1,5 +1,5 @@
 'use client';
-import { BarChart2, TrendingUp, AreaChart, PieChart, Gauge, Table2, Activity, Layers, ScatterChart, Filter, LayoutGrid, CandlestickChart, BarChart } from 'lucide-react';
+import { BarChart2, TrendingUp, AreaChart, PieChart, Gauge, Table2, Activity, Layers, ScatterChart, Filter, LayoutGrid, CandlestickChart, BarChart, Type, Minus } from 'lucide-react';
 import type { WidgetType } from '@/app/lib/timeseries/types';
 
 interface PaletteItem {
@@ -11,8 +11,7 @@ interface PaletteItem {
   badge?: string;
 }
 
-const PALETTE: PaletteItem[] = [
-  // Core
+const CORE_ITEMS: PaletteItem[] = [
   { type: 'stat-card',     label: 'Stat Card',     description: 'Single KPI value with trend',     icon: <Activity className="h-5 w-5" />,          color: 'text-blue-500' },
   { type: 'line-chart',    label: 'Line Chart',     description: 'Time series trend lines',         icon: <TrendingUp className="h-5 w-5" />,         color: 'text-cyan-500' },
   { type: 'area-chart',    label: 'Area Chart',     description: 'Filled area trend',               icon: <AreaChart className="h-5 w-5" />,          color: 'text-indigo-500' },
@@ -21,24 +20,26 @@ const PALETTE: PaletteItem[] = [
   { type: 'gauge',         label: 'Gauge',          description: 'Circular value indicator',        icon: <Gauge className="h-5 w-5" />,              color: 'text-amber-500' },
   { type: 'heatmap',       label: 'Heatmap',        description: 'Time-based intensity map',        icon: <Layers className="h-5 w-5" />,             color: 'text-emerald-500' },
   { type: 'data-table',    label: 'Data Table',     description: 'Raw rows, sortable',              icon: <Table2 className="h-5 w-5" />,             color: 'text-gray-500' },
-  // Enterprise
-  { type: 'scatter-chart', label: 'Scatter Plot',   description: 'Correlation & distribution',      icon: <ScatterChart className="h-5 w-5" />,       color: 'text-purple-500',  badge: 'New' },
-  { type: 'funnel-chart',  label: 'Funnel Chart',   description: 'Sales funnel & conversion',       icon: <Filter className="h-5 w-5" />,             color: 'text-orange-500',  badge: 'New' },
-  { type: 'treemap',       label: 'Treemap',        description: 'Hierarchical data breakdown',     icon: <LayoutGrid className="h-5 w-5" />,         color: 'text-teal-500',    badge: 'New' },
-  { type: 'candlestick',   label: 'Candlestick',    description: 'OHLC for financial / stock data', icon: <CandlestickChart className="h-5 w-5" />,   color: 'text-emerald-500', badge: 'New' },
-  { type: 'progress-kpi',  label: 'Progress KPI',   description: 'Multi-metric target progress',    icon: <BarChart className="h-5 w-5" />,           color: 'text-blue-500',    badge: 'New' },
+];
+
+const ENTERPRISE_ITEMS: PaletteItem[] = [
+  { type: 'scatter-chart', label: 'Scatter Plot',   description: 'Correlation & distribution',      icon: <ScatterChart className="h-5 w-5" />,       color: 'text-purple-500' },
+  { type: 'funnel-chart',  label: 'Funnel Chart',   description: 'Sales funnel & conversion',       icon: <Filter className="h-5 w-5" />,             color: 'text-orange-500' },
+  { type: 'treemap',       label: 'Treemap',        description: 'Hierarchical data breakdown',     icon: <LayoutGrid className="h-5 w-5" />,         color: 'text-teal-500' },
+  { type: 'candlestick',   label: 'Candlestick',    description: 'OHLC for financial / stock data', icon: <CandlestickChart className="h-5 w-5" />,   color: 'text-emerald-500' },
+  { type: 'progress-kpi',  label: 'Progress KPI',   description: 'Multi-metric target progress',    icon: <BarChart className="h-5 w-5" />,           color: 'text-blue-500' },
+];
+
+const CONTENT_ITEMS: PaletteItem[] = [
+  { type: 'text-widget',   label: 'Text / Note',    description: 'Markdown text, headers, lists',  icon: <Type className="h-5 w-5" />,               color: 'text-slate-500',  badge: 'New' },
+  { type: 'divider',       label: 'Section Divider',description: 'Labelled horizontal separator',  icon: <Minus className="h-5 w-5" />,              color: 'text-gray-400',   badge: 'New' },
 ];
 
 interface WidgetPaletteProps {
   onAddWidget: (type: WidgetType) => void;
 }
 
-const CORE_TYPES: WidgetType[] = ['stat-card','line-chart','area-chart','bar-chart','pie-chart','gauge','heatmap','data-table'];
-
 export default function WidgetPalette({ onAddWidget }: WidgetPaletteProps) {
-  const core       = PALETTE.filter((p) => CORE_TYPES.includes(p.type));
-  const enterprise = PALETTE.filter((p) => !CORE_TYPES.includes(p.type));
-
   const renderItem = (item: PaletteItem) => (
     <button
       key={item.type}
@@ -52,14 +53,23 @@ export default function WidgetPalette({ onAddWidget }: WidgetPaletteProps) {
             {item.label}
           </p>
           {item.badge && (
-            <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-blue-600 dark:bg-blue-500/20 dark:text-blue-400">
+            <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400">
               {item.badge}
             </span>
           )}
         </div>
-        <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{item.description}</p>
+        <p className="truncate text-xs text-gray-400 dark:text-gray-500">{item.description}</p>
       </div>
     </button>
+  );
+
+  const Section = ({ label, items }: { label: string; items: PaletteItem[] }) => (
+    <div className="mt-4">
+      <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-600">
+        {label}
+      </p>
+      <div className="space-y-1.5">{items.map(renderItem)}</div>
+    </div>
   );
 
   return (
@@ -71,20 +81,9 @@ export default function WidgetPalette({ onAddWidget }: WidgetPaletteProps) {
         <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">Click to add to canvas</p>
       </div>
       <div className="flex-1 overflow-y-auto p-3">
-        {/* Core widgets */}
-        <div className="space-y-1.5">
-          {core.map(renderItem)}
-        </div>
-
-        {/* Enterprise widgets */}
-        <div className="mt-4">
-          <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-600">
-            Enterprise
-          </p>
-          <div className="space-y-1.5">
-            {enterprise.map(renderItem)}
-          </div>
-        </div>
+        <div className="space-y-1.5">{CORE_ITEMS.map(renderItem)}</div>
+        <Section label="Enterprise" items={ENTERPRISE_ITEMS} />
+        <Section label="Content"    items={CONTENT_ITEMS} />
       </div>
     </div>
   );

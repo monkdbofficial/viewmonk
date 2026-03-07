@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Database, Table, Columns, Search, X, ChevronDown, Check } from 'lucide-react';
 import { useSchemaMetadata } from '@/app/lib/hooks/useSchemaMetadata';
 import SearchableSelect from '../common/SearchableSelect';
@@ -58,8 +58,8 @@ export default function TableColumnSelector({
     .filter(t => !selectedSchema || t.schema === selectedSchema)
     .map(t => ({ schema: t.schema, name: t.name, fullName: `${t.schema}.${t.name}` }));
 
-  // Get columns for selected table
-  const columnsForTable = columns
+  // Get columns for selected table (memoized to prevent effect loops from reference changes)
+  const columnsForTable = useMemo(() => columns
     .filter(c => {
       if (!selectedSchema || !selectedTable) return false;
       const matchesTable = c.schema === selectedSchema && c.table === selectedTable;
@@ -78,7 +78,7 @@ export default function TableColumnSelector({
       name: c.name,
       type: c.type,
       isGeo: isGeoType(c.type),
-    }));
+    })), [columns, selectedSchema, selectedTable, showGeoColumnsOnly, compact]);
 
   // Auto-select geo column if only one exists
   useEffect(() => {
@@ -118,6 +118,7 @@ export default function TableColumnSelector({
         geoColumn,
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSchema, selectedTable, selectedColumns, geoColumn]);
 
   const handleSchemaChange = (schema: string) => {

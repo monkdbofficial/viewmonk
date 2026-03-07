@@ -1,9 +1,14 @@
 'use client';
 import { useState } from 'react';
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, X } from 'lucide-react';
+import {
+  ChevronLeft, ChevronRight, ChevronUp, ChevronDown,
+  Search, X, ArrowUp, ArrowDown, Check, AlertTriangle,
+} from 'lucide-react';
 import type { ThemeTokens } from '@/app/lib/timeseries/themes';
+import type { ColumnFormattingRule } from '@/app/lib/timeseries/types';
 
-// ISO 8601 timestamp pattern — covers '2024-01-15T14:30:00Z', '2024-01-15 14:30:00+00'
+// ── ISO date detection ────────────────────────────────────────────────────────
+
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/;
 
 function formatCellValue(value: unknown): string {
@@ -19,7 +24,6 @@ function formatCellValue(value: unknown): string {
   }
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) return String(value);
-    // Use toLocaleString for large integers; keep decimals for floats
     return Number.isInteger(value)
       ? value.toLocaleString()
       : value.toLocaleString(undefined, { maximumFractionDigits: 4 });
@@ -27,20 +31,145 @@ function formatCellValue(value: unknown): string {
   return String(value);
 }
 
+// ── Conditional formatting engine ─────────────────────────────────────────────
+
+function evalRule(rule: ColumnFormattingRule, value: unknown): boolean {
+  if (typeof value !== 'number') return false;
+  switch (rule.operator) {
+    case 'gt':      return value >  rule.value;
+    case 'gte':     return value >= rule.value;
+    case 'lt':      return value <  rule.value;
+    case 'lte':     return value <= rule.value;
+    case 'eq':      return value === rule.value;
+    case 'between': return value >= rule.value && value <= (rule.value2 ?? rule.value);
+    default:        return false;
+  }
+}
+
+// Returns the first matching rule for a given column + value (rules applied in order)
+function getMatchingRule(
+  col: string,
+  value: unknown,
+  rules: ColumnFormattingRule[],
+): ColumnFormattingRule | null {
+  for (const rule of rules) {
+    if (rule.column === col && evalRule(rule, value)) return rule;
+  }
+  return null;
+}
+
+// ── Icon renderer ─────────────────────────────────────────────────────────────
+
+function FormattingIcon({ icon, color }: { icon: string; color: string }) {
+  const cls = 'h-3 w-3 flex-shrink-0';
+  const style = { color };
+  switch (icon) {
+    case 'arrow-up':   return <ArrowUp    className={cls} style={style} />;
+    case 'arrow-down': return <ArrowDown  className={cls} style={style} />;
+    case 'check':      return <Check      className={cls} style={style} />;
+    case 'x':          return <X          className={cls} style={style} />;
+    case 'warning':    return <AlertTriangle className={cls} style={style} />;
+    default:           return null;
+  }
+}
+
+// ── Cell renderer — applies conditional formatting ────────────────────────────
+
+interface FormattedCellProps {
+  value: unknown;
+  col: string;
+  rules: ColumnFormattingRule[];
+  colMax: number;   // column max for 'bar' style
+  isLight: boolean;
+  theme: ThemeTokens;
+}
+
+function FormattedCell({ value, col, rules, colMax, isLight, theme }: FormattedCellProps) {
+  const rule    = getMatchingRule(col, value, rules);
+  const display = formatCellValue(value);
+
+  if (!rule) {
+    return <span className={isLight ? 'text-gray-700' : theme.textSecondary}>{display}</span>;
+  }
+
+  const { style, color } = rule;
+
+  if (style === 'bg-color') {
+    return (
+      <span
+        className="inline-block rounded px-1.5 py-0.5 text-xs font-medium"
+        style={{ background: color + '28', color, border: `1px solid ${color}40` }}
+      >
+        {display}
+      </span>
+    );
+  }
+
+  if (style === 'text-color') {
+    return <span className="text-xs font-semibold" style={{ color }}>{display}</span>;
+  }
+
+  if (style === 'badge') {
+    return (
+      <span
+        className="inline-block rounded-full px-2 py-0.5 text-[11px] font-bold"
+        style={{ background: color, color: '#fff' }}
+      >
+        {display}
+      </span>
+    );
+  }
+
+  if (style === 'bar') {
+    const pct = colMax > 0 && typeof value === 'number'
+      ? Math.max(0, Math.min(100, (value / colMax) * 100))
+      : 0;
+    return (
+      <div className="flex items-center gap-2 min-w-[80px]">
+        <div className="flex-1 rounded-full overflow-hidden" style={{ height: 6, background: color + '25' }}>
+          <div
+            className="h-full rounded-full transition-all duration-300"
+            style={{ width: `${pct}%`, background: color }}
+          />
+        </div>
+        <span className="flex-shrink-0 text-xs tabular-nums" style={{ color, minWidth: 32 }}>
+          {display}
+        </span>
+      </div>
+    );
+  }
+
+  if (style === 'icon') {
+    return (
+      <span className="flex items-center gap-1">
+        {rule.icon && <FormattingIcon icon={rule.icon} color={color} />}
+        <span className="text-xs" style={{ color }}>{display}</span>
+      </span>
+    );
+  }
+
+  return <span>{display}</span>;
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
+
 interface DataTableWidgetProps {
   columns: string[];
   rows: Record<string, unknown>[];
   theme: ThemeTokens;
   pageSize?: number;
+  columnFormatting?: ColumnFormattingRule[];
 }
 
-export default function DataTableWidget({ columns, rows, theme, pageSize = 5 }: DataTableWidgetProps) {
-  const [page, setPage]           = useState(0);
-  const [sortCol, setSortCol]     = useState<string | null>(null);
-  const [sortDir, setSortDir]     = useState<'asc' | 'desc'>('asc');
-  const [filter,  setFilter]      = useState('');
+export default function DataTableWidget({
+  columns, rows, theme, pageSize = 5, columnFormatting = [],
+}: DataTableWidgetProps) {
+  const [page,    setPage]    = useState(0);
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [filter,  setFilter]  = useState('');
 
-  // Client-side full-text filter across all column values
+  // Client-side full-text filter
   const filterLower = filter.toLowerCase();
   const filtered = filter.trim()
     ? rows.filter((row) =>
@@ -63,30 +192,41 @@ export default function DataTableWidget({ columns, rows, theme, pageSize = 5 }: 
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const pageRows   = sorted.slice(page * pageSize, (page + 1) * pageSize);
 
+  // Pre-compute per-column max for 'bar' style normalisation
+  const colMaxMap = new Map<string, number>();
+  if (columnFormatting.some((r) => r.style === 'bar')) {
+    for (const col of columns) {
+      if (columnFormatting.some((r) => r.column === col && r.style === 'bar')) {
+        const vals = rows.map((r) => r[col]).filter((v) => typeof v === 'number') as number[];
+        colMaxMap.set(col, vals.length ? Math.max(...vals) : 1);
+      }
+    }
+  }
+
   const toggleSort = (col: string) => {
     if (sortCol === col) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     else { setSortCol(col); setSortDir('asc'); }
     setPage(0);
   };
 
-  const handleFilterChange = (val: string) => {
-    setFilter(val);
-    setPage(0);
-  };
+  const handleFilterChange = (val: string) => { setFilter(val); setPage(0); };
 
-  const isLight = theme.id === 'light-clean';
+  const isLight  = theme.id === 'light-clean';
   const headerCls = isLight
     ? 'bg-gray-50 text-gray-500 border-b border-gray-200 text-xs uppercase tracking-wide'
     : `bg-white/5 ${theme.textMuted} border-b ${theme.divider} text-xs uppercase tracking-wide`;
-  const rowCls = isLight
-    ? 'border-b border-gray-100 hover:bg-gray-50 text-gray-700 text-xs'
-    : `border-b ${theme.divider} hover:bg-white/5 ${theme.textSecondary} text-xs`;
+  const rowBaseCls = isLight
+    ? 'border-b border-gray-100 hover:bg-gray-50 text-xs'
+    : `border-b ${theme.divider} hover:bg-white/5 text-xs`;
+
+  // Determine which columns have any active formatting rule (for header badge)
+  const formattedCols = new Set(columnFormatting.map((r) => r.column));
 
   return (
     <div className="flex h-full flex-col">
-      {/* Search bar — only shown when there are enough rows to benefit from filtering */}
+      {/* Search bar */}
       {rows.length > pageSize && (
-        <div className={`relative flex-shrink-0 border-b px-2 py-1.5 ${isLight ? 'border-gray-100' : `border-white/[0.07]`}`}>
+        <div className={`relative flex-shrink-0 border-b px-2 py-1.5 ${isLight ? 'border-gray-100' : 'border-white/[0.07]'}`}>
           <Search className={`absolute left-4 top-1/2 h-3 w-3 -translate-y-1/2 ${theme.textMuted} opacity-60`} />
           <input
             type="text"
@@ -122,6 +262,14 @@ export default function DataTableWidget({ columns, rows, theme, pageSize = 5 }: 
                 >
                   <div className="flex items-center gap-1">
                     {col}
+                    {/* Dot indicator for formatted columns */}
+                    {formattedCols.has(col) && (
+                      <span
+                        className="h-1.5 w-1.5 rounded-full flex-shrink-0"
+                        style={{ background: columnFormatting.find((r) => r.column === col)?.color ?? '#3B82F6' }}
+                        title="Conditional formatting applied"
+                      />
+                    )}
                     {sortCol === col
                       ? sortDir === 'asc'
                         ? <ChevronUp className="h-3 w-3" />
@@ -135,14 +283,32 @@ export default function DataTableWidget({ columns, rows, theme, pageSize = 5 }: 
           </thead>
           <tbody>
             {pageRows.map((row, i) => (
-              <tr key={i} className={rowCls}>
+              <tr key={i} className={rowBaseCls}>
                 {columns.map((col) => (
-                  <td key={col} className="px-3 py-1.5 max-w-[200px] truncate whitespace-nowrap" title={String(row[col] ?? '')}>
-                    {formatCellValue(row[col])}
+                  <td
+                    key={col}
+                    className="px-3 py-1.5 max-w-[220px] truncate whitespace-nowrap"
+                    title={String(row[col] ?? '')}
+                  >
+                    <FormattedCell
+                      value={row[col]}
+                      col={col}
+                      rules={columnFormatting}
+                      colMax={colMaxMap.get(col) ?? 1}
+                      isLight={isLight}
+                      theme={theme}
+                    />
                   </td>
                 ))}
               </tr>
             ))}
+            {pageRows.length === 0 && (
+              <tr>
+                <td colSpan={columns.length} className={`py-8 text-center text-xs ${theme.textMuted}`}>
+                  No rows match the current filter
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -164,6 +330,7 @@ export default function DataTableWidget({ columns, rows, theme, pageSize = 5 }: 
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
+            <span className={`text-xs ${theme.textMuted} opacity-50`}>{page + 1}/{totalPages}</span>
             <button
               disabled={page >= totalPages - 1}
               onClick={() => setPage((p) => p + 1)}

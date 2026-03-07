@@ -9,9 +9,10 @@ interface PieChartWidgetProps {
   slices: PieSlice[];
   style: WidgetStyle;
   theme: ThemeTokens;
+  onDrillDown?: (name: string, value: number) => void;
 }
 
-export default function PieChartWidget({ slices, style, theme }: PieChartWidgetProps) {
+export default function PieChartWidget({ slices, style, theme, onDrillDown }: PieChartWidgetProps) {
   const t       = buildEChartsTheme(theme);
   const isLight = theme.id === 'light-clean';
 
@@ -69,6 +70,9 @@ export default function PieChartWidget({ slices, style, theme }: PieChartWidgetP
       option={option}
       style={{ height: '100%', width: '100%' }}
       opts={{ renderer: 'canvas' }}
+      onEvents={onDrillDown ? {
+        click: (p: { name: string; value: number }) => onDrillDown(p.name, p.value),
+      } : undefined}
     />
   );
 }

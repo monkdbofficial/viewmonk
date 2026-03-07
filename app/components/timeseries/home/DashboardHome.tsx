@@ -3,6 +3,7 @@ import { useState, useRef } from 'react';
 import {
   Plus, LayoutDashboard, Layers, TrendingUp,
   Sparkles, Search, SortAsc, Trash2, ChevronDown, X, Upload, AlertTriangle,
+  Star, Tag,
 } from 'lucide-react';
 import DashboardCard from './DashboardCard';
 import TemplateGallery from './TemplateGallery';
@@ -136,16 +137,25 @@ function NewDashboardDialog({ onClose, onCreate }: NewDashboardDialogProps) {
 interface EditDashboardDialogProps {
   config: DashboardConfig;
   onClose: () => void;
-  onSave: (updates: Pick<DashboardConfig, 'name' | 'description' | 'themeId'>) => void;
+  onSave: (updates: Pick<DashboardConfig, 'name' | 'description' | 'themeId' | 'tags'>) => void;
 }
 
 function EditDashboardDialog({ config, onClose, onSave }: EditDashboardDialogProps) {
   const [name,        setName]        = useState(config.name);
   const [description, setDescription] = useState(config.description ?? '');
   const [themeId,     setThemeId]     = useState<DashboardThemeId>(config.themeId);
+  const [tagInput,    setTagInput]    = useState('');
+  const [tags,        setTags]        = useState<string[]>(config.tags ?? []);
+
+  const addTag = () => {
+    const t = tagInput.trim().toLowerCase();
+    if (t && !tags.includes(t)) setTags((prev) => [...prev, t]);
+    setTagInput('');
+  };
+  const removeTag = (t: string) => setTags((prev) => prev.filter((x) => x !== t));
 
   const handleSave = () => {
-    if (name.trim()) onSave({ name: name.trim(), description, themeId });
+    if (name.trim()) onSave({ name: name.trim(), description, themeId, tags });
   };
 
   return (
@@ -190,6 +200,42 @@ function EditDashboardDialog({ config, onClose, onSave }: EditDashboardDialogPro
               className="w-full resize-none rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 dark:border-white/[0.10] dark:bg-white/[0.04] dark:text-white dark:focus:border-blue-500/60"
               placeholder="What is this dashboard for?"
             />
+          </div>
+
+          {/* Tags */}
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white/60">
+              Tags <span className="font-normal text-gray-400 dark:text-white/25">(optional)</span>
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
+                placeholder="e.g. production, finance"
+                className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 dark:border-white/[0.10] dark:bg-white/[0.04] dark:text-white dark:focus:border-blue-500/60"
+              />
+              <button
+                onClick={addTag}
+                disabled={!tagInput.trim()}
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-40 dark:border-white/[0.10] dark:bg-white/[0.04] dark:text-white/55"
+              >
+                Add
+              </button>
+            </div>
+            {tags.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {tags.map((t) => (
+                  <span key={t} className="flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-400">
+                    {t}
+                    <button onClick={() => removeTag(t)} className="ml-0.5 rounded-full hover:text-red-500">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>
@@ -276,8 +322,8 @@ function SortDropdown({ value, onChange }: { value: SortMode; onChange: (m: Sort
 // ── DashboardHome ─────────────────────────────────────────────────────────────
 
 export interface DashboardHomeProps {
-  onOpenDashboard:   (id: string) => void;
-  onEditDashboard:   (id: string) => void;
+  onOpenDashboard:   (id: string, name?: string) => void;
+  onEditDashboard:   (id: string, name?: string) => void;
   onPreviewTemplate: (template: TemplateDefinition) => void;
   onUseTemplate:     (template: TemplateDefinition) => void;
   initialTab?:       HomeTab;
@@ -298,20 +344,31 @@ export default function DashboardHome({
   const [search,          setSearch]          = useState('');
   const [sortMode,        setSortMode]        = useState<SortMode>('newest');
   const [importError,     setImportError]     = useState<string | null>(null);
+  const [showStarredOnly, setShowStarredOnly] = useState(false);
+  const [selectedTag,     setSelectedTag]     = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+
+  // Collect all unique tags across dashboards
+  const allTags = Array.from(new Set(dashboards.flatMap((d) => d.tags ?? []).filter(Boolean))).sort();
 
   const editingConfig = editDetailsId ? dashboards.find((d) => d.id === editDetailsId) ?? null : null;
 
-  const handleSaveDetails = (updates: Pick<DashboardConfig, 'name' | 'description' | 'themeId'>) => {
+  const handleSaveDetails = (updates: Pick<DashboardConfig, 'name' | 'description' | 'themeId' | 'tags'>) => {
     if (!editingConfig) return;
     save({ ...editingConfig, ...updates, updatedAt: new Date().toISOString() });
     setEditDetailsId(null);
   };
 
+  const handleToggleStar = (id: string) => {
+    const config = dashboards.find((d) => d.id === id);
+    if (!config) return;
+    save({ ...config, starred: !config.starred });
+  };
+
   const handleCreate = (name: string, themeId: DashboardThemeId, description: string) => {
     const d = create(name, themeId, description);
     setShowNewDialog(false);
-    onEditDashboard(d.id);
+    onEditDashboard(d.id, d.name);
   };
 
   const handleDelete = (id: string) => {
@@ -369,14 +426,23 @@ export default function DashboardHome({
 
   const searchLower = search.trim().toLowerCase();
   const filteredDashboards = sortDashboards(
-    searchLower
-      ? dashboards.filter((d) =>
-          d.name.toLowerCase().includes(searchLower) ||
-          (d.description ?? '').toLowerCase().includes(searchLower),
-        )
-      : dashboards,
+    dashboards.filter((d) => {
+      if (showStarredOnly && !d.starred) return false;
+      if (selectedTag && !(d.tags ?? []).includes(selectedTag)) return false;
+      if (!searchLower) return true;
+      return (
+        d.name.toLowerCase().includes(searchLower) ||
+        (d.description ?? '').toLowerCase().includes(searchLower) ||
+        (d.tags ?? []).some((t) => t.toLowerCase().includes(searchLower))
+      );
+    }),
     sortMode,
   );
+  // Starred dashboards float to the top within any sort order
+  const sortedWithStarred = [
+    ...filteredDashboards.filter((d) => d.starred),
+    ...filteredDashboards.filter((d) => !d.starred),
+  ];
 
   const totalWidgets = dashboards.reduce((s, d) => s + d.widgets.length, 0);
 
@@ -532,37 +598,78 @@ export default function DashboardHome({
             </div>
           ) : (
             <>
-              {/* Search + sort bar */}
-              <div className="mb-6 flex flex-wrap items-center gap-3">
+              {/* Search + sort + filter bar */}
+              <div className="mb-4 flex flex-wrap items-center gap-3">
                 <div className="relative min-w-60 flex-1 max-w-md">
                   <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-white/30" />
                   <input
                     type="text"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search dashboards…"
+                    placeholder="Search dashboards or tags…"
                     className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-4 text-sm text-gray-800 placeholder-gray-400 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 dark:border-white/[0.10] dark:bg-white/[0.04] dark:text-white dark:placeholder-white/28 dark:focus:border-blue-500/50"
                   />
                 </div>
+                {/* Starred filter toggle */}
+                <button
+                  onClick={() => setShowStarredOnly((v) => !v)}
+                  className={`flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-medium transition-colors ${
+                    showStarredOnly
+                      ? 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-400'
+                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-white/[0.10] dark:bg-white/[0.04] dark:text-white/55 dark:hover:border-white/[0.20]'
+                  }`}
+                  title={showStarredOnly ? 'Show all dashboards' : 'Show starred only'}
+                >
+                  <Star className={`h-4 w-4 ${showStarredOnly ? 'fill-amber-400 text-amber-400' : ''}`} />
+                  Starred
+                </button>
                 <SortDropdown value={sortMode} onChange={setSortMode} />
-                {search.trim() && (
+                {(search.trim() || showStarredOnly || selectedTag) && (
                   <span className="text-sm text-gray-400 dark:text-white/35">
-                    {filteredDashboards.length} result{filteredDashboards.length !== 1 ? 's' : ''}
+                    {sortedWithStarred.length} result{sortedWithStarred.length !== 1 ? 's' : ''}
                   </span>
                 )}
               </div>
 
+              {/* Tag filter chips */}
+              {allTags.length > 0 && (
+                <div className="mb-5 flex flex-wrap gap-2">
+                  {allTags.map((tag) => (
+                    <button
+                      key={tag}
+                      onClick={() => setSelectedTag((t) => t === tag ? null : tag)}
+                      className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                        selectedTag === tag
+                          ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-400'
+                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 dark:border-white/[0.10] dark:bg-white/[0.04] dark:text-white/40 dark:hover:border-white/[0.20]'
+                      }`}
+                    >
+                      <Tag className="h-3 w-3" />
+                      {tag}
+                    </button>
+                  ))}
+                  {selectedTag && (
+                    <button
+                      onClick={() => setSelectedTag(null)}
+                      className="flex items-center gap-1 rounded-full px-2 py-1 text-xs text-gray-400 hover:text-gray-600 dark:text-white/30 dark:hover:text-white/60"
+                    >
+                      <X className="h-3 w-3" /> clear
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Cards */}
-              {filteredDashboards.length === 0 ? (
+              {sortedWithStarred.length === 0 ? (
                 <div className="py-16 text-center">
                   <p className="text-base text-gray-500 dark:text-white/35">
-                    No dashboards match &ldquo;{search}&rdquo;
+                    No dashboards match your filters
                   </p>
                   <button
-                    onClick={() => setSearch('')}
+                    onClick={() => { setSearch(''); setShowStarredOnly(false); setSelectedTag(null); }}
                     className="mt-3 text-sm text-blue-600 hover:underline dark:text-blue-400"
                   >
-                    Clear search
+                    Clear filters
                   </button>
                 </div>
               ) : (
@@ -570,7 +677,7 @@ export default function DashboardHome({
                   className="grid gap-5"
                   style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}
                 >
-                  {filteredDashboards.map((config) => (
+                  {sortedWithStarred.map((config) => (
                     <div key={config.id} className="relative">
                       {confirmDeleteId === config.id && (
                         <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 rounded-xl bg-black/80 backdrop-blur-sm">
@@ -596,12 +703,13 @@ export default function DashboardHome({
                       )}
                       <DashboardCard
                         config={config}
-                        onOpen={() => onOpenDashboard(config.id)}
-                        onEdit={() => onEditDashboard(config.id)}
+                        onOpen={() => onOpenDashboard(config.id, config.name)}
+                        onEdit={() => onEditDashboard(config.id, config.name)}
                         onEditDetails={() => setEditDetailsId(config.id)}
                         onDuplicate={() => duplicate(config.id)}
                         onDelete={() => handleDelete(config.id)}
                         onExport={() => handleExportDashboard(config)}
+                        onToggleStar={() => handleToggleStar(config.id)}
                       />
                     </div>
                   ))}

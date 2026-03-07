@@ -18,7 +18,13 @@ export type WidgetType =
   | 'funnel-chart'
   | 'treemap'
   | 'candlestick'
-  | 'progress-kpi';
+  | 'progress-kpi'
+  // ── Content widgets (no data source) ──
+  | 'text-widget'
+  | 'divider';
+
+/** Widget types that render content directly and never fetch SQL data. */
+export const CONTENT_WIDGET_TYPES: WidgetType[] = ['text-widget', 'divider'];
 
 export type AggregationType = 'AVG' | 'MAX' | 'MIN' | 'SUM' | 'COUNT' | 'COUNT_DISTINCT' | 'STDDEV' | 'VARIANCE';
 
@@ -66,6 +72,11 @@ export interface DataSourceConfig {
   parentCol?: string;
   // additional WHERE conditions (appended to SQL filter)
   whereClause?: string;
+  // time-range comparison — overlay previous period as a dashed series
+  compareWith?: 'previous-period' | 'previous-week' | 'previous-month';
+  // result caching
+  cacheEnabled?: boolean;
+  cacheTtl?: number; // ms — 30000 | 60000 | 300000 | 900000
 }
 
 // ── Widget Threshold ─────────────────────────────────────────────────────────
@@ -75,6 +86,40 @@ export interface WidgetThreshold {
   value: number;
   color: string;   // hex e.g. '#EF4444'
   label?: string;  // optional display label
+  /** When true, a breach fires an in-app alert toast */
+  alertEnabled?: boolean;
+  /** 'above' = alert when value ≥ threshold (default); 'below' = alert when value ≤ threshold */
+  alertDirection?: 'above' | 'below';
+}
+
+// ── Column Formatting Rule (DataTable conditional formatting) ─────────────────
+
+export type ColumnFormattingStyle = 'bg-color' | 'text-color' | 'badge' | 'bar' | 'icon';
+export type ColumnFormattingOperator = 'gt' | 'gte' | 'lt' | 'lte' | 'eq' | 'between';
+export type ColumnFormattingIcon = 'arrow-up' | 'arrow-down' | 'check' | 'x' | 'warning';
+
+export interface ColumnFormattingRule {
+  id: string;
+  column: string;
+  operator: ColumnFormattingOperator;
+  value: number;
+  value2?: number;       // used only for 'between'
+  style: ColumnFormattingStyle;
+  color: string;         // hex — background, text, badge, or bar fill
+  icon?: ColumnFormattingIcon; // used only for 'icon' style
+}
+
+// ── Chart Annotation (vertical event marker on time-series charts) ───────────
+
+export interface ChartAnnotation {
+  id: string;
+  /** ISO timestamp or category string — matched to x-axis position */
+  timestamp: string;
+  /** Short label shown above the marker line */
+  label: string;
+  color: string;    // hex
+  /** 'line' = full-height vertical marker; 'point' = single dot on first series */
+  type: 'line' | 'point';
 }
 
 // ── Widget Style ──────────────────────────────────────────────────────────────
@@ -96,6 +141,19 @@ export interface WidgetStyle {
   showDataLabels?: boolean;       // show values on bars / pie slices
   cardStyle?: 'default' | 'glass' | 'filled' | 'borderless'; // card background style
   yAxisScale?: 'linear' | 'log';  // Y-axis scale type for line/area/bar charts
+  // anomaly detection overlay (line / area charts)
+  anomalyDetection?: {
+    enabled: boolean;
+    /** σ multiplier — lower = more sensitive. 1 = tight, 2 = standard, 3 = conservative */
+    sensitivity: number;
+    /** Shade the normal band (mean ± Nσ) on the chart */
+    showBands: boolean;
+  };
+  // text-widget style
+  textAlign?: 'left' | 'center' | 'right';
+  fontSize?: 'sm' | 'base' | 'lg' | 'xl';
+  // data-table conditional formatting
+  columnFormatting?: ColumnFormattingRule[];
 }
 
 // ── Widget Config (stored in dashboard) ──────────────────────────────────────
@@ -107,6 +165,12 @@ export interface WidgetConfig {
   position: GridPosition;
   dataSource: DataSourceConfig;
   style: WidgetStyle;
+  /** Markdown content for text-widget type */
+  content?: string;
+  /** When true, widget cannot be moved or resized in the builder */
+  locked?: boolean;
+  /** Event/annotation markers rendered as vertical lines on time-series charts */
+  annotations?: ChartAnnotation[];
 }
 
 // ── Dashboard Theme ───────────────────────────────────────────────────────────
@@ -121,6 +185,32 @@ export type DashboardThemeId =
 
 // ── Dashboard Config (persisted to localStorage / MonkDB) ────────────────────
 
+export interface DashboardVariable {
+  id: string;
+  name: string;          // used in SQL as {{name}}
+  label: string;         // display label in the variable bar
+  type: 'textbox' | 'dropdown' | 'constant';
+  defaultValue: string;
+  options?: string[];    // for dropdown: static list
+  query?: string;        // for dropdown: SQL to populate options dynamically
+}
+
+// ── Calculated Metric ─────────────────────────────────────────────────────────
+
+/**
+ * A dashboard-level computed field. The formula is a safe arithmetic expression
+ * that may reference dashboard variable values as {{var_name}}.
+ * The result is injected into widget SQL as {{name}} — same as a variable.
+ */
+export interface CalculatedMetric {
+  id: string;
+  name: string;       // SQL injection key: {{name}}
+  label: string;      // display label in the variable bar
+  formula: string;    // e.g. "{{revenue}} - {{cost}}" or "{{price}} * 1.15"
+  unit?: string;      // optional suffix shown next to the computed value
+  decimals?: number;  // decimal places for display (default 2)
+}
+
 export interface DashboardConfig {
   id: string;
   name: string;
@@ -131,6 +221,14 @@ export interface DashboardConfig {
   updatedAt: string;    // ISO string
   templateId?: string;  // which template it was created from (if any)
   widgets: WidgetConfig[];
+  /** User-starred (pinned to top of home screen) */
+  starred?: boolean;
+  /** Freeform tags for filtering and organisation */
+  tags?: string[];
+  /** Dashboard-level variables injected into widget SQL as {{name}} */
+  variables?: DashboardVariable[];
+  /** Dashboard-level computed fields derived from variable values */
+  calculatedMetrics?: CalculatedMetric[];
 }
 
 // ── Time Range ────────────────────────────────────────────────────────────────

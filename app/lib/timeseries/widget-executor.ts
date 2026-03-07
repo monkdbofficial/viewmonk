@@ -232,6 +232,7 @@ function buildSQL(
   ds: DataSourceConfig,
   timeRange: TimeRange,
   activeFilter: ActiveFilter | null,
+  variables?: Record<string, string>,
 ): string {
   const from = toSQLTimestamp(timeRange.from);
   const to   = toSQLTimestamp(timeRange.to);
@@ -259,7 +260,7 @@ function buildSQL(
       ? String(ds.kpiTarget)
       : `MAX("${ds.metricCol}")`;
 
-    return ds.customSql
+    let customSqlResult = ds.customSql
       .replace(/\{\{from\}\}/g,           from)
       .replace(/\{\{to\}\}/g,             to)
       .replace(/\{\{interval\}\}/g,       interval)
@@ -280,6 +281,13 @@ function buildSQL(
       .replace(/\{\{parentCol\}\}/g,      ds.parentCol ?? '')
       .replace(/\{\{whereClause\}\}/g,    ds.whereClause ?? '')
       .replace(/\{\{filterClause\}\}/g,   customFilterClause);
+    // Apply dashboard variables last — user-defined {{varName}} → current value
+    if (variables) {
+      for (const [key, val] of Object.entries(variables)) {
+        customSqlResult = customSqlResult.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), val);
+      }
+    }
+    return customSqlResult;
   }
 
   const interval       = getAutoInterval(timeRange.from, timeRange.to);
@@ -364,6 +372,13 @@ function buildSQL(
   if (ds.aggregation === 'COUNT_DISTINCT') {
     // COUNT(DISTINCT("metricCol") AS ... → COUNT(DISTINCT("metricCol")) AS ...
     sql = sql.replace(/COUNT\(DISTINCT\("([^"]+)"\)\s+AS/g, 'COUNT(DISTINCT("$1")) AS');
+  }
+
+  // Apply dashboard variables last — user-defined {{varName}} → current value
+  if (variables) {
+    for (const [key, val] of Object.entries(variables)) {
+      sql = sql.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), val);
+    }
   }
 
   return sql.replace(/\n\s+\n/g, '\n').trim();
@@ -593,8 +608,9 @@ export async function executeWidget(
   timeRange: TimeRange,
   activeFilter: ActiveFilter | null,
   queryFn: (sql: string) => Promise<{ cols: string[]; rows: unknown[][] }>,
+  variables?: Record<string, string>,
 ): Promise<ExecutorResult> {
-  const sql = buildSQL(widget.type, widget.dataSource, timeRange, activeFilter);
+  const sql = buildSQL(widget.type, widget.dataSource, timeRange, activeFilter, variables);
   const result = await queryFn(sql);
   return transformResult(widget.type, result.cols, result.rows, widget.dataSource);
 }

@@ -6,6 +6,11 @@ import {
   Save, Eye, ArrowLeft, GripVertical, X,
   Check, ChevronDown, Layers, MousePointer,
   Undo2, Redo2, Copy, AlignLeft, AlertCircle,
+  CheckCircle2, Database, Columns3, Lock, Unlock,
+  Activity, TrendingUp, AreaChart, BarChart2, PieChart,
+  Gauge, Table2, ScatterChart, Filter, LayoutGrid,
+  CandlestickChart, BarChart, Type, Minus, Variable,
+  Plus, Trash2,
 } from 'lucide-react';
 import WidgetPalette from './WidgetPalette';
 import WidgetConfigDrawer from './WidgetConfigDrawer';
@@ -15,7 +20,9 @@ import { getDefaultTimeRange } from '@/app/lib/timeseries/time-range';
 import type {
   WidgetConfig, DashboardConfig, WidgetType,
   DashboardThemeId, GridPosition, DataSourceConfig, WidgetStyle, TimeRange,
+  DashboardVariable, CalculatedMetric,
 } from '@/app/lib/timeseries/types';
+import { evalCalcMetric } from '@/app/lib/timeseries/calc-metrics';
 import { ROW_HEIGHT, COL_COUNT, GAP } from '@/app/lib/timeseries/constants';
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -24,20 +31,44 @@ const DRAG_TYPE = 'CANVAS_WIDGET';
 
 // ── Widget metadata ───────────────────────────────────────────────────────────
 
-const WIDGET_LABELS: Record<WidgetType, { emoji: string; label: string; color: string }> = {
-  'stat-card':    { emoji: '📊', label: 'Stat Card',    color: '#3B82F6' },
-  'line-chart':   { emoji: '📈', label: 'Line Chart',   color: '#06B6D4' },
-  'area-chart':   { emoji: '🏔', label: 'Area Chart',   color: '#6366F1' },
-  'bar-chart':    { emoji: '📉', label: 'Bar Chart',    color: '#8B5CF6' },
-  'pie-chart':    { emoji: '🥧', label: 'Pie Chart',    color: '#EC4899' },
-  'gauge':        { emoji: '🎯', label: 'Gauge',        color: '#F59E0B' },
-  'heatmap':      { emoji: '🗺', label: 'Heatmap',     color: '#10B981' },
-  'data-table':   { emoji: '📋', label: 'Data Table',   color: '#6B7280' },
-  'scatter-chart':{ emoji: '⬤',  label: 'Scatter Plot', color: '#8B5CF6' },
-  'funnel-chart': { emoji: '▽',  label: 'Funnel Chart', color: '#F97316' },
-  'treemap':      { emoji: '▦',  label: 'Treemap',      color: '#14B8A6' },
-  'candlestick':  { emoji: '🕯', label: 'Candlestick',  color: '#10B981' },
-  'progress-kpi': { emoji: '⬛', label: 'Progress KPI', color: '#3B82F6' },
+type WidgetIcon = React.ComponentType<{ className?: string }>;
+
+const WIDGET_LABELS: Record<WidgetType, { Icon: WidgetIcon; label: string; color: string }> = {
+  'stat-card':    { Icon: Activity,         label: 'Stat Card',       color: '#3B82F6' },
+  'line-chart':   { Icon: TrendingUp,       label: 'Line Chart',      color: '#06B6D4' },
+  'area-chart':   { Icon: AreaChart,        label: 'Area Chart',      color: '#6366F1' },
+  'bar-chart':    { Icon: BarChart2,        label: 'Bar Chart',       color: '#8B5CF6' },
+  'pie-chart':    { Icon: PieChart,         label: 'Pie Chart',       color: '#EC4899' },
+  'gauge':        { Icon: Gauge,            label: 'Gauge',           color: '#F59E0B' },
+  'heatmap':      { Icon: Layers,           label: 'Heatmap',         color: '#10B981' },
+  'data-table':   { Icon: Table2,           label: 'Data Table',      color: '#6B7280' },
+  'scatter-chart':{ Icon: ScatterChart,     label: 'Scatter Plot',    color: '#8B5CF6' },
+  'funnel-chart': { Icon: Filter,           label: 'Funnel Chart',    color: '#F97316' },
+  'treemap':      { Icon: LayoutGrid,       label: 'Treemap',         color: '#14B8A6' },
+  'candlestick':  { Icon: CandlestickChart, label: 'Candlestick',     color: '#10B981' },
+  'progress-kpi': { Icon: BarChart,         label: 'Progress KPI',    color: '#3B82F6' },
+  'text-widget':  { Icon: Type,             label: 'Text / Note',     color: '#64748B' },
+  'divider':      { Icon: Minus,            label: 'Section Divider', color: '#94A3B8' },
+};
+
+// ── Per-widget-type guidance shown in unconfigured placeholder ────────────────
+
+const WIDGET_HINTS: Record<WidgetType, { desc: string; needs: string[] }> = {
+  'stat-card':    { desc: 'Displays a single aggregated value',         needs: ['Numeric metric column'] },
+  'line-chart':   { desc: 'Plots a metric as a trend over time',        needs: ['Timestamp column', 'Numeric metric'] },
+  'area-chart':   { desc: 'Filled area trend over time',                needs: ['Timestamp column', 'Numeric metric'] },
+  'bar-chart':    { desc: 'Compares values across time or groups',      needs: ['Timestamp / Group column', 'Numeric metric'] },
+  'pie-chart':    { desc: 'Proportion of each category in the whole',   needs: ['Group column', 'Numeric metric'] },
+  'gauge':        { desc: 'Single value shown against a target range',  needs: ['Numeric metric column'] },
+  'heatmap':      { desc: 'Colour intensity across time buckets',       needs: ['Timestamp column', 'Numeric metric'] },
+  'data-table':   { desc: 'Raw rows from your table',                   needs: ['Any columns'] },
+  'scatter-chart':{ desc: 'Correlation between two numeric metrics',    needs: ['X numeric column', 'Y numeric column'] },
+  'funnel-chart': { desc: 'Stage-by-stage conversion or drop-off',      needs: ['Category column', 'Numeric metric'] },
+  'treemap':      { desc: 'Hierarchical part-of-whole breakdown',       needs: ['Label column', 'Numeric metric'] },
+  'candlestick':  { desc: 'Open / High / Low / Close financial data',   needs: ['Timestamp column', 'Open, High, Low, Close cols'] },
+  'progress-kpi': { desc: 'Progress bar toward a defined KPI target',   needs: ['Numeric metric column', 'KPI target value'] },
+  'text-widget':  { desc: 'Markdown text — headers, bullets, bold',     needs: [] },
+  'divider':      { desc: 'Visual separator between dashboard sections', needs: [] },
 };
 
 const DEFAULT_SIZES: Record<WidgetType, { w: number; h: number }> = {
@@ -54,6 +85,8 @@ const DEFAULT_SIZES: Record<WidgetType, { w: number; h: number }> = {
   'treemap':      { w: 6, h: 2 },
   'candlestick':  { w: 8, h: 2 },
   'progress-kpi': { w: 4, h: 2 },
+  'text-widget':  { w: 6, h: 2 },
+  'divider':      { w: 12, h: 1 },
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -132,13 +165,19 @@ function CanvasWidget({ widget, isSelected, canvasRef, themeId, previewTimeRange
   const [{ isDragging }, drag, dragPreview] = useDrag({
     type: DRAG_TYPE,
     item: () => ({ id: widget.id }),
+    canDrag: () => !widget.locked,
     collect: (m) => ({ isDragging: m.isDragging() }),
   });
 
   const { x, y, w, h } = widget.position;
   const colW = `calc((100% - ${(COL_COUNT - 1) * GAP}px) / ${COL_COUNT})`;
-  const meta = WIDGET_LABELS[widget.type];
-  const hasLiveData = !!(widget.dataSource.table && widget.dataSource.metricCol);
+  const meta     = WIDGET_LABELS[widget.type];
+  const hint     = WIDGET_HINTS[widget.type];
+  const isLocked = !!widget.locked;
+  // Content widgets (text, divider) never need a data source — always show live
+  const isContent  = widget.type === 'text-widget' || widget.type === 'divider';
+  const hasTable   = !!widget.dataSource?.table;
+  const hasLiveData = isContent || !!(widget.dataSource?.table && widget.dataSource?.metricCol);
 
   // Resize via mouse events on bottom-right corner handle
   const handleResizeMouseDown = (e: React.MouseEvent) => {
@@ -193,24 +232,35 @@ function CanvasWidget({ widget, isSelected, canvasRef, themeId, previewTimeRange
               : 'border-dashed border-gray-300 bg-white hover:border-gray-400 hover:bg-gray-50 dark:border-gray-600/40 dark:bg-white/[0.02] dark:hover:border-gray-500/60 dark:hover:bg-white/[0.04]'
         }`}
       >
-        {/* Drag handle — always on top as overlay */}
-        <div
-          ref={drag as (el: HTMLDivElement | null) => void}
-          className="absolute left-2 top-2 z-20 cursor-grab rounded p-1 text-gray-400 opacity-0 transition-all group-hover:opacity-100 hover:bg-gray-200 hover:text-gray-700 active:cursor-grabbing dark:text-gray-500 dark:hover:bg-white/10 dark:hover:text-gray-300"
-          onClick={(e) => e.stopPropagation()}
-          title="Drag to move"
-        >
-          <GripVertical className="h-3.5 w-3.5" />
-        </div>
+        {/* Drag handle — hidden when locked */}
+        {!isLocked && (
+          <div
+            ref={drag as (el: HTMLDivElement | null) => void}
+            className="absolute left-2 top-2 z-20 cursor-grab rounded p-1 text-gray-400 opacity-0 transition-all group-hover:opacity-100 hover:bg-gray-200 hover:text-gray-700 active:cursor-grabbing dark:text-gray-500 dark:hover:bg-white/10 dark:hover:text-gray-300"
+            onClick={(e) => e.stopPropagation()}
+            title="Drag to move"
+          >
+            <GripVertical className="h-3.5 w-3.5" />
+          </div>
+        )}
 
-        {/* Delete button — always on top as overlay */}
-        <button
-          className="absolute right-2 top-2 z-20 rounded p-1 text-gray-400 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-50 hover:text-red-500 dark:text-gray-500 dark:hover:bg-red-500/10 dark:hover:text-red-400"
-          onClick={(e) => { e.stopPropagation(); onDelete(widget.id); }}
-          title="Delete widget"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+        {/* Lock badge — shown when locked */}
+        {isLocked && (
+          <div className="absolute left-2 top-2 z-20 rounded p-1 text-amber-400 dark:text-amber-500" title="Widget is locked">
+            <Lock className="h-3 w-3" />
+          </div>
+        )}
+
+        {/* Delete button — hidden when locked */}
+        {!isLocked && (
+          <button
+            className="absolute right-2 top-2 z-20 rounded p-1 text-gray-400 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-50 hover:text-red-500 dark:text-gray-500 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+            onClick={(e) => { e.stopPropagation(); onDelete(widget.id); }}
+            title="Delete widget"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
 
         {hasLiveData ? (
           /* ── Live chart preview ── */
@@ -225,22 +275,59 @@ function CanvasWidget({ widget, isSelected, canvasRef, themeId, previewTimeRange
           </div>
         ) : (
           /* ── Unconfigured placeholder ── */
-          <div className="flex h-full flex-col items-center justify-center gap-2 px-10 py-4">
-            <div
-              className="flex h-11 w-11 items-center justify-center rounded-xl"
-              style={{ background: `${meta.color}20` }}
-            >
-              <span className="text-xl leading-none">{meta.emoji}</span>
-            </div>
-            <div className="text-center">
+          <div className="flex h-full flex-col items-center justify-center gap-2.5 px-6 py-4">
+            {/* Icon + title + description */}
+            <div className="flex flex-col items-center gap-1">
+              <div
+                className="flex h-10 w-10 items-center justify-center rounded-xl"
+                style={{ background: `${meta.color}20` }}
+              >
+                <meta.Icon className="h-5 w-5" style={{ color: meta.color }} />
+              </div>
               <p className="max-w-full truncate text-sm font-semibold text-gray-700 dark:text-gray-200">
                 {widget.title || meta.label}
               </p>
-              <p className="mt-0.5 text-xs font-mono text-gray-400 dark:text-gray-600">{widget.type}</p>
+              <p className="text-center text-[11px] leading-tight text-gray-400 dark:text-gray-500">
+                {hint.desc}
+              </p>
             </div>
-            <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs text-amber-600 dark:bg-amber-500/10 dark:text-amber-400">
-              Click to configure
-            </span>
+
+            {/* Required data chips */}
+            <div className="flex flex-wrap justify-center gap-1">
+              {hint.needs.map((n) => (
+                <span
+                  key={n}
+                  className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] text-gray-500 dark:border-gray-700/60 dark:bg-gray-800/40 dark:text-gray-400"
+                >
+                  <span className="h-1 w-1 rounded-full bg-current opacity-60" />
+                  {n}
+                </span>
+              ))}
+            </div>
+
+            {/* Setup progress: step 1 → step 2 */}
+            <div className="flex items-center gap-1.5 text-[11px]">
+              {hasTable ? (
+                <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">
+                  <CheckCircle2 className="h-3 w-3" />
+                  {widget.dataSource.schema}.{widget.dataSource.table}
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 font-medium text-amber-600 dark:bg-amber-500/10 dark:text-amber-400">
+                  <Database className="h-3 w-3" />
+                  Select a table
+                </span>
+              )}
+              <span className="text-gray-300 dark:text-gray-700">›</span>
+              <span className={`flex items-center gap-1 rounded-full px-2.5 py-0.5 font-medium ${
+                hasTable
+                  ? 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400'
+                  : 'bg-gray-100 text-gray-400 dark:bg-gray-800/50 dark:text-gray-600'
+              }`}>
+                <Columns3 className="h-3 w-3" />
+                Set columns
+              </span>
+            </div>
           </div>
         )}
 
@@ -249,16 +336,18 @@ function CanvasWidget({ widget, isSelected, canvasRef, themeId, previewTimeRange
           {w}×{h} @ ({x},{y})
         </div>
 
-        {/* Resize handle — bottom-right corner */}
-        <div
-          className="absolute bottom-0 right-0 z-20 h-5 w-5 cursor-se-resize rounded-br-xl"
-          onMouseDown={handleResizeMouseDown}
-          title="Drag to resize"
-        >
-          <svg className="absolute bottom-1.5 right-1.5 text-gray-300 dark:text-gray-500" width="8" height="8" viewBox="0 0 8 8">
-            <path d="M7,1 L7,7 L1,7" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
-          </svg>
-        </div>
+        {/* Resize handle — bottom-right corner, hidden when locked */}
+        {!isLocked && (
+          <div
+            className="absolute bottom-0 right-0 z-20 h-5 w-5 cursor-se-resize rounded-br-xl"
+            onMouseDown={handleResizeMouseDown}
+            title="Drag to resize"
+          >
+            <svg className="absolute bottom-1.5 right-1.5 text-gray-300 dark:text-gray-500" width="8" height="8" viewBox="0 0 8 8">
+              <path d="M7,1 L7,7 L1,7" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+            </svg>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -406,6 +495,351 @@ function ThemePicker({ value, onChange }: ThemePickerProps) {
   );
 }
 
+// ── Variable Manager Dialog ───────────────────────────────────────────────────
+
+function makeVarId() { return `var_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`; }
+
+interface ManageVariablesDialogProps {
+  variables: DashboardVariable[];
+  onSave: (vars: DashboardVariable[]) => void;
+  onClose: () => void;
+}
+
+function ManageVariablesDialog({ variables: initial, onSave, onClose }: ManageVariablesDialogProps) {
+  const [vars, setVars] = useState<DashboardVariable[]>(initial);
+
+  const addVar = () => {
+    const newVar: DashboardVariable = {
+      id: makeVarId(), name: '', label: '', type: 'textbox', defaultValue: '',
+    };
+    setVars((v) => [...v, newVar]);
+  };
+
+  const updateVar = (id: string, patch: Partial<DashboardVariable>) => {
+    setVars((v) => v.map((vr) => vr.id === id ? { ...vr, ...patch } : vr));
+  };
+
+  const removeVar = (id: string) => {
+    setVars((v) => v.filter((vr) => vr.id !== id));
+  };
+
+  const handleSave = () => {
+    // Filter out vars with no name
+    onSave(vars.filter((v) => v.name.trim()));
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-2xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+        {/* Header */}
+        <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-4 dark:border-gray-800">
+          <Variable className="h-4 w-4 text-blue-500" />
+          <h2 className="flex-1 text-sm font-bold text-gray-900 dark:text-white">Dashboard Variables</h2>
+          <button onClick={onClose} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Info */}
+        <div className="border-b border-gray-100 bg-blue-50/60 px-5 py-2.5 dark:border-gray-800 dark:bg-blue-900/10">
+          <p className="text-xs text-blue-700 dark:text-blue-300/80">
+            Variables are referenced in SQL as <code className="rounded bg-blue-100 px-1 text-blue-800 dark:bg-blue-800/40 dark:text-blue-200">{'{{var_name}}'}</code> and can be changed at view time without editing the dashboard.
+          </p>
+        </div>
+
+        {/* Variable list */}
+        <div className="max-h-[400px] overflow-y-auto px-5 py-4 space-y-3">
+          {vars.length === 0 && (
+            <p className="text-center text-sm text-gray-400 py-6 dark:text-gray-600">No variables yet. Click below to add one.</p>
+          )}
+          {vars.map((v) => (
+            <div key={v.id} className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700/60 dark:bg-gray-800/50">
+              <div className="grid grid-cols-2 gap-2">
+                {/* Name */}
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-400">Variable Name</label>
+                  <input
+                    type="text"
+                    value={v.name}
+                    onChange={(e) => updateVar(v.id, { name: e.target.value.replace(/\s/g, '_') })}
+                    placeholder="e.g. region"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-800 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
+                  />
+                  <p className="mt-0.5 text-[10px] text-gray-400">Used as <code className="text-blue-500">{`{{${v.name || 'name'}}}`}</code> in SQL</p>
+                </div>
+                {/* Label */}
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-400">Display Label</label>
+                  <input
+                    type="text"
+                    value={v.label}
+                    onChange={(e) => updateVar(v.id, { label: e.target.value })}
+                    placeholder="e.g. Region"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-800 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
+                  />
+                </div>
+                {/* Type */}
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-400">Type</label>
+                  <select
+                    value={v.type}
+                    onChange={(e) => updateVar(v.id, { type: e.target.value as DashboardVariable['type'] })}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-800 outline-none focus:border-blue-400 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
+                  >
+                    <option value="textbox">Text Input</option>
+                    <option value="dropdown">Dropdown</option>
+                    <option value="constant">Constant</option>
+                  </select>
+                </div>
+                {/* Default value */}
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-400">Default Value</label>
+                  <input
+                    type="text"
+                    value={v.defaultValue}
+                    onChange={(e) => updateVar(v.id, { defaultValue: e.target.value })}
+                    placeholder="Default value"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-800 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
+                  />
+                </div>
+              </div>
+              {/* Options (dropdown only) */}
+              {v.type === 'dropdown' && (
+                <div className="mt-2">
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-400">Options (comma-separated)</label>
+                  <input
+                    type="text"
+                    value={v.options?.join(', ') ?? ''}
+                    onChange={(e) => updateVar(v.id, { options: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
+                    placeholder="e.g. us-east, eu-west, ap-south"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-800 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
+                  />
+                </div>
+              )}
+              {/* Delete */}
+              <div className="mt-2 flex justify-end">
+                <button
+                  onClick={() => removeVar(v.id)}
+                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-red-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Remove
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center gap-2 border-t border-gray-100 px-5 py-3 dark:border-gray-800">
+          <button
+            onClick={addVar}
+            className="flex items-center gap-1.5 rounded-lg border border-dashed border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:border-blue-500 dark:hover:text-blue-400"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Variable
+          </button>
+          <div className="flex-1" />
+          <button onClick={onClose} className="rounded-lg px-4 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800">
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-500"
+          >
+            <Check className="h-3.5 w-3.5" />
+            Apply
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Calculated Metrics Dialog ─────────────────────────────────────────────────
+
+function makeCalcId() { return `calc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`; }
+
+interface ManageCalcMetricsDialogProps {
+  metrics: CalculatedMetric[];
+  variables: DashboardVariable[];
+  onSave: (metrics: CalculatedMetric[]) => void;
+  onClose: () => void;
+}
+
+function ManageCalcMetricsDialog({ metrics: initial, variables, onSave, onClose }: ManageCalcMetricsDialogProps) {
+  const [items, setItems] = useState<CalculatedMetric[]>(initial);
+
+  const addMetric = () => {
+    setItems((m) => [...m, { id: makeCalcId(), name: '', label: '', formula: '', unit: '', decimals: 2 }]);
+  };
+
+  const update = (id: string, patch: Partial<CalculatedMetric>) => {
+    setItems((m) => m.map((x) => x.id === id ? { ...x, ...patch } : x));
+  };
+
+  const remove = (id: string) => setItems((m) => m.filter((x) => x.id !== id));
+
+  const handleSave = () => {
+    onSave(items.filter((m) => m.name.trim() && m.formula.trim()));
+    onClose();
+  };
+
+  // Preview evaluation against variable defaults
+  const varDefaults: Record<string, string> = {};
+  for (const v of variables) varDefaults[v.name] = v.defaultValue;
+
+  const inputCls = 'w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-800 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-2xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+
+        {/* Header */}
+        <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-4 dark:border-gray-800">
+          <Columns3 className="h-4 w-4 text-purple-500" />
+          <h2 className="flex-1 text-sm font-bold text-gray-900 dark:text-white">Calculated Metrics</h2>
+          <button onClick={onClose} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Info */}
+        <div className="border-b border-gray-100 bg-purple-50/60 px-5 py-2.5 dark:border-gray-800 dark:bg-purple-900/10">
+          <p className="text-xs text-purple-700 dark:text-purple-300/80">
+            Write arithmetic formulas using numeric literals and{' '}
+            <code className="rounded bg-purple-100 px-1 text-purple-800 dark:bg-purple-800/40 dark:text-purple-200">{'{{var_name}}'}</code>{' '}
+            references. Results are injected into widget SQL as{' '}
+            <code className="rounded bg-purple-100 px-1 text-purple-800 dark:bg-purple-800/40 dark:text-purple-200">{'{{metric_name}}'}</code>.
+          </p>
+        </div>
+
+        {/* List */}
+        <div className="max-h-[420px] overflow-y-auto px-5 py-4 space-y-3">
+          {items.length === 0 && (
+            <p className="py-6 text-center text-sm text-gray-400 dark:text-gray-600">
+              No calculated metrics yet. Click below to add one.
+            </p>
+          )}
+          {items.map((m) => {
+            const preview = evalCalcMetric(m.formula, varDefaults);
+            return (
+              <div key={m.id} className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700/60 dark:bg-gray-800/50">
+                <div className="grid grid-cols-2 gap-2">
+                  {/* Name */}
+                  <div>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-400">Metric Name</label>
+                    <input
+                      type="text"
+                      value={m.name}
+                      onChange={(e) => update(m.id, { name: e.target.value.replace(/\s/g, '_') })}
+                      placeholder="e.g. profit_margin"
+                      className={inputCls}
+                    />
+                    <p className="mt-0.5 text-[10px] text-gray-400">
+                      SQL key: <code className="text-purple-500">{`{{${m.name || 'name'}}}`}</code>
+                    </p>
+                  </div>
+                  {/* Label */}
+                  <div>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-400">Display Label</label>
+                    <input
+                      type="text"
+                      value={m.label}
+                      onChange={(e) => update(m.id, { label: e.target.value })}
+                      placeholder="e.g. Profit Margin"
+                      className={inputCls}
+                    />
+                  </div>
+                  {/* Formula — full width */}
+                  <div className="col-span-2">
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-400">Formula</label>
+                    <input
+                      type="text"
+                      value={m.formula}
+                      onChange={(e) => update(m.id, { formula: e.target.value })}
+                      placeholder={`e.g. ({{revenue}} - {{cost}}) / {{revenue}} * 100`}
+                      className={inputCls}
+                      spellCheck={false}
+                    />
+                  </div>
+                  {/* Unit */}
+                  <div>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-400">Unit <span className="font-normal normal-case">(optional)</span></label>
+                    <input
+                      type="text"
+                      value={m.unit ?? ''}
+                      onChange={(e) => update(m.id, { unit: e.target.value || undefined })}
+                      placeholder="e.g. % ms $ km"
+                      className={inputCls}
+                    />
+                  </div>
+                  {/* Decimals */}
+                  <div>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-400">Decimals</label>
+                    <select
+                      value={m.decimals ?? 2}
+                      onChange={(e) => update(m.id, { decimals: Number(e.target.value) })}
+                      className={inputCls}
+                    >
+                      {[0, 1, 2, 3, 4].map((d) => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Preview + delete row */}
+                <div className="mt-2 flex items-center justify-between">
+                  <span className="text-[11px] text-gray-400">
+                    Preview:{' '}
+                    {preview !== null
+                      ? <span className="font-semibold text-purple-600 dark:text-purple-400">
+                          {preview.toFixed(m.decimals ?? 2)}{m.unit ? ` ${m.unit}` : ''}
+                        </span>
+                      : <span className="italic text-red-400">invalid formula</span>
+                    }
+                  </span>
+                  <button
+                    onClick={() => remove(m.id)}
+                    className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-red-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    Remove
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center gap-2 border-t border-gray-100 px-5 py-3 dark:border-gray-800">
+          <button
+            onClick={addMetric}
+            className="flex items-center gap-1.5 rounded-lg border border-dashed border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-purple-400 hover:text-purple-600 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:border-purple-500 dark:hover:text-purple-400"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Metric
+          </button>
+          <div className="flex-1" />
+          <button onClick={onClose} className="rounded-lg px-4 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800">
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="flex items-center gap-1.5 rounded-lg bg-purple-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-purple-500"
+          >
+            <Check className="h-3.5 w-3.5" />
+            Apply
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main DashboardBuilder ─────────────────────────────────────────────────────
 
 export interface DashboardBuilderProps {
@@ -420,6 +854,10 @@ function BuilderInner({ config, fromTemplate, onSave, onPreview, onBack }: Dashb
   const [name,        setName]        = useState(config.name);
   const [description, setDescription] = useState(config.description ?? '');
   const [themeId,     setThemeId]     = useState<DashboardThemeId>(config.themeId);
+  const [variables,        setVariables]        = useState<DashboardVariable[]>(config.variables ?? []);
+  const [calcMetrics,      setCalcMetrics]      = useState<CalculatedMetric[]>(config.calculatedMetrics ?? []);
+  const [showVarDialog,    setShowVarDialog]    = useState(false);
+  const [showCalcDialog,   setShowCalcDialog]   = useState(false);
   const [previewTimeRange]            = useState<TimeRange>(() => getDefaultTimeRange());
   const [setupBannerDismissed, setSetupBannerDismissed] = useState(false);
 
@@ -491,15 +929,23 @@ function BuilderInner({ config, fromTemplate, onSave, onPreview, onBack }: Dashb
     const copy: WidgetConfig = {
       ...original,
       id: makeWidgetId(),
+      locked: false,
       position: { ...original.position, y: original.position.y + original.position.h },
     };
     setWidgets((prev) => [...prev, copy]);
     setSelectedId(copy.id);
   }, [widgets, setWidgets]);
 
+  const handleToggleLock = useCallback((id: string) => {
+    setWidgets((prev) => prev.map((w) => w.id === id ? { ...w, locked: !w.locked } : w));
+  }, [setWidgets]);
+
   const buildConfig = useCallback((): DashboardConfig => ({
-    ...config, name, description: description.trim() || undefined, themeId, widgets, updatedAt: new Date().toISOString(),
-  }), [config, name, description, themeId, widgets]);
+    ...config, name, description: description.trim() || undefined, themeId, widgets,
+    variables: variables.length ? variables : undefined,
+    calculatedMetrics: calcMetrics.length ? calcMetrics : undefined,
+    updatedAt: new Date().toISOString(),
+  }), [config, name, description, themeId, widgets, variables, calcMetrics]);
 
   const handleSave = () => {
     onSave(buildConfig());
@@ -510,6 +956,23 @@ function BuilderInner({ config, fromTemplate, onSave, onPreview, onBack }: Dashb
 
   return (
     <div className="flex h-full flex-col bg-gray-50 dark:bg-gray-950">
+      {/* Variables dialog */}
+      {showVarDialog && (
+        <ManageVariablesDialog
+          variables={variables}
+          onSave={(vars) => { setVariables(vars); markDirty(); }}
+          onClose={() => setShowVarDialog(false)}
+        />
+      )}
+      {/* Calculated metrics dialog */}
+      {showCalcDialog && (
+        <ManageCalcMetricsDialog
+          metrics={calcMetrics}
+          variables={variables}
+          onSave={(m) => { setCalcMetrics(m); markDirty(); }}
+          onClose={() => setShowCalcDialog(false)}
+        />
+      )}
       {/* ── Toolbar ──────────────────────────────────────────────────────────── */}
       <div className="flex flex-shrink-0 items-center gap-2 border-b border-gray-200 bg-white px-3 py-2 dark:border-gray-800/80 dark:bg-gray-900">
         <button
@@ -532,6 +995,34 @@ function BuilderInner({ config, fromTemplate, onSave, onPreview, onBack }: Dashb
 
         <ThemePicker value={themeId} onChange={(id) => { setThemeId(id); markDirty(); }} />
 
+        {/* Variables button */}
+        <button
+          onClick={() => setShowVarDialog(true)}
+          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+            variables.length > 0
+              ? 'border-blue-200 bg-blue-50 text-blue-700 hover:border-blue-300 dark:border-blue-700/50 dark:bg-blue-600/10 dark:text-blue-400 dark:hover:border-blue-600/70'
+              : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200'
+          }`}
+          title="Manage dashboard variables"
+        >
+          <Variable className="h-3.5 w-3.5" />
+          Vars{variables.length > 0 && <span className="ml-0.5 rounded-full bg-blue-500 px-1.5 py-0.5 text-[9px] font-bold text-white leading-none">{variables.length}</span>}
+        </button>
+
+        {/* Calculated metrics button */}
+        <button
+          onClick={() => setShowCalcDialog(true)}
+          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+            calcMetrics.length > 0
+              ? 'border-purple-200 bg-purple-50 text-purple-700 hover:border-purple-300 dark:border-purple-700/50 dark:bg-purple-600/10 dark:text-purple-400 dark:hover:border-purple-600/70'
+              : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200'
+          }`}
+          title="Manage calculated metrics"
+        >
+          <Columns3 className="h-3.5 w-3.5" />
+          Calc{calcMetrics.length > 0 && <span className="ml-0.5 rounded-full bg-purple-500 px-1.5 py-0.5 text-[9px] font-bold text-white leading-none">{calcMetrics.length}</span>}
+        </button>
+
         {/* Undo/Redo */}
         <div className="flex items-center gap-1">
           <button
@@ -552,16 +1043,32 @@ function BuilderInner({ config, fromTemplate, onSave, onPreview, onBack }: Dashb
           </button>
         </div>
 
-        {/* Duplicate selected */}
-        {selectedId && (
-          <button
-            onClick={() => handleDuplicateWidget(selectedId)}
-            className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-blue-600 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-blue-400"
-            title="Duplicate widget"
-          >
-            <Copy className="h-3.5 w-3.5" />
-          </button>
-        )}
+        {/* Duplicate + Lock for selected widget */}
+        {selectedId && (() => {
+          const sel = widgets.find((w) => w.id === selectedId);
+          return (
+            <>
+              <button
+                onClick={() => handleDuplicateWidget(selectedId)}
+                className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-blue-600 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-blue-400"
+                title="Duplicate widget"
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => handleToggleLock(selectedId)}
+                className={`rounded-lg p-1.5 transition-colors ${
+                  sel?.locked
+                    ? 'text-amber-500 hover:bg-amber-50 hover:text-amber-600 dark:text-amber-400 dark:hover:bg-amber-500/10'
+                    : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800'
+                }`}
+                title={sel?.locked ? 'Unlock widget (allow move & resize)' : 'Lock widget (prevent move & resize)'}
+              >
+                {sel?.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+              </button>
+            </>
+          );
+        })()}
 
         <div className="flex-1" />
 
