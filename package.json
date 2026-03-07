@@ -23,6 +23,7 @@
     "tauri:icon": "tauri icon public/icon.png"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "@mapbox/mapbox-gl-draw": "^1.5.1",
     "@mapbox/mapbox-gl-geocoder": "^5.1.2",
     "@monaco-editor/react": "^4.7.0",
