@@ -178,16 +178,20 @@ export default function TableColumnSelector({
           loading={loading}
           onClear={() => handleTableChange('')}
         />
-        {showGeoColumnsOnly && selectedTable && columnsForTable.length > 0 && (
-          <SearchableSelect
-            value={geoColumn || ''}
-            onChange={setGeoColumn}
-            options={columnsForTable.map(c => c.name)}
-            placeholder="Geo Column"
-            loading={loading}
-            onClear={() => setGeoColumn(null)}
-          />
-        )}
+        {(() => {
+          const geoOptions = columnsForTable.filter(c => c.isGeo).map(c => c.name);
+          // Only show the picker when there are 2+ geo columns — single geo col is auto-selected
+          return showGeoColumnsOnly && selectedTable && geoOptions.length > 1 ? (
+            <SearchableSelect
+              value={geoColumn || ''}
+              onChange={setGeoColumn}
+              options={geoOptions}
+              placeholder="Geo Column"
+              loading={loading}
+              onClear={() => setGeoColumn(null)}
+            />
+          ) : null;
+        })()}
       </div>
     );
   }

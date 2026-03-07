@@ -1,95 +1,160 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet.markercluster';
+import 'leaflet.markercluster/dist/MarkerCluster.css';
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
+import 'leaflet.heat';
 
-// Fix for default marker icons - use data URI to avoid CDN dependency
-const iconUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABkAAAApCAYAAADAk4LOAAAFgUlEQVR4Aa1XA5BjWRTN2oW17d3YaZtr2962HUzbDNpjszW24mRt28p47v7zq/bXZtrp/lWnXr337j3nPCe85NcypgSFdugCpW5YoDAMRaIMqRi6aKq5E3YqDQO3qAwjVWrD8Ncq/RBpykd8oZUb/kaJutow8r1aP9II0WmLKLIsJyv1w/kqw9Ch2MYdB++12Onxee/QMwvf4/Dk/Lfp/i4nxTXtOoQ4pW5Aj7wpici1A9erdAN2OH64x8OSP9j3Ft3b7aWkTg/Fm91siTra0f9on5sQr9INejH6CUUUpavjFNq1B+Oadhxmnfa8RfEmN8VNAsQhPqF55xHkMzz3jSmChWU6f7/XZKNH+9+hBLOHYozuKQPxyMPUKkrX/K0uWnfFaJGS1QPRtZsOPtr3NsW0uyh6NNCOkU3Yz+bXbT3I8G3xE5EXLXtCXbbqwCO9zPQYPRTZ5vIDXD7U+w7rFDEoUUf7ibHIR4y6bLVPXrz8JVZEql13trxwue/uDivd3fkWRbS6/IA2bID4uk0UpF1N8qLlbBlXs4Ee7HLTfV1j54APvODnSfOWBqtKVvjgLKzF5YdEk5ewRkGlK0i33Eofffc7HT56jD7/6U+qH3Cx7SBLNntH5YIPvODnyfIXZYRVDPqgHtLs5ABHD3YzLuespb7t79FY34DjMwrVrcTuwlT55YMPvOBnRrJ4VXTdNnYug5ucHLBjEpt30701A3Zh+1xXcgB1R0=';
-const shadowUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACkAAAApCAYAAACoYAD2AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAISSURBVFhH7ZhNaxNRFIaXJgGDUaGi4FexqcUP0F24cOHGhQs3Lly58A9Uf4CrVqhdu3BRcSVu/ANuXFlXBRUUv0AxVoxJY5Mm4/OemTuZOzc3k6bNFBx4mJl7z3nOc+/cmXsTHDDvnz7r0P9v3Djfs3Xr9qPR/+Y9frK8PDy+sm7Xl9cXFhYGh8P3+p3e3+sX/v6XCfR7/Wv9Mv/B+2j/5cuXR4+urKysD4XP9Tv+z/wH76P9g/v7+zuP8L3/v7/w9u1bH+8xH8H7aP+g/cH5+fl9h8Pnd8xH8D7aP2h/cG5ubn0o+WVL+Yj5CN5H+wftD87MzKwNy3+U/MR8BO+j/YP2B6enp9eG5SfmI3gf7R+0Pzg1NbU2LD8xH8H7aP+g/cGpqam1YfmJ+QjeR/sH7Q9OTk6uDctPzEfwPto/aH9wcnJybVh+Yj6C99H+QfuDE5OT68PyE/MRvI/2D9ofnJiYWBuWn5iP4H20f9D+4Pj4+Nqw/MR8BO+j/YP2B8fGxtaG5SfmI3gf7R+0Pzg6Oro2LD8xH8H7aP+g/cHR0dG1YfmJ+QjeR/sH7Q+Ojo6uDctPzEfwPto/aH9wZGRkbVh+Yj6C99H+QfuDIyMja8PyE/MRvI/2D9ofHB4eXhuWn5iP4H20f9D+4PDw8Nqw/MR8BO+j/YP2B4eGhtaG5SfmI3gf7R+0Pzg4OLg2LD8xH8H7aP+g/cGBwcG1YfmJ+QjeR/sH7Q8ODAysDctPzEfwPto/aH+wv79/bVh+Yj6C99H+QfuD/f39a8PyE/MRvI/2D9of7O/vXxuWn5iP4H20f9D+YF9f39qw/MR8BO+j/YP2B/v6+taG5SfmI3gf7R+0P9jb27s2LD8xH8H7aP+g/cHe3t61YfmJ+QjeR/sH7Q/29PSsDctPzEfwPto/aH+wp6dnbVh+Yj6C99H+QfuDPT09a8PyE/MRvI/2D9of7Onp+fs7tD84MTGxNiw/MR/B+2j/oP3B8fHxtWH5ifkI3kf7B+0Pjo+Prw3LT8xH8D7aP2h/cGxsbG1YfmI+gvfR/kH7g+Pj42vD8hPzEbyP9g/aHxwdHV0blp+Yj+B9tH/Q/uDo6OjasPzEfATvo/2D9gdHR0fXhuUn5iN4H+0ftD84MjKyNiw/MR/B+2j/oP3BkZGRtWH5ifkI3kf7B+0PjoyMrA3LT8xH8D7aP2h/cHh4eG1YfmI+gvfR/kH7g8PDw2vD8hPzEbyP9g/aHxwaGlobVr7UT8xH8D7aP2h/cGhoaG1Y+VI/MR/B+2j/oP3BwcHBtWHlS/3EfATvo/2D9gcHBwfXhpUv9RPzEbyP9g/aHxwYGFgbVr7UT8xH8D7aP2h/cGBgYG1Y+VI/MR/B+2j/oP3B/v7+tWHlS/3EfATvo/2D9gf7+/vXhpUv9RPzEbyP9g/aH+zr61sbVr7UT8xH8D7aP2h/sK+vb21Y+VI/MR/B+2j/oP3B3t7etWHlS/3EfATvo/2D9gd7e3vXhpUv9RPzEbyP9g/aH+zp6VkbVr7UT8xH8D7aP2h/sKenZ21Y+VI/MR/B+2j/oP3Bnp6etWHlS/3EfATvo/2D9gc/A+EJwqW/J9UAAAAASUVORK5CYII=';
-
+// ── Fix default marker icons ───────────────────────────────────────────────────
+const _iconUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABkAAAApCAYAAADAk4LOAAAFgUlEQVR4Aa1XA5BjWRTN2oW17d3YaZtr2962HUzbDNpjszW24mRt28p47v7zq/bXZtrp/lWnXr337j3nPCe85NcypgSFdugCpW5YoDAMRaIMqRi6aKq5E3YqDQO3qAwjVWrD8Ncq/RBpykd8oZUb/kaJutow8r1aP9II0WmLKLIsJyv1w/kqw9Ch2MYdB++12Onxee/QMwvf4/Dk/Lfp/i4nxTXtOoQ4pW5Aj7wpici1A9erdAN2OH64x8OSP9j3Ft3b7aWkTg/Fm91siTra0f9on5sQr9INejH6CUUUpavjFNq1B+Oadhxmnfa8RfEmN8VNAsQhPqF55xHkMzz3jSmChWU6f7/XZKNH+9+hBLOHYozuKQPxyMPUKkrX/K0uWnfFaJGS1QPRtZsOPtr3NsW0uyh6NNCOkU3Yz+bXbT3I8G3xE5EXLXtCXbbqwCO9zPQYPRTZ5vIDXD7U+w7rFDEoUUf7ibHIR4y6bLVPXrz8JVZEql13trxwue/uDivd3fkWRbS6/IA2bID4uk0UpF1N8qLlbBlXs4Ee7HLTfV1j54APvODnSfOWBqtKVvjgLKzF5YdEk5ewRkGlK0i33Eofffc7HT56jD7/6U+qH3Cx7SBLNntH5YIPvODnyfIXZYRVDPqgHtLs5ABHD3YzLuespb7t79FY34DjMwrVrcTuwlT55YMPvOBnRrJ4VXTdNnYug5ucHLBjEpt30701A3Zh+1xXcgB1R0=';
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: iconUrl,
-  iconUrl: iconUrl,
-  shadowUrl: shadowUrl,
-});
+L.Icon.Default.mergeOptions({ iconRetinaUrl: _iconUrl, iconUrl: _iconUrl, shadowUrl: _iconUrl });
 
-interface GeoPoint {
+// ── Types ──────────────────────────────────────────────────────────────────────
+export interface GeoPoint {
   id: string;
-  coordinates: [number, number];
-  properties?: Record<string, any>;
+  coordinates: [number, number]; // [lng, lat]
+  properties?: Record<string, unknown>;
 }
 
-interface GeoShape {
+export interface GeoShape {
   id: string;
   type: 'Polygon' | 'LineString' | 'MultiPolygon';
-  coordinates: any;
-  properties?: Record<string, any>;
+  coordinates: unknown;
+  properties?: Record<string, unknown>;
 }
 
-interface LeafletMapViewerProps {
+export interface LeafletMapViewerProps {
   geoPoints?: GeoPoint[];
   geoShapes?: GeoShape[];
   onMapClick?: (lat: number, lng: number) => void;
-  onDrawComplete?: (geometry: unknown) => void;
+  onPointSelect?: (point: GeoPoint | null) => void;
+  selectedPointId?: string | null;
+  colorByColumn?: string;
   center?: [number, number];
   zoom?: number;
   height?: string;
 }
 
+// ── Color helpers ──────────────────────────────────────────────────────────────
+const PALETTE = [
+  '#3b82f6','#ef4444','#10b981','#f59e0b','#8b5cf6',
+  '#ec4899','#06b6d4','#84cc16','#f97316','#6366f1',
+];
+
+function isNumericColumn(points: GeoPoint[], col: string): boolean {
+  for (const p of points) {
+    const v = p.properties?.[col];
+    if (v !== null && v !== undefined) return typeof v === 'number';
+  }
+  return false;
+}
+
+function numericColor(value: number, min: number, max: number): string {
+  const ratio = max === min ? 0.5 : (value - min) / (max - min);
+  const hue = Math.round(120 - ratio * 120); // green→yellow→red
+  return `hsl(${hue}, 90%, 48%)`;
+}
+
+function buildColorMap(
+  points: GeoPoint[],
+  col: string,
+): { getColor: (p: GeoPoint) => string; legend: { label: string; color: string }[]; isNumeric: boolean } {
+  const isNum = isNumericColumn(points, col);
+
+  if (isNum) {
+    const nums = points.map(p => p.properties?.[col] as number).filter(v => v !== null && v !== undefined && !isNaN(v));
+    const min = Math.min(...nums);
+    const max = Math.max(...nums);
+    return {
+      isNumeric: true,
+      getColor: (p) => {
+        const v = p.properties?.[col] as number;
+        if (v === null || v === undefined || isNaN(v)) return '#94a3b8';
+        return numericColor(v, min, max);
+      },
+      legend: [
+        { label: min.toLocaleString(undefined, { maximumFractionDigits: 2 }), color: 'hsl(120,90%,48%)' },
+        { label: ((min + max) / 2).toLocaleString(undefined, { maximumFractionDigits: 2 }), color: 'hsl(60,90%,48%)' },
+        { label: max.toLocaleString(undefined, { maximumFractionDigits: 2 }), color: 'hsl(0,90%,48%)' },
+      ],
+    };
+  }
+
+  const uniqueVals = [...new Set(points.map(p => String(p.properties?.[col] ?? '')))];
+  const colorByVal: Record<string, string> = {};
+  uniqueVals.forEach((v, i) => { colorByVal[v] = PALETTE[i % PALETTE.length]; });
+
+  return {
+    isNumeric: false,
+    getColor: (p) => colorByVal[String(p.properties?.[col] ?? '')] ?? '#94a3b8',
+    legend: uniqueVals.slice(0, 12).map(v => ({ label: v || '(empty)', color: colorByVal[v] })),
+  };
+}
+
+// ── Tile layers ────────────────────────────────────────────────────────────────
+const TILE_LAYERS = {
+  streets:   'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  topo:      'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+};
+type MapStyle = keyof typeof TILE_LAYERS;
+
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function LeafletMapViewer({
   geoPoints = [],
   geoShapes = [],
   onMapClick,
+  onPointSelect,
+  selectedPointId,
+  colorByColumn,
   center = [0, 0],
   zoom = 2,
-  height = '600px'
+  height = '100%',
 }: LeafletMapViewerProps) {
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const markersRef = useRef<L.CircleMarker[]>([]);
-  const [mapStyle, setMapStyle] = useState<'streets' | 'satellite' | 'topo'>('streets');
-  const [mapReady, setMapReady] = useState(false);
-  const isMountedRef = useRef(false);
+  const containerRef   = useRef<HTMLDivElement>(null);
+  const mapRef         = useRef<L.Map | null>(null);
+  const tileRef        = useRef<L.TileLayer | null>(null);
+  const clusterRef     = useRef<L.MarkerClusterGroup | null>(null);
+  const markersMapRef  = useRef<Map<string, L.CircleMarker>>(new Map()); // id → marker
+  const markersRef     = useRef<L.CircleMarker[]>([]); // for non-clustered cleanup
+  const shapesRef      = useRef<L.Layer[]>([]);
+  const heatRef        = useRef<L.Layer | null>(null);
+  const mountedRef     = useRef(false);
+  const prevSelectedId = useRef<string | null>(null); // track previously selected point
 
-  // Tile layers
-  const tileLayers = {
-    streets: {
-      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    },
-    satellite: {
-      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    },
-    topo: {
-      url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-    }
-  };
+  const [mapReady,     setMapReady]     = useState(false);
+  const [mapStyle,     setMapStyle]     = useState<MapStyle>('streets');
+  const [clustering,   setClustering]   = useState(true);
+  const [showHeatmap,  setShowHeatmap]  = useState(false);
 
-  // Initialize map once when component mounts
+  // Compute color mapping (memoized — only recomputes when points/column change)
+  const colorMap = useMemo(() => {
+    if (!colorByColumn || geoPoints.length === 0) return null;
+    return buildColorMap(geoPoints, colorByColumn);
+  }, [geoPoints, colorByColumn]);
+
+  // ── Init map once ────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!mapContainerRef.current || isMountedRef.current) return;
+    if (!containerRef.current || mountedRef.current) return;
 
-    // Small delay to ensure DOM is ready
-    const timeoutId = setTimeout(() => {
-      if (!mapContainerRef.current) return;
-
+    const tid = setTimeout(() => {
+      if (!containerRef.current) return;
       try {
-        // Create map
-        const map = L.map(mapContainerRef.current, {
-          center: [center[1], center[0]], // Leaflet uses [lat, lng]
-          zoom: zoom,
+        const map = L.map(containerRef.current, {
+          center: [center[1], center[0]],
+          zoom,
           zoomControl: true,
           scrollWheelZoom: true,
-          attributionControl: false, // Remove Leaflet attribution label
+          attributionControl: false,
         });
 
-        // Add initial tile layer
-        L.tileLayer(tileLayers[mapStyle].url, {
-          maxZoom: 19,
-        }).addTo(map);
+        const tile = L.tileLayer(TILE_LAYERS.streets, { maxZoom: 19 }).addTo(map);
+        tileRef.current = tile;
 
-        // Add click handler
         if (onMapClick) {
           map.on('click', (e: L.LeafletMouseEvent) => {
             onMapClick(e.latlng.lat, e.latlng.lng);
@@ -97,196 +162,264 @@ export default function LeafletMapViewer({
         }
 
         mapRef.current = map;
-        isMountedRef.current = true;
+        mountedRef.current = true;
         setMapReady(true);
-      } catch {
-        // map init failed — container may not be ready yet
-      }
+
+        // Force size recalculation after layout settles
+        requestAnimationFrame(() => map.invalidateSize());
+
+        // Watch for container resize (flex layout changes, panel open/close)
+        const ro = new ResizeObserver(() => map.invalidateSize());
+        if (containerRef.current) ro.observe(containerRef.current);
+        (map as L.Map & { _resizeObserver?: ResizeObserver })._resizeObserver = ro;
+      } catch {/* container not ready */}
     }, 100);
 
-    // Cleanup
     return () => {
-      clearTimeout(timeoutId);
+      clearTimeout(tid);
       if (mapRef.current) {
+        (mapRef.current as L.Map & { _resizeObserver?: ResizeObserver })._resizeObserver?.disconnect();
         mapRef.current.remove();
         mapRef.current = null;
-        isMountedRef.current = false;
+        mountedRef.current = false;
       }
     };
-  }, []); // Empty deps - only run once
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Update tile layer when style changes
-  useEffect(() => {
-    if (!mapRef.current) return;
-
-    // Remove all existing tile layers
-    mapRef.current.eachLayer((layer) => {
-      if (layer instanceof L.TileLayer) {
-        mapRef.current?.removeLayer(layer);
-      }
-    });
-
-    // Add new tile layer
-    L.tileLayer(tileLayers[mapStyle].url, {
-      maxZoom: 19,
-    }).addTo(mapRef.current);
-  }, [mapStyle]);
-
-  // Update markers when geoPoints change
-  useEffect(() => {
-    if (!mapRef.current || !mapReady) {
-      return;
-    }
-
-    // Clear existing markers
-    markersRef.current.forEach(marker => marker.remove());
-    markersRef.current = [];
-
-    // Add new markers - using CircleMarker for better visibility
-    geoPoints.forEach((point) => {
-      const [lng, lat] = point.coordinates;
-
-      try {
-        // Create a visible circle marker
-        const marker = L.circleMarker([lat, lng], {
-          radius: 8,
-          fillColor: '#3b82f6',
-          color: '#fff',
-          weight: 2,
-          opacity: 1,
-          fillOpacity: 0.8
-        }).addTo(mapRef.current!);
-
-        // Add popup
-        const popupContent = `
-          <div style="font-size: 14px; min-width: 200px;">
-            <strong style="color: #3b82f6;">${point.properties?.name || 'Point'}</strong>
-            ${point.properties ? Object.entries(point.properties)
-              .filter(([key]) => key !== 'name')
-              .map(([key, value]) => `<div style="font-size: 12px; margin-top: 4px;"><strong>${key}:</strong> ${value}</div>`)
-              .join('') : ''}
-            <div style="font-size: 11px; color: #666; margin-top: 8px;">
-              📍 ${lat.toFixed(6)}, ${lng.toFixed(6)}
-            </div>
-          </div>
-        `;
-        marker.bindPopup(popupContent);
-
-        markersRef.current.push(marker);
-      } catch {
-        // skip malformed point
-      }
-    });
-
-    // Fit bounds if we have markers (shapes handled separately)
-    if (markersRef.current.length > 0 && geoShapes.length === 0) {
-      const group = L.featureGroup(markersRef.current);
-      mapRef.current.fitBounds(group.getBounds(), { padding: [50, 50] });
-    }
-  }, [geoPoints, geoShapes, mapReady]);
-
-  // Render GeoShapes (Polygon, LineString, MultiPolygon)
+  // ── Swap tile layer when style changes ───────────────────────────────────────
   useEffect(() => {
     if (!mapRef.current || !mapReady) return;
+    tileRef.current?.remove();
+    tileRef.current = L.tileLayer(TILE_LAYERS[mapStyle], { maxZoom: 19 }).addTo(mapRef.current);
+    requestAnimationFrame(() => mapRef.current?.invalidateSize());
+  }, [mapStyle, mapReady]);
 
-    const layers: L.Layer[] = [];
-    const style = { color: '#F59E0B', weight: 2, fillOpacity: 0.15 };
+  // ── Render markers (clustering + color-by-column) ────────────────────────────
+  // NOTE: selectedPointId is intentionally NOT in deps — selection changes are
+  // handled by the dedicated style-update effect below, keeping clusters stable.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    // Remove old cluster group
+    if (clusterRef.current) { map.removeLayer(clusterRef.current); clusterRef.current = null; }
+    // Remove old individual markers
+    markersRef.current.forEach(m => map.removeLayer(m));
+    markersRef.current = [];
+    markersMapRef.current.clear();
+    prevSelectedId.current = null;
+
+    if (geoPoints.length === 0) return;
+
+    const defaultColor = '#3b82f6';
+
+    const makeMarker = (point: GeoPoint): L.CircleMarker => {
+      const [lng, lat] = point.coordinates;
+      const color = colorMap ? colorMap.getColor(point) : defaultColor;
+
+      // Always render in default (unselected) style — selection effect handles highlight
+      const marker = L.circleMarker([lat, lng], {
+        radius: 8, fillColor: color, color: '#fff', weight: 2, opacity: 1, fillOpacity: 0.82,
+      });
+
+      marker.on('click', () => onPointSelect?.(point));
+      markersMapRef.current.set(point.id, marker);
+      return marker;
+    };
+
+    if (clustering) {
+      const group = (L as unknown as { markerClusterGroup: (opts: unknown) => L.MarkerClusterGroup }).markerClusterGroup({
+        maxClusterRadius: 60,
+        iconCreateFunction: (cluster: L.MarkerCluster) => {
+          const count = cluster.getChildCount();
+          const size  = count < 10 ? 36 : count < 100 ? 44 : 52;
+          const bg    = count < 10 ? '#3b82f6' : count < 100 ? '#f59e0b' : '#ef4444';
+          return L.divIcon({
+            html: `<div style="
+              width:${size}px;height:${size}px;
+              background:${bg};border:3px solid #fff;
+              border-radius:50%;display:flex;align-items:center;
+              justify-content:center;color:#fff;font-weight:700;
+              font-size:${count < 100 ? 13 : 11}px;
+              box-shadow:0 2px 8px rgba(0,0,0,.3)
+            ">${count}</div>`,
+            className: '',
+            iconSize: [size, size],
+          });
+        },
+      });
+      geoPoints.forEach(p => group.addLayer(makeMarker(p)));
+      group.addTo(map);
+      clusterRef.current = group;
+    } else {
+      geoPoints.forEach(p => {
+        const m = makeMarker(p);
+        m.addTo(map);
+        markersRef.current.push(m);
+      });
+    }
+
+    // Fit bounds
+    const allCoords: L.LatLngExpression[] = geoPoints.map(p => [p.coordinates[1], p.coordinates[0]]);
+    if (allCoords.length > 0) {
+      try { map.fitBounds(L.latLngBounds(allCoords), { padding: [48, 48], maxZoom: 14 }); } catch {/* skip */}
+    }
+  }, [geoPoints, mapReady, clustering, colorMap]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Update marker styles when selection changes — NO cluster rebuild ──────────
+  useEffect(() => {
+    const markers = markersMapRef.current;
+    const defaultColor = '#3b82f6';
+
+    // Deselect previous marker
+    if (prevSelectedId.current) {
+      const prev = markers.get(prevSelectedId.current);
+      if (prev) {
+        const color = colorMap ? colorMap.getColor(
+          geoPoints.find(p => p.id === prevSelectedId.current) ?? { id: '', coordinates: [0, 0] }
+        ) : defaultColor;
+        prev.setStyle({ radius: 8, fillColor: color, weight: 2, fillOpacity: 0.82 });
+      }
+    }
+
+    // Highlight new marker
+    if (selectedPointId) {
+      const next = markers.get(selectedPointId);
+      if (next) {
+        next.setStyle({ radius: 12, weight: 3, fillOpacity: 1 });
+        next.bringToFront();
+      }
+    }
+
+    prevSelectedId.current = selectedPointId ?? null;
+  }, [selectedPointId, geoPoints, colorMap]);
+
+  // ── Render shapes ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    shapesRef.current.forEach(l => map.removeLayer(l));
+    shapesRef.current = [];
+
+    const style = { color: '#f59e0b', weight: 2, fillOpacity: 0.15 };
 
     geoShapes.forEach((shape) => {
       try {
         let layer: L.Layer | null = null;
-
         if (shape.type === 'Polygon') {
-          // GeoJSON: [[[lng, lat], ...]] → Leaflet: [[lat, lng], ...]
-          const latlngs = shape.coordinates[0].map(([lng, lat]: number[]) => [lat, lng] as L.LatLngTuple);
+          const coords = shape.coordinates as number[][][];
+          const latlngs = coords[0].map(([lng, lat]) => [lat, lng] as L.LatLngTuple);
           layer = L.polygon(latlngs, style);
         } else if (shape.type === 'LineString') {
-          const latlngs = shape.coordinates.map(([lng, lat]: number[]) => [lat, lng] as L.LatLngTuple);
-          layer = L.polyline(latlngs, { color: '#F59E0B', weight: 3 });
+          const coords = shape.coordinates as number[][];
+          const latlngs = coords.map(([lng, lat]) => [lat, lng] as L.LatLngTuple);
+          layer = L.polyline(latlngs, { color: '#f59e0b', weight: 3 });
         } else if (shape.type === 'MultiPolygon') {
-          const group = L.layerGroup();
+          const grp = L.layerGroup();
           (shape.coordinates as number[][][][]).forEach((poly) => {
             const latlngs = poly[0].map(([lng, lat]) => [lat, lng] as L.LatLngTuple);
-            L.polygon(latlngs, style).addTo(group);
+            L.polygon(latlngs, style).addTo(grp);
           });
-          layer = group;
+          layer = grp;
         }
-
         if (layer) {
           if (shape.properties && 'bindPopup' in layer) {
-            (layer as L.Path).bindPopup(
-              `<strong>${shape.properties.name ?? 'Shape'}</strong>`
-            );
+            (layer as L.Path).bindPopup(`<strong>${shape.properties.name ?? 'Shape'}</strong>`);
           }
-          layer.addTo(mapRef.current!);
-          layers.push(layer);
+          layer.addTo(map);
+          shapesRef.current.push(layer);
         }
-      } catch {
-        // skip malformed shape
-      }
+      } catch {/* skip malformed */}
     });
-
-    // Fit bounds to cover both points and shapes
-    if (layers.length > 0) {
-      const allLayers: L.Layer[] = [...markersRef.current, ...layers];
-      if (allLayers.length > 0) {
-        try {
-          const group = L.featureGroup(allLayers.filter(l => l instanceof L.Path || l instanceof L.CircleMarker));
-          if (group.getLayers().length > 0) {
-            mapRef.current!.fitBounds(group.getBounds(), { padding: [50, 50] });
-          }
-        } catch {
-          // bounds fit failed — map will stay at current view
-        }
-      }
-    }
-
-    return () => {
-      layers.forEach(l => mapRef.current?.removeLayer(l));
-    };
   }, [geoShapes, mapReady]);
 
+  // ── Heatmap layer ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    if (heatRef.current) { map.removeLayer(heatRef.current); heatRef.current = null; }
+
+    if (showHeatmap && geoPoints.length > 0) {
+      const latLngs = geoPoints.map(p => [p.coordinates[1], p.coordinates[0], 1] as [number, number, number]);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const heat = (L as any).heatLayer(latLngs, { radius: 28, blur: 18, maxZoom: 17, gradient: { 0.3: '#60a5fa', 0.6: '#fbbf24', 1.0: '#ef4444' } });
+      heat.addTo(map);
+      heatRef.current = heat;
+    }
+  }, [showHeatmap, geoPoints, mapReady]);
+
+  // ── Controls ─────────────────────────────────────────────────────────────────
+  const btnBase  = 'px-3 py-1.5 rounded-lg text-xs font-semibold shadow-md transition-all';
+  const btnOff   = 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-600';
+  const btnOn    = 'bg-blue-600 text-white border border-blue-600';
+  const btnGreen = 'bg-emerald-600 text-white border border-emerald-600';
+  const btnAmber = 'bg-amber-500 text-white border border-amber-500';
+
   return (
-    <div className="relative" style={{ height }}>
-      {/* Map Style Selector */}
-      <div className="absolute top-4 right-4 z-[1000] flex gap-2">
-        <button
-          onClick={() => setMapStyle('streets')}
-          className={`px-3 py-2 rounded-lg text-sm font-medium shadow-lg transition-all ${
-            mapStyle === 'streets'
-              ? 'bg-blue-600 text-white'
-              : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-          }`}
-        >
-          Streets
+    <div className="relative" style={{ height, minHeight: 200 }}>
+      {/* Map container */}
+      <div ref={containerRef} style={{ height: '100%', width: '100%', borderRadius: '0.5rem' }} />
+
+      {/* ── Tile style selector (top-right) ── */}
+      <div className="absolute right-3 top-3 z-[1000] flex gap-1.5">
+        {(['streets', 'satellite', 'topo'] as MapStyle[]).map(s => (
+          <button key={s} onClick={() => setMapStyle(s)}
+            className={`${btnBase} ${mapStyle === s ? btnOn : btnOff} capitalize`}>
+            {s === 'streets' ? 'Streets' : s === 'satellite' ? 'Satellite' : 'Topo'}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Layer toggles (top-left) ── */}
+      <div className="absolute left-3 top-3 z-[1000] flex flex-col gap-1.5">
+        <button onClick={() => setClustering(v => !v)}
+          className={`${btnBase} ${clustering ? btnGreen : btnOff}`}>
+          {clustering ? '● Clustered' : '○ Clustered'}
         </button>
-        <button
-          onClick={() => setMapStyle('satellite')}
-          className={`px-3 py-2 rounded-lg text-sm font-medium shadow-lg transition-all ${
-            mapStyle === 'satellite'
-              ? 'bg-blue-600 text-white'
-              : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-          }`}
-        >
-          Satellite
-        </button>
-        <button
-          onClick={() => setMapStyle('topo')}
-          className={`px-3 py-2 rounded-lg text-sm font-medium shadow-lg transition-all ${
-            mapStyle === 'topo'
-              ? 'bg-blue-600 text-white'
-              : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-          }`}
-        >
-          Topographic
+        <button onClick={() => setShowHeatmap(v => !v)}
+          className={`${btnBase} ${showHeatmap ? btnAmber : btnOff}`}>
+          {showHeatmap ? '🔥 Heatmap on' : '🔥 Heatmap'}
         </button>
       </div>
 
-      {/* Map Container */}
-      <div
-        ref={mapContainerRef}
-        style={{ height: '100%', width: '100%', borderRadius: '0.5rem' }}
-      />
+      {/* ── Legend (bottom-left) ── */}
+      {colorMap && colorByColumn && (
+        <div className="absolute bottom-5 left-3 z-[1000] rounded-lg border border-gray-200 bg-white/95 px-3 py-2.5 shadow-lg backdrop-blur-sm dark:border-gray-700 dark:bg-gray-900/95"
+          style={{ maxWidth: 180 }}>
+          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            {colorByColumn}
+          </p>
+          {colorMap.isNumeric ? (
+            <div>
+              <div className="h-2.5 w-full rounded-full" style={{
+                background: 'linear-gradient(to right, hsl(120,90%,48%), hsl(60,90%,48%), hsl(0,90%,48%))',
+              }} />
+              <div className="mt-1 flex justify-between text-[10px] text-gray-600 dark:text-gray-400">
+                <span>{colorMap.legend[0].label}</span>
+                <span>{colorMap.legend[2].label}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {colorMap.legend.map(item => (
+                <div key={item.label} className="flex items-center gap-1.5">
+                  <div className="h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ background: item.color }} />
+                  <span className="truncate text-[11px] text-gray-700 dark:text-gray-300">{item.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Point count badge (bottom-right) ── */}
+      {geoPoints.length > 0 && (
+        <div className="absolute bottom-5 right-3 z-[1000] rounded-lg border border-gray-200 bg-white/95 px-2.5 py-1.5 text-xs font-medium text-gray-600 shadow-md backdrop-blur-sm dark:border-gray-700 dark:bg-gray-900/95 dark:text-gray-400">
+          {geoPoints.length.toLocaleString()} points
+        </div>
+      )}
     </div>
   );
 }

@@ -5,10 +5,15 @@ import dynamic from 'next/dynamic';
 import SpatialQueryBuilder from '../components/geo/SpatialQueryBuilder';
 import EnterpriseDataPanel from '../components/geo/EnterpriseDataPanel';
 import TableColumnSelector, { TableColumnSelection } from '../components/geo/TableColumnSelector';
+import GeoDataGrid from '../components/geo/GeoDataGrid';
+import PointDetailPanel from '../components/geo/PointDetailPanel';
+import SavedQueriesPanel from '../components/geo/SavedQueriesPanel';
+import MapStatsBar from '../components/geo/MapStatsBar';
+import type { GeoPoint } from '../components/geo/LeafletMapViewer';
 import {
-  Map, Database, Settings, Code, AlertTriangle, CheckCircle,
-  Copy, Check, AlertCircle, RefreshCw, Info, Play, X, MapPin,
-  Eye, EyeOff, Search,
+  Map, Database, Settings, Code, CheckCircle,
+  AlertCircle, RefreshCw, Info, Play, X, MapPin,
+  EyeOff, Search, Table2, Palette, Download,
 } from 'lucide-react';
 import { useActiveConnection } from '../lib/monkdb-context';
 import { useToast } from '../components/ToastContext';
@@ -41,8 +46,10 @@ export default function GeospatialPage() {
   const {
     geoPoints, setGeoPoints,
     geoShapes, setGeoShapes,
+    queryResults,
     loading, error, setError,
     hasExecutedQuery, queryHistory,
+    savedQueries, saveQuery, deleteSavedQuery,
     handleQueryExecute,
   } = useGeoData();
 
@@ -59,6 +66,71 @@ export default function GeospatialPage() {
   const [showUsageInfo, setShowUsageInfo] = useState(false);
   const [showQueryInfo, setShowQueryInfo] = useState<string | null>(null);
   const [copiedTemplate, setCopiedTemplate] = useState<string | null>(null);
+
+  // Enterprise features state
+  const [selectedPoint, setSelectedPoint] = useState<GeoPoint | null>(null);
+  const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
+  const [showDataGrid, setShowDataGrid] = useState(false);
+  const [colorByColumn, setColorByColumn] = useState<string>('');
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [querySql, setQuerySql] = useState('');
+
+  const handlePointSelect = useCallback((point: GeoPoint | null) => {
+    setSelectedPoint(point);
+    setSelectedPointId(point?.id ?? null);
+  }, []);
+
+  const handleRowSelect = useCallback((pointId: string | null) => {
+    setSelectedPointId(pointId);
+    if (pointId) {
+      const pt = geoPoints.find(p => p.id === pointId) ?? null;
+      setSelectedPoint(pt);
+    } else {
+      setSelectedPoint(null);
+    }
+  }, [geoPoints]);
+
+  // Non-geo columns available for color-by picker
+  const nonGeoColumns = mapTableSelection?.columns
+    .filter(c => !c.type.toLowerCase().includes('geo'))
+    .map(c => c.name) ?? [];
+
+  // Export helpers
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const triggerDownload = (content: string, filename: string, mime: string) => {
+    const blob = new Blob([content], { type: mime });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+  const exportGeoJSON = () => {
+    const fc = {
+      type: 'FeatureCollection',
+      features: geoPoints.map(p => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: p.coordinates },
+        properties: p.properties ?? {},
+      })),
+    };
+    triggerDownload(JSON.stringify(fc, null, 2), 'geo-export.geojson', 'application/geo+json');
+    setShowExportMenu(false);
+  };
+  const exportCSV = () => {
+    if (queryResults.length === 0) return;
+    const cols = Object.keys(queryResults[0]);
+    const rows = [
+      cols.join(','),
+      ...queryResults.map(r => cols.map(c => {
+        const v = String(r[c] ?? '');
+        return v.includes(',') || v.includes('"') || v.includes('\n') ? `"${v.replace(/"/g, '""')}"` : v;
+      }).join(',')),
+    ];
+    triggerDownload(rows.join('\n'), 'geo-export.csv', 'text/csv');
+    setShowExportMenu(false);
+  };
 
   // ── localStorage restore ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -103,8 +175,11 @@ export default function GeospatialPage() {
       return;
     }
 
-    // Skip re-querying if the same table is already selected (prevents re-render loops)
-    if (mapTableSelection &&
+    // Skip re-querying only when data is already loaded for this exact table
+    // (prevents emit-loop from TableColumnSelector re-firing after query completes)
+    // queryResults.length === 0 means no data yet → always query (handles restore + first load)
+    if (queryResults.length > 0 &&
+        mapTableSelection &&
         selection.schema === mapTableSelection.schema &&
         selection.table === mapTableSelection.table &&
         mapFilters.length === 0) {
@@ -130,45 +205,18 @@ export default function GeospatialPage() {
     const geoColumnName = geoCol.name;
     const isGeoPoint = geoCol.type.toLowerCase().includes('geo_point');
 
-    const nameCol = selection.columns.find(c =>
-      c.name.toLowerCase().includes('name') ||
-      c.name.toLowerCase().includes('title') ||
-      c.name.toLowerCase().includes('label')
-    );
-    const nameColumnName = nameCol ? nameCol.name : 'id';
-    const idCol = selection.columns.find(c =>
-      c.name.toLowerCase() === 'id' || c.name.toLowerCase() === '_id'
-    );
-    const idColumnName = idCol ? idCol.name : 'id';
+    // Select ALL non-geo columns so PointDetailPanel shows complete data
+    const nonGeoCols = selection.columns
+      .filter(c => c.name !== geoColumnName && !c.type.toLowerCase().includes('geo'))
+      .map(c => c.name);
 
-    let selectColumns: string[] = [];
-    if (idCol) {
-      selectColumns.push(idColumnName);
-    } else {
-      selectColumns.push('ROW_NUMBER() OVER() as id');
-    }
-    if (nameCol) selectColumns.push(`${nameColumnName} as name`);
-    if (isGeoPoint) {
-      selectColumns.push(`latitude(${geoColumnName}) as latitude`);
-      selectColumns.push(`longitude(${geoColumnName}) as longitude`);
-    }
-
-    const otherCols = selection.columns
-      .filter(c =>
-        c.name !== idColumnName &&
-        c.name !== nameColumnName &&
-        c.name !== geoColumnName &&
-        !c.type.toLowerCase().includes('geo')
-      )
-      .slice(0, 10)
-      .map(c => {
-        if (c.type.toLowerCase().includes('double') || c.type.toLowerCase().includes('float')) {
-          return `ROUND(${c.name}, 2) as ${c.name}`;
-        }
-        return c.name;
-      });
-
-    selectColumns = selectColumns.concat(otherCols);
+    const selectColumns: string[] = [
+      ...nonGeoCols,
+      ...(isGeoPoint ? [
+        `latitude(${geoColumnName}) as latitude`,
+        `longitude(${geoColumnName}) as longitude`,
+      ] : []),
+    ];
 
     // Parameterized WHERE clause
     let whereClause = '';
@@ -193,7 +241,7 @@ export default function GeospatialPage() {
 
     await handleQueryExecute(query, filterParams.length > 0 ? filterParams : undefined);
     toast.success('Table Loaded', `Loaded data from ${selection.schema}.${selection.table}`);
-  }, [mapFilters, mapTableSelection, activeConnection, handleQueryExecute, toast]);
+  }, [mapFilters, mapTableSelection, queryResults.length, activeConnection, handleQueryExecute, toast]);
 
   // Auto-reload when restoring from localStorage
   useEffect(() => {
@@ -483,7 +531,7 @@ export default function GeospatialPage() {
                   )}
 
                   {/* Control Bar */}
-                  <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gradient-to-r from-gray-50 to-white px-3 py-2 dark:border-gray-700 dark:from-gray-800 dark:to-gray-800">
+                  <div className="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gradient-to-r from-gray-50 to-white px-3 py-2 dark:border-gray-700 dark:from-gray-800 dark:to-gray-800">
                     {mapTableSelection ? (
                       <div className="flex items-center gap-2 rounded-md bg-blue-100 px-3 py-1.5 dark:bg-blue-900/30">
                         <Database className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
@@ -503,24 +551,103 @@ export default function GeospatialPage() {
                     <div className="flex-1" />
                     <div className="flex items-center gap-2">
                       <TableColumnSelector onSelectionChange={handleMapTableSelection} showGeoColumnsOnly={true} compact={true} initialTable={mapTableSelection?.fullTableName} />
+
+                      {/* Color-by picker */}
+                      {nonGeoColumns.length > 0 && (
+                        <div className="relative">
+                          <button
+                            onClick={() => setShowColorPicker(v => !v)}
+                            className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                              colorByColumn
+                                ? 'border-purple-300 bg-purple-100 text-purple-700 dark:border-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
+                                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                            }`}
+                          >
+                            <Palette className="h-3.5 w-3.5" />
+                            {colorByColumn ? colorByColumn : 'Color by'}
+                          </button>
+                          {showColorPicker && (
+                            <div className="absolute right-0 top-full z-[9999] mt-1 w-48 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                              <button
+                                onClick={() => { setColorByColumn(''); setShowColorPicker(false); }}
+                                className="w-full px-3 py-1.5 text-left text-xs text-gray-500 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700"
+                              >
+                                — None
+                              </button>
+                              {nonGeoColumns.map(col => (
+                                <button
+                                  key={col}
+                                  onClick={() => { setColorByColumn(col); setShowColorPicker(false); }}
+                                  className={`w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-700 ${
+                                    colorByColumn === col ? 'font-semibold text-purple-700 dark:text-purple-300' : 'text-gray-700 dark:text-gray-300'
+                                  }`}
+                                >
+                                  {col}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Data Grid toggle */}
+                      <button
+                        onClick={() => setShowDataGrid(v => !v)}
+                        className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                          showDataGrid
+                            ? 'border-emerald-300 bg-emerald-100 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
+                            : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        <Table2 className="h-3.5 w-3.5" />
+                        Data Grid
+                      </button>
+
                       {mapTableSelection && (
                         <button
                           onClick={() => setShowMapFilters(!showMapFilters)}
-                          className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                          className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
                             showMapFilters || mapFilters.length > 0
                               ? 'border-blue-300 bg-blue-100 text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
                               : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
                           }`}
                         >
-                          🔍 Filters {mapFilters.length > 0 && `(${mapFilters.length})`}
+                          <Search className="h-3.5 w-3.5" />
+                          Filters {mapFilters.length > 0 && `(${mapFilters.length})`}
                         </button>
                       )}
+                      {/* Export */}
+                      {geoPoints.length > 0 && (
+                        <div className="relative">
+                          <button
+                            onClick={() => setShowExportMenu(v => !v)}
+                            className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                          >
+                            <Download className="h-3.5 w-3.5" /> Export
+                          </button>
+                          {showExportMenu && (
+                            <div className="absolute right-0 top-full z-[9999] mt-1 w-40 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                              <button onClick={exportGeoJSON} className="w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700">
+                                GeoJSON (.geojson)
+                              </button>
+                              <button onClick={exportCSV} disabled={queryResults.length === 0} className="w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:text-gray-300 dark:hover:bg-gray-700">
+                                CSV (.csv)
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       <button
                         onClick={() => {
                           setMapTableSelection(null);
                           setGeoPoints([]);
                           setGeoShapes([]);
                           setMapFilters([]);
+                          setSelectedPoint(null);
+                          setSelectedPointId(null);
+                          setColorByColumn('');
+                          setShowDataGrid(false);
                         }}
                         className="rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30"
                       >
@@ -656,28 +783,60 @@ export default function GeospatialPage() {
                     </div>
                   )}
 
-                  {/* Map */}
-                  <div className="flex-1 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
-                    <DynamicMapViewer
-                      geoPoints={geoPoints}
-                      geoShapes={geoShapes}
-                      onMapClick={handleMapClick}
-                      center={[geospatialConfig.map.defaultCenter.lng, geospatialConfig.map.defaultCenter.lat]}
-                      zoom={geospatialConfig.map.defaultZoom}
-                      height="100%"
-                    />
+                  {/* Map + side panels + stats */}
+                  <div className="flex flex-1 flex-col overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+                  <div className="flex flex-1 overflow-hidden gap-0">
+                    {/* Map */}
+                    <div className="relative flex-1 overflow-hidden">
+                      <DynamicMapViewer
+                        geoPoints={geoPoints}
+                        geoShapes={geoShapes}
+                        onMapClick={handleMapClick}
+                        onPointSelect={handlePointSelect}
+                        selectedPointId={selectedPointId}
+                        colorByColumn={colorByColumn || undefined}
+                        center={[geospatialConfig.map.defaultCenter.lng, geospatialConfig.map.defaultCenter.lat]}
+                        zoom={geospatialConfig.map.defaultZoom}
+                        height="100%"
+                      />
+                    </div>
+
+                    {/* Data Grid panel */}
+                    {showDataGrid && queryResults.length > 0 && (
+                      <GeoDataGrid
+                        rows={queryResults}
+                        geoPoints={geoPoints}
+                        selectedPointId={selectedPointId}
+                        onRowSelect={handleRowSelect}
+                        onClose={() => setShowDataGrid(false)}
+                      />
+                    )}
+
+                    {/* Point detail panel */}
+                    {selectedPoint && (
+                      <PointDetailPanel
+                        point={selectedPoint}
+                        onClose={() => { setSelectedPoint(null); setSelectedPointId(null); }}
+                      />
+                    )}
+                  </div>
+                  {/* Stats bar */}
+                  {geoPoints.length > 0 && (
+                    <MapStatsBar geoPoints={geoPoints} nonGeoColumns={nonGeoColumns} />
+                  )}
                   </div>
                 </div>
               )}
 
               {/* Query Builder Tab */}
               {activeTab === 'query' && (
-                <div className="flex h-full gap-4">
-                  <div className={`flex-shrink-0 transition-all duration-300 ${mapCollapsed ? 'flex-1' : 'w-[500px]'}`}>
+                <div className="flex h-full gap-0 overflow-hidden">
+                  <div className={`flex-shrink-0 transition-all duration-300 ${mapCollapsed ? 'flex-1' : 'w-[480px]'}`}>
                     <SpatialQueryBuilder
                       onQueryExecute={handleQueryExecute}
+                      onQueryChange={setQuerySql}
                       queryHistory={queryHistory}
-                      onLoadQuery={handleQueryExecute}
+                      onLoadQuery={(sql) => { setQuerySql(sql); handleQueryExecute(sql); }}
                     />
                   </div>
 
@@ -723,13 +882,23 @@ export default function GeospatialPage() {
                       onClick={() => setMapCollapsed(false)}
                       className="flex flex-shrink-0 items-center gap-2 rounded-lg border-2 border-dashed border-blue-300 bg-blue-50 px-4 py-8 text-sm font-medium text-blue-700 transition-all hover:border-blue-400 hover:bg-blue-100 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-300"
                     >
-                      <Eye className="h-5 w-5" />
+                      <EyeOff className="h-5 w-5" />
                       <div className="text-left">
                         <div className="font-semibold">Show Map</div>
                         <div className="text-xs text-blue-600 dark:text-blue-400">View Results</div>
                       </div>
                     </button>
                   )}
+
+                  {/* Saved Queries Panel */}
+                  <SavedQueriesPanel
+                    savedQueries={savedQueries}
+                    queryHistory={queryHistory}
+                    currentSql={querySql}
+                    onLoad={(sql) => { setQuerySql(sql); handleQueryExecute(sql); }}
+                    onSave={saveQuery}
+                    onDelete={deleteSavedQuery}
+                  />
                 </div>
               )}
 
