@@ -464,7 +464,6 @@ test('10b $1 PostgreSQL-style fails or returns wrong results for vectors', async
     expect((r as { error: { message: string } }).error).toBeTruthy();
   } else {
     // If no error, confirms it did NOT match via params — $1 treated as identifier
-    console.log('[10b] MonkDB did not error on $1 (treated as literal)');
   }
 });
 
@@ -542,7 +541,6 @@ test('13 sys.privileges query executes without fatal error', async () => {
 
   if ('error' in r) {
     // Non-admin users may not have access — this is expected and handled by the debug panel
-    console.log('[13] sys.privileges not accessible (non-admin) — expected');
   } else {
     expect(Array.isArray((r as MonkResult).rows)).toBe(true);
   }
@@ -556,7 +554,6 @@ test('14 SELECT version() returns a string', async () => {
   expect(r.rows.length).toBe(1);
   expect(typeof r.rows[0][0]).toBe('string');
   expect((r.rows[0][0] as string).length).toBeGreaterThan(0);
-  console.log(`[14] MonkDB version: ${r.rows[0][0]}`);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

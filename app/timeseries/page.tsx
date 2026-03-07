@@ -147,14 +147,16 @@ function buildPreviewConfig(template: TemplateDefinition): DashboardConfig {
 function TemplatePreviewPage({
   templateId,
   onBack,
+  onUseTemplate,
 }: {
   templateId: string;
   onBack: () => void;
+  onUseTemplate: () => void;
 }) {
   const template = getTemplate(templateId);
   if (!template) return <NotFound onBack={onBack} />;
 
-  const previewConfig  = buildPreviewConfig(template);
+  const previewConfig    = buildPreviewConfig(template);
   const templateDemoData = buildTemplateDemoData(previewConfig.widgets);
 
   return (
@@ -163,6 +165,7 @@ function TemplatePreviewPage({
       demoMode
       templateDemoData={templateDemoData}
       onBack={onBack}
+      onEdit={onUseTemplate}
     />
   );
 }
@@ -178,7 +181,37 @@ export default function TimeSeriesPage() {
 
   // ── Template preview ──
   if (appState.mode === 'template-preview') {
-    return <TemplatePreviewPage templateId={appState.templateId} onBack={goHomeTemplates} />;
+    const handleUseTemplate = () => {
+      const t = getTemplate(appState.templateId);
+      if (!t) return;
+      const emptyDs: DataSourceConfig = {
+        schema: 'monkdb', table: '', timestampCol: '', metricCol: '', aggregation: 'AVG', limit: 50,
+      };
+      const now = new Date().toISOString();
+      const config: DashboardConfig = {
+        id: `dash_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        name: t.name,
+        description: t.description,
+        themeId: t.themeId,
+        refreshInterval: 'manual',
+        createdAt: now,
+        updatedAt: now,
+        templateId: t.id,
+        widgets: t.defaultLayout.map((layout) => ({
+          ...layout,
+          dataSource: { ...emptyDs },
+        })),
+      };
+      saveDashboard(config);
+      setAppState({ mode: 'builder', dashboardId: config.id, fromTemplate: true });
+    };
+    return (
+      <TemplatePreviewPage
+        templateId={appState.templateId}
+        onBack={goHomeTemplates}
+        onUseTemplate={handleUseTemplate}
+      />
+    );
   }
 
   // ── Dashboard viewer ──

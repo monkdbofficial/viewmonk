@@ -69,8 +69,6 @@ export default function VectorIndexManager() {
 
       setIndexes(indexList);
     } catch (err) {
-      // If the query fails, show a helpful message
-      console.error('Failed to load vector columns:', err);
       setError(err instanceof Error ? err.message : 'Failed to load vector columns');
       setIndexes([]);
     } finally {

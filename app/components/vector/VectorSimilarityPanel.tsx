@@ -132,7 +132,6 @@ export default function VectorSimilarityPanel() {
       setResults(transformedResults);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Similarity search failed');
-      console.error('Vector similarity error:', err);
     } finally {
       setLoading(false);
     }

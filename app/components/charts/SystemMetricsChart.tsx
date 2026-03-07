@@ -57,8 +57,7 @@ export default function SystemMetricsChart() {
             load: [...prev.load.slice(1), load],
           }));
         }
-      } catch (error) {
-        console.error('Error fetching system metrics:', error);
+      } catch {
       }
     };
 

@@ -78,7 +78,6 @@ export function UserProvider({ children }: UserProviderProps) {
     if (typeof window !== 'undefined' && !window.__TAURI__) {
       localStorage.setItem('monkdb_user_role', newRole);
     }
-    console.log('[UserContext] User role updated to:', newRole);
   }, []);
 
   useEffect(() => {
@@ -95,9 +94,7 @@ export function UserProvider({ children }: UserProviderProps) {
             setUserId(osUsername); // Use OS username as user ID
             // Default to 'user' role in Tauri mode
             setRole('user');
-            console.log('[UserContext] User initialized (Tauri):', osUsername);
           } catch (error) {
-            console.warn('[UserContext] Failed to get OS username:', error);
             // Fallback to a default identifier
             setUsername('desktop-user');
             setUserId('desktop-user');
@@ -126,10 +123,8 @@ export function UserProvider({ children }: UserProviderProps) {
           setUserId(storedUserId);
           setUsername(storedUsername || storedUserId);
           setRole(storedRole || 'user');
-          console.log('[UserContext] User initialized (Browser):', storedUsername, 'Role:', storedRole || 'user');
         }
       } catch (error) {
-        console.error('[UserContext] Failed to initialize user:', error);
         // Fallback to anonymous user with viewer role
         setUserId('anonymous');
         setUsername('anonymous');

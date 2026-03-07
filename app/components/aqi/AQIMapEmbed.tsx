@@ -48,8 +48,7 @@ export default function AQIMapEmbed() {
       if (data.success) {
         setStations(data.stations);
       }
-    } catch (err) {
-      console.error('Failed to fetch AQI data:', err);
+    } catch {
     }
   };
 
@@ -72,8 +71,7 @@ export default function AQIMapEmbed() {
         zoom: 4,
       });
 
-      map.current.on('error', (e) => {
-        console.error('Map error:', e);
+      map.current.on('error', () => {
         setError('Failed to load map');
       });
 

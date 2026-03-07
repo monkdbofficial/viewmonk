@@ -534,9 +534,7 @@ test('10d MATCH returns 0 rows before REFRESH (without explicit refresh)', async
 
   // Without REFRESH, distributed engines may return 0 (eventual consistency)
   // This is the expected MonkDB behaviour documented in our guide
-  const count = Number(r.rows[0][0]);
-  // count is 0 or possibly 1 depending on timing — just log it, do not fail
-  console.log(`[10d] Rows visible without REFRESH: ${count} (expected 0 on cold cluster)`);
+  // count is 0 or possibly 1 depending on timing — do not fail
 
   // Clean up
   await sqlRaw(`DROP TABLE IF EXISTS "doc"."pw_fts_norefresh"`);
@@ -572,9 +570,6 @@ test('11 10 concurrent SHOW CREATE TABLE calls succeed for non-BLOB tables', asy
   );
 
   const failures = results.filter(r => !r.ok);
-  if (failures.length > 0) {
-    console.error('SHOW CREATE TABLE failures:', failures);
-  }
   expect(failures.length).toBe(0);
 });
 
@@ -602,7 +597,6 @@ test('12c pg_catalog exists in MonkDB schema list', async () => {
   );
   // If pg_catalog exists, it's correct to exclude it from FTS tables list
   // If it doesn't, the exclusion is harmless (no rows to filter)
-  console.log(`[12c] pg_catalog present in MonkDB: ${r.rows.length > 0}`);
   // Either way is valid — just verifying our exclusion clause doesn't break things
   expect(r.rowcount).toBeGreaterThanOrEqual(0);
 });

@@ -346,7 +346,6 @@ ${body}
 </html>`;
 
 // ── Launch Playwright, render, export PDF ────────────────────────────────────
-console.log('Launching Chromium…');
 const browser = await chromium.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' });
 const page    = await browser.newPage();
 
@@ -355,7 +354,6 @@ await page.setContent(html, { waitUntil: 'networkidle' });
 // Give Google Fonts a moment to load (they're fetched over the network)
 await page.waitForTimeout(2500);
 
-console.log('Exporting PDF…');
 const pdfBuffer = await page.pdf({
   format: 'A4',
   printBackground: true,
@@ -366,4 +364,3 @@ const pdfBuffer = await page.pdf({
 await browser.close();
 
 writeFileSync(outPath, pdfBuffer);
-console.log(`✅  PDF saved to: ${outPath}`);

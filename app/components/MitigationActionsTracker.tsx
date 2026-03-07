@@ -63,7 +63,6 @@ export default function MitigationActionsTracker({ stationId, refreshKey }: Miti
         setErrorMessage(data.error || 'Failed to fetch mitigation actions');
       }
     } catch (error) {
-      console.error('Failed to fetch mitigation actions:', error);
       setErrorMessage('Network error: Unable to connect to the API');
     } finally {
       setLoading(false);

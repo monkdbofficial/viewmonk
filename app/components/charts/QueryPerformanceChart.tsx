@@ -22,9 +22,7 @@ export default function QueryPerformanceChart() {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   const fetchData = async () => {
-    console.log('QueryPerformanceChart: fetchData called, activeConnection:', !!activeConnection);
     if (!activeConnection) {
-      console.log('QueryPerformanceChart: No active connection, aborting fetch');
       return;
     }
 
@@ -50,8 +48,6 @@ export default function QueryPerformanceChart() {
       const result = await activeConnection.client.query(query);
 
       if (result.rows.length > 0) {
-        console.log('QueryPerformanceChart: Fetched', result.rows.length, 'hourly data points');
-        console.log('QueryPerformanceChart: Sample row:', result.rows[0]);
         const hours: string[] = [];
         const avgTimes: number[] = [];
 
@@ -69,11 +65,9 @@ export default function QueryPerformanceChart() {
           avgTimes.push(Math.round(duration * 100) / 100);
         });
 
-        console.log('QueryPerformanceChart: Processed avgTimes:', avgTimes);
         setChartData({ hours, avgTimes });
         setHasData(true);
       } else {
-        console.log('QueryPerformanceChart: No query history found in sys.jobs_log');
         const now = new Date();
         const hours = [];
         const avgTimes = [];
@@ -88,7 +82,6 @@ export default function QueryPerformanceChart() {
         setHasData(false);
       }
     } catch (err) {
-      console.error('QueryPerformanceChart: Error fetching performance data:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
       setHasData(false);
     } finally {
@@ -110,7 +103,6 @@ export default function QueryPerformanceChart() {
   useEffect(() => {
     if (!chartRef.current || chartInitializedRef.current) return;
 
-    console.log('QueryPerformanceChart: Initializing chart instance');
     chartInstanceRef.current = echarts.init(chartRef.current, undefined, {
       renderer: 'canvas',
     });
@@ -125,8 +117,7 @@ export default function QueryPerformanceChart() {
       if (chartInstanceRef.current) {
         try {
           chartInstanceRef.current.dispose();
-        } catch (e) {
-          console.error('Error disposing chart:', e);
+        } catch {
         }
         chartInstanceRef.current = null;
         chartInitializedRef.current = false;
@@ -137,11 +128,9 @@ export default function QueryPerformanceChart() {
   // Update chart data whenever it changes
   useEffect(() => {
     if (!chartInstanceRef.current || !chartData.hours.length) {
-      console.log('QueryPerformanceChart: Cannot update - instance:', !!chartInstanceRef.current, 'data length:', chartData.hours.length);
       return;
     }
 
-    console.log('QueryPerformanceChart: Updating chart with data:', chartData.avgTimes);
     const isDark = document.documentElement.classList.contains('dark');
 
     const option = {
@@ -238,10 +227,7 @@ export default function QueryPerformanceChart() {
 
     // Update chart data smoothly without recreation
     chartInstanceRef.current.setOption(option, { notMerge: false });
-    console.log('QueryPerformanceChart: Chart updated with setOption');
   }, [chartData]);
-
-  console.log('QueryPerformanceChart render:', { loading, error, hasData, chartDataLength: chartData.hours.length });
 
   return (
     <div className="relative h-[250px] w-full">

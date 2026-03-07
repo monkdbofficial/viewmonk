@@ -164,7 +164,6 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('Policy Simulation API Error:', error);
     return NextResponse.json(
       {
         success: false,
@@ -230,7 +229,6 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('Policy Simulation GET Error:', error);
     return NextResponse.json(
       {
         success: false,
@@ -302,8 +300,7 @@ async function getBaselineMetrics(
       very_unhealthy_days: parseInt(row.very_unhealthy_days),
       unhealthy_percentage: (row.unhealthy_days / baselineDays) * 100,
     };
-  } catch (error) {
-    console.error('Error fetching baseline metrics:', error);
+  } catch {
     return null;
   }
 }

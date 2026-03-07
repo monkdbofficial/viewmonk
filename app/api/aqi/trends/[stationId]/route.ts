@@ -37,9 +37,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
       ORDER BY hour ASC
     `;
 
-    console.log('[AQI Trends API] Querying MonkDB for station:', stationId);
-    console.log('[AQI Trends API] Query:', query.substring(0, 100) + '...');
-
     const response = await fetch(monkdbUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -47,11 +44,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       cache: 'no-store', // Disable caching for real-time data
     });
 
-    console.log('[AQI Trends API] Response status:', response.status, response.statusText);
-
     if (!response.ok) {
-      const errorText = await response.text();
-      console.log('[AQI Trends API] Error response:', errorText);
       throw new Error(`MonkDB query failed: ${response.statusText}`);
     }
 
@@ -93,7 +86,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
       generated_at: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('AQI Trends API Error:', error);
     return NextResponse.json(
       {
         success: false,

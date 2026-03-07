@@ -96,8 +96,7 @@ export default function SearchAnalyticsDashboard({ feature }: SearchAnalyticsDas
         successRate,
         topCollections,
       });
-    } catch (err) {
-      console.error('Failed to load analytics:', err);
+    } catch {
     }
   };
 

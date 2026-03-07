@@ -197,7 +197,6 @@ export async function GET(request: NextRequest) {
       generated_at: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Mitigation Actions API Error:', error);
     return NextResponse.json(
       {
         success: false,
@@ -289,7 +288,6 @@ export async function POST(request: NextRequest) {
       mitigation_id: data.rows[0][0],
     });
   } catch (error) {
-    console.error('Mitigation Actions POST Error:', error);
     return NextResponse.json(
       {
         success: false,

@@ -3,7 +3,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   X, DownloadCloud, FileJson, ImageDown,
   Settings2, Maximize2, Minimize2, ChevronDown,
-  ArrowLeft, LayoutGrid, Filter,
+  ArrowLeft, LayoutGrid, Filter, Pencil,
 } from 'lucide-react';
 import WidgetRenderer from './WidgetRenderer';
 import GlobalTimeRangeBar from './GlobalTimeRangeBar';
@@ -287,17 +287,22 @@ export default function DashboardViewer({
             />
           )}
 
-          {onEdit && !demoMode && (
+          {onEdit && (
             <button
               onClick={onEdit}
               className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                isLight
-                  ? 'border-gray-200 bg-white text-gray-700 hover:border-blue-300 hover:text-blue-600'
-                  : 'border-white/10 bg-white/[0.06] text-white/60 hover:border-white/20 hover:text-white/90'
+                demoMode
+                  ? isLight
+                    ? 'border-blue-200 bg-blue-50 text-blue-700 hover:border-blue-400 hover:bg-blue-100'
+                    : 'border-blue-400/30 bg-blue-500/10 text-blue-300 hover:border-blue-400/60 hover:bg-blue-500/20'
+                  : isLight
+                    ? 'border-gray-200 bg-white text-gray-700 hover:border-blue-300 hover:text-blue-600'
+                    : 'border-white/10 bg-white/[0.06] text-white/60 hover:border-white/20 hover:text-white/90'
               }`}
+              title={demoMode ? 'Open this template in the builder to configure your data sources' : 'Edit dashboard'}
             >
-              <Settings2 className="h-3.5 w-3.5" />
-              Edit
+              {demoMode ? <Pencil className="h-3.5 w-3.5" /> : <Settings2 className="h-3.5 w-3.5" />}
+              {demoMode ? 'Edit in Builder' : 'Edit'}
             </button>
           )}
 

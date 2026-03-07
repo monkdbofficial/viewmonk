@@ -165,7 +165,6 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('Mitigation Effectiveness API Error:', error);
     return NextResponse.json(
       {
         success: false,
@@ -273,8 +272,7 @@ async function getTrendAnalysis(
       total_cost: Math.round(row.total_cost),
       total_aqi_reduction: Math.round(row.total_aqi_reduction * 10) / 10,
     }));
-  } catch (error) {
-    console.error('Error fetching trend analysis:', error);
+  } catch {
     return [];
   }
 }

@@ -9,10 +9,12 @@ import {
 } from 'lucide-react';
 import WidgetPalette from './WidgetPalette';
 import WidgetConfigDrawer from './WidgetConfigDrawer';
+import WidgetRenderer from '../viewer/WidgetRenderer';
 import { ALL_THEMES } from '@/app/lib/timeseries/themes';
+import { getDefaultTimeRange } from '@/app/lib/timeseries/time-range';
 import type {
   WidgetConfig, DashboardConfig, WidgetType,
-  DashboardThemeId, GridPosition, DataSourceConfig, WidgetStyle,
+  DashboardThemeId, GridPosition, DataSourceConfig, WidgetStyle, TimeRange,
 } from '@/app/lib/timeseries/types';
 import { ROW_HEIGHT, COL_COUNT, GAP } from '@/app/lib/timeseries/constants';
 
@@ -119,12 +121,14 @@ interface CanvasWidgetProps {
   widget: WidgetConfig;
   isSelected: boolean;
   canvasRef: React.RefObject<HTMLDivElement | null>;
+  themeId: DashboardThemeId;
+  previewTimeRange: TimeRange;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onResize: (id: string, w: number, h: number) => void;
 }
 
-function CanvasWidget({ widget, isSelected, canvasRef, onSelect, onDelete, onResize }: CanvasWidgetProps) {
+function CanvasWidget({ widget, isSelected, canvasRef, themeId, previewTimeRange, onSelect, onDelete, onResize }: CanvasWidgetProps) {
   const [{ isDragging }, drag, dragPreview] = useDrag({
     type: DRAG_TYPE,
     item: () => ({ id: widget.id }),
@@ -134,6 +138,7 @@ function CanvasWidget({ widget, isSelected, canvasRef, onSelect, onDelete, onRes
   const { x, y, w, h } = widget.position;
   const colW = `calc((100% - ${(COL_COUNT - 1) * GAP}px) / ${COL_COUNT})`;
   const meta = WIDGET_LABELS[widget.type];
+  const hasLiveData = !!(widget.dataSource.table && widget.dataSource.metricCol);
 
   // Resize via mouse events on bottom-right corner handle
   const handleResizeMouseDown = (e: React.MouseEvent) => {
@@ -180,58 +185,67 @@ function CanvasWidget({ widget, isSelected, canvasRef, onSelect, onDelete, onRes
       onClick={(e) => { e.stopPropagation(); onSelect(widget.id); }}
     >
       <div
-        className={`group relative h-full w-full rounded-xl border-2 transition-all duration-150 ${
+        className={`group relative h-full w-full overflow-hidden rounded-xl border-2 transition-all duration-150 ${
           isSelected
-            ? 'border-blue-500 bg-blue-500/[0.06] shadow-lg shadow-blue-500/20 ring-2 ring-blue-500/25 dark:bg-blue-500/[0.08]'
-            : 'border-dashed border-gray-300 bg-white hover:border-gray-400 hover:bg-gray-50 dark:border-gray-600/40 dark:bg-white/[0.02] dark:hover:border-gray-500/60 dark:hover:bg-white/[0.04]'
+            ? 'border-blue-500 shadow-lg shadow-blue-500/20 ring-2 ring-blue-500/25'
+            : hasLiveData
+              ? 'border-gray-200 hover:border-gray-300 dark:border-gray-700/60 dark:hover:border-gray-600/80'
+              : 'border-dashed border-gray-300 bg-white hover:border-gray-400 hover:bg-gray-50 dark:border-gray-600/40 dark:bg-white/[0.02] dark:hover:border-gray-500/60 dark:hover:bg-white/[0.04]'
         }`}
       >
-        {/* Drag handle */}
+        {/* Drag handle — always on top as overlay */}
         <div
           ref={drag as (el: HTMLDivElement | null) => void}
-          className="absolute left-2 top-2 z-20 cursor-grab rounded p-1 text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-700 active:cursor-grabbing dark:text-gray-600 dark:hover:bg-white/10 dark:hover:text-gray-300"
+          className="absolute left-2 top-2 z-20 cursor-grab rounded p-1 text-gray-400 opacity-0 transition-all group-hover:opacity-100 hover:bg-gray-200 hover:text-gray-700 active:cursor-grabbing dark:text-gray-500 dark:hover:bg-white/10 dark:hover:text-gray-300"
           onClick={(e) => e.stopPropagation()}
           title="Drag to move"
         >
           <GripVertical className="h-3.5 w-3.5" />
         </div>
 
-        {/* Delete button */}
+        {/* Delete button — always on top as overlay */}
         <button
-          className="absolute right-2 top-2 z-20 rounded p-1 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:text-gray-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+          className="absolute right-2 top-2 z-20 rounded p-1 text-gray-400 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-50 hover:text-red-500 dark:text-gray-500 dark:hover:bg-red-500/10 dark:hover:text-red-400"
           onClick={(e) => { e.stopPropagation(); onDelete(widget.id); }}
           title="Delete widget"
         >
           <X className="h-3.5 w-3.5" />
         </button>
 
-        {/* Body */}
-        <div className="flex h-full flex-col items-center justify-center gap-2 px-10 py-4">
-          <div
-            className="flex h-11 w-11 items-center justify-center rounded-xl"
-            style={{ background: `${meta.color}20` }}
-          >
-            <span className="text-xl leading-none">{meta.emoji}</span>
+        {hasLiveData ? (
+          /* ── Live chart preview ── */
+          <div className="h-full w-full" onClick={(e) => e.stopPropagation()}>
+            <WidgetRenderer
+              widget={widget}
+              themeId={themeId}
+              timeRange={previewTimeRange}
+              activeFilter={null}
+              builderMode
+            />
           </div>
-          <div className="text-center">
-            <p className="max-w-full truncate text-sm font-semibold text-gray-700 dark:text-gray-200">
-              {widget.title || meta.label}
-            </p>
-            <p className="mt-0.5 text-xs font-mono text-gray-400 dark:text-gray-600">{widget.type}</p>
-          </div>
-          {widget.dataSource.table ? (
-            <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
-              {widget.dataSource.schema}.{widget.dataSource.table}
-            </span>
-          ) : (
+        ) : (
+          /* ── Unconfigured placeholder ── */
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-10 py-4">
+            <div
+              className="flex h-11 w-11 items-center justify-center rounded-xl"
+              style={{ background: `${meta.color}20` }}
+            >
+              <span className="text-xl leading-none">{meta.emoji}</span>
+            </div>
+            <div className="text-center">
+              <p className="max-w-full truncate text-sm font-semibold text-gray-700 dark:text-gray-200">
+                {widget.title || meta.label}
+              </p>
+              <p className="mt-0.5 text-xs font-mono text-gray-400 dark:text-gray-600">{widget.type}</p>
+            </div>
             <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs text-amber-600 dark:bg-amber-500/10 dark:text-amber-400">
               Click to configure
             </span>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Position / size badge */}
-        <div className="absolute bottom-1.5 left-2 text-xs font-mono text-gray-400 opacity-0 transition-opacity group-hover:opacity-100 dark:text-gray-700">
+        <div className="absolute bottom-1.5 left-2 z-10 text-xs font-mono text-gray-400 opacity-0 transition-opacity group-hover:opacity-100 dark:text-gray-600">
           {w}×{h} @ ({x},{y})
         </div>
 
@@ -256,6 +270,8 @@ interface BuilderCanvasProps {
   widgets: WidgetConfig[];
   selectedId: string | null;
   canvasRef: React.RefObject<HTMLDivElement | null>;
+  themeId: DashboardThemeId;
+  previewTimeRange: TimeRange;
   onSelectWidget: (id: string | null) => void;
   onDeleteWidget: (id: string) => void;
   onMoveWidget: (id: string, newPos: GridPosition) => void;
@@ -263,7 +279,7 @@ interface BuilderCanvasProps {
 }
 
 function BuilderCanvas({
-  widgets, selectedId, canvasRef,
+  widgets, selectedId, canvasRef, themeId, previewTimeRange,
   onSelectWidget, onDeleteWidget, onMoveWidget, onResizeWidget,
 }: BuilderCanvasProps) {
   const [, drop] = useDrop<{ id: string }, void, object>({
@@ -331,6 +347,8 @@ function BuilderCanvas({
             widget={widget}
             isSelected={selectedId === widget.id}
             canvasRef={canvasRef}
+            themeId={themeId}
+            previewTimeRange={previewTimeRange}
             onSelect={onSelectWidget}
             onDelete={onDeleteWidget}
             onResize={onResizeWidget}
@@ -402,6 +420,7 @@ function BuilderInner({ config, fromTemplate, onSave, onPreview, onBack }: Dashb
   const [name,        setName]        = useState(config.name);
   const [description, setDescription] = useState(config.description ?? '');
   const [themeId,     setThemeId]     = useState<DashboardThemeId>(config.themeId);
+  const [previewTimeRange]            = useState<TimeRange>(() => getDefaultTimeRange());
   const [setupBannerDismissed, setSetupBannerDismissed] = useState(false);
 
   // Auto-select the first unconfigured widget when entering from a template
@@ -628,6 +647,8 @@ function BuilderInner({ config, fromTemplate, onSave, onPreview, onBack }: Dashb
           widgets={widgets}
           selectedId={selectedId}
           canvasRef={canvasRef}
+          themeId={themeId}
+          previewTimeRange={previewTimeRange}
           onSelectWidget={setSelectedId}
           onDeleteWidget={handleDeleteWidget}
           onMoveWidget={handleMoveWidget}

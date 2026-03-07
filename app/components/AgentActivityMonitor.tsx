@@ -60,7 +60,6 @@ export default function AgentActivityMonitor({ refreshKey }: AgentActivityMonito
         setErrorMessage(data.error || 'Failed to fetch agent activities');
       }
     } catch (error) {
-      console.error('Failed to fetch agent activities:', error);
       setErrorMessage('Network error: Unable to connect to the API');
     } finally {
       setLoading(false);

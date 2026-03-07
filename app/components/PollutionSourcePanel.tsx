@@ -153,7 +153,6 @@ export default function PollutionSourcePanel({ stationId }: PollutionSourcePanel
       const demoData = generateDemoData();
       setSourceData(demoData);
       setError(null);
-      console.log('Using demo pollution source data');
     } finally {
       setLoading(false);
     }

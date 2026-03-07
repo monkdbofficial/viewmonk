@@ -68,7 +68,6 @@ export async function GET(request: NextRequest) {
       generated_at: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Anomalies API error:', error);
     return NextResponse.json(
       { error: 'Failed to fetch anomaly data', details: String(error) },
       { status: 500 }

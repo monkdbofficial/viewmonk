@@ -45,7 +45,6 @@ export default function AnomalyAlertCard({ hoursBack = 24, maxAlerts = 5 }: Anom
       setError(null);
     } catch (err) {
       setError('Failed to fetch anomaly data');
-      console.error(err);
     } finally {
       setLoading(false);
     }

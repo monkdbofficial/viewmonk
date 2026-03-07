@@ -118,7 +118,6 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('Pollution Pointer API Error:', error);
     return NextResponse.json(
       {
         success: false,
@@ -438,7 +437,6 @@ async function getNearbyAssets(
   //     properties: row.properties,
   //   }));
   // } catch (error) {
-  //   console.error('Error fetching nearby assets:', error);
   //   return [];
   // }
 }
@@ -493,7 +491,6 @@ async function generateSolutions(row: any): Promise<Solution[]> {
   //     });
   //   }
   // } catch (error) {
-  //   console.error('Error generating solutions:', error);
   // }
 
   // If no historical data, provide generic solutions based on source type

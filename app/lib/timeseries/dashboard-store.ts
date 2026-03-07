@@ -42,7 +42,7 @@ function writeLocal(dashboards: DashboardConfig[]): void {
   try {
     localStorage.setItem(LOCAL_KEY, JSON.stringify(dashboards));
   } catch {
-    console.warn('[DashboardStore] localStorage write failed');
+    // localStorage write failed silently
   }
 }
 

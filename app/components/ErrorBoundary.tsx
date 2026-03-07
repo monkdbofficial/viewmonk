@@ -100,12 +100,8 @@ export default class ErrorBoundary extends Component<Props, State> {
        errorString.includes('Hydration') ||
        errorString.includes('did not match'))
     ) {
-      console.warn('[ErrorBoundary] Ignoring development-only error:', error.message);
       return;
     }
-
-    // Log error details for debugging
-    console.error('[ErrorBoundary] Caught an error:', error, errorInfo);
 
     // Categorize the error
     const { category, isCritical } = this.categorizeError(error);
@@ -120,9 +116,7 @@ export default class ErrorBoundary extends Component<Props, State> {
 
     // Auto-recovery logic for non-critical errors
     if (!isCritical && !this.state.autoRecoveryAttempted) {
-      console.log(`[ErrorBoundary] Non-critical ${category} error detected. Auto-recovering in 3 seconds...`);
       this.autoRecoveryTimeout = setTimeout(() => {
-        console.log('[ErrorBoundary] Auto-recovery triggered');
         this.setState({
           autoRecoveryAttempted: true,
         });

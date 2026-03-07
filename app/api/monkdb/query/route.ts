@@ -43,7 +43,6 @@ export async function POST(request: NextRequest) {
     // Return the MonkDB response
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
-    console.error('MonkDB Proxy Error:', error);
     return NextResponse.json(
       {
         error: {

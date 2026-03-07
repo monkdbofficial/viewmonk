@@ -69,7 +69,6 @@ export async function GET(request: NextRequest) {
       hours_ahead: predictions.length,
     });
   } catch (error) {
-    console.error('Forecast API error:', error);
     return NextResponse.json(
       { error: 'Failed to fetch forecast data', details: String(error) },
       { status: 500 }

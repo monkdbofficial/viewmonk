@@ -208,7 +208,6 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('Health Correlation API Error:', error);
     return NextResponse.json(
       {
         success: false,

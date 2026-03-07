@@ -54,7 +54,6 @@ function BlobAnalyticsContent() {
       setAnalytics(data);
       setLastRefresh(new Date());
     } catch (error) {
-      console.error('[Analytics] Failed to load:', error);
       setError('Failed to load analytics data');
     } finally {
       setLoading(false);

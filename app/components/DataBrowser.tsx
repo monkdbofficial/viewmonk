@@ -79,7 +79,6 @@ export default function DataBrowser() {
           totalRows: totalRows
         });
       } catch (err) {
-        console.error('Error fetching table data:', err);
         setError(err instanceof Error ? err.message : 'Failed to fetch table data');
         setTableData(null);
       } finally {

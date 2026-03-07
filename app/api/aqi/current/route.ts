@@ -99,7 +99,6 @@ export async function GET(request: NextRequest) {
       updated_at: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('AQI API Error:', error);
     return NextResponse.json(
       {
         success: false,

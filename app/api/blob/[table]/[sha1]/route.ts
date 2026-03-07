@@ -22,7 +22,6 @@ export async function PUT(
 
     // SECURITY: Validate table name to prevent SQL injection and path traversal
     if (!isValidSQLIdentifier(table)) {
-      console.error('[Blob Proxy] Invalid table name:', table);
       return NextResponse.json(
         { error: 'Invalid table name. Only alphanumeric characters, underscores, and dots are allowed.' },
         { status: 400 }
@@ -31,7 +30,6 @@ export async function PUT(
 
     // SECURITY: Validate SHA1 hash format
     if (!isValidSHA1(sha1)) {
-      console.error('[Blob Proxy] Invalid SHA1 hash:', sha1);
       return NextResponse.json(
         { error: 'Invalid SHA1 hash format. Must be 40 hexadecimal characters.' },
         { status: 400 }
@@ -45,7 +43,6 @@ export async function PUT(
 
     // SECURITY: Validate hostname to prevent SSRF attacks
     if (!isValidHostname(host)) {
-      console.error('[Blob Proxy] Invalid hostname:', host);
       return NextResponse.json(
         { error: 'Invalid hostname.' },
         { status: 400 }
@@ -54,7 +51,6 @@ export async function PUT(
 
     // SECURITY: Validate port number
     if (!isValidPort(portStr)) {
-      console.error('[Blob Proxy] Invalid port:', portStr);
       return NextResponse.json(
         { error: 'Invalid port number.' },
         { status: 400 }
@@ -72,16 +68,11 @@ export async function PUT(
       );
     }
 
-    console.log('[Blob Proxy] PUT request (validated):', { table, sha1, host, port: portStr });
-
     // Read request body
     const body = await request.arrayBuffer();
-    console.log('[Blob Proxy] Body size:', body.byteLength, 'bytes');
 
     // Forward to MonkDB
     const monkdbUrl = `http://${host}:${portStr}/_blobs/${table}/${sha1}`;
-    console.log('[Blob Proxy] Forwarding to:', monkdbUrl);
-
     const response = await fetch(monkdbUrl, {
       method: 'PUT',
       headers: {
@@ -89,8 +80,6 @@ export async function PUT(
       },
       body: body,
     });
-
-    console.log('[Blob Proxy] MonkDB response status:', response.status);
 
     // 201 = Created (new blob), 409 = Conflict (blob already exists)
     // Both are success cases
@@ -117,7 +106,6 @@ export async function PUT(
 
     return NextResponse.json({ success: true, status: response.status });
   } catch (error: any) {
-    console.error('[Blob Proxy] Upload error:', error);
     return NextResponse.json(
       { error: sanitizeErrorMessage(error) },
       { status: 500 }
@@ -135,7 +123,6 @@ export async function GET(
 
     // SECURITY: Validate table name
     if (!isValidSQLIdentifier(table)) {
-      console.error('[Blob Proxy] Invalid table name:', table);
       return NextResponse.json(
         { error: 'Invalid table name.' },
         { status: 400 }
@@ -144,7 +131,6 @@ export async function GET(
 
     // SECURITY: Validate SHA1 hash
     if (!isValidSHA1(sha1)) {
-      console.error('[Blob Proxy] Invalid SHA1 hash:', sha1);
       return NextResponse.json(
         { error: 'Invalid SHA1 hash format.' },
         { status: 400 }
@@ -178,8 +164,6 @@ export async function GET(
       );
     }
 
-    console.log('[Blob Proxy] GET request (validated):', { table, sha1, host, port: portStr });
-
     // Forward to MonkDB
     const monkdbUrl = `http://${host}:${portStr}/_blobs/${table}/${sha1}`;
     const response = await fetch(monkdbUrl);
@@ -208,7 +192,6 @@ export async function GET(
       },
     });
   } catch (error: any) {
-    console.error('[Blob Proxy] Download error:', error);
     return NextResponse.json(
       { error: sanitizeErrorMessage(error) },
       { status: 500 }
@@ -226,7 +209,6 @@ export async function DELETE(
 
     // SECURITY: Validate table name
     if (!isValidSQLIdentifier(table)) {
-      console.error('[Blob Proxy] Invalid table name:', table);
       return NextResponse.json(
         { error: 'Invalid table name.' },
         { status: 400 }
@@ -235,7 +217,6 @@ export async function DELETE(
 
     // SECURITY: Validate SHA1 hash
     if (!isValidSHA1(sha1)) {
-      console.error('[Blob Proxy] Invalid SHA1 hash:', sha1);
       return NextResponse.json(
         { error: 'Invalid SHA1 hash format.' },
         { status: 400 }
@@ -280,7 +261,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, status: response.status });
   } catch (error: any) {
-    console.error('[Blob Proxy] Delete error:', error);
     return NextResponse.json(
       { error: sanitizeErrorMessage(error) },
       { status: 500 }

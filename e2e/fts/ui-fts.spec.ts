@@ -469,9 +469,6 @@ test('12 No $1/$2 PostgreSQL placeholders in any SQL sent to MonkDB', async ({ p
     await runSearch(page, 'error');
   }
 
-  if (badStmts.length > 0) {
-    console.error('Found PostgreSQL-style placeholders in SQL:', badStmts);
-  }
   expect(badStmts).toHaveLength(0);
 });
 
@@ -485,7 +482,6 @@ test('12b No unhandled JS errors on FTS page', async ({ page }) => {
   const realErrors = errors.filter(
     e => !e.includes('WebSocket') && !e.includes('HMR') && !e.includes('ECONNREFUSED')
   );
-  if (realErrors.length > 0) console.error('JS errors:', realErrors);
   expect(realErrors).toHaveLength(0);
 });
 

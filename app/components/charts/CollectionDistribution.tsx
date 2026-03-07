@@ -51,7 +51,6 @@ export default function CollectionDistribution() {
       const result = await activeConnection.client.query(query);
 
       if (result.rows && result.rows.length > 0) {
-        console.log('CollectionDistribution: Fetched', result.rows.length, 'schemas');
         const allSchemas: SchemaStats[] = result.rows.map((row: any[]) => ({
           schema: row[0],
           tableCount: row[1] || 0,
@@ -59,11 +58,9 @@ export default function CollectionDistribution() {
         }));
         setSchemaData(allSchemas);
       } else {
-        console.log('CollectionDistribution: No schemas found');
         setSchemaData([]);
       }
     } catch (err) {
-      console.error('CollectionDistribution: Error fetching schema stats:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
       setSchemaData([]);
     } finally {
@@ -85,7 +82,6 @@ export default function CollectionDistribution() {
   useEffect(() => {
     if (!chartRef.current || chartInitializedRef.current) return;
 
-    console.log('CollectionDistribution: Initializing chart instance');
     chartInstanceRef.current = echarts.init(chartRef.current, undefined, {
       renderer: 'canvas',
     });
@@ -100,8 +96,7 @@ export default function CollectionDistribution() {
       if (chartInstanceRef.current) {
         try {
           chartInstanceRef.current.dispose();
-        } catch (e) {
-          console.error('Error disposing chart:', e);
+        } catch {
         }
         chartInstanceRef.current = null;
         chartInitializedRef.current = false;
@@ -113,7 +108,6 @@ export default function CollectionDistribution() {
   useEffect(() => {
     if (!chartInstanceRef.current) return;
 
-    console.log('CollectionDistribution: Updating chart with', schemaData.length, 'schemas');
     const isDark = document.documentElement.classList.contains('dark');
 
     const data =

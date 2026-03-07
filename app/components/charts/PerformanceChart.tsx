@@ -47,8 +47,6 @@ export default function PerformanceChart() {
       const result = await activeConnection.client.query(query);
 
       if (result.rows.length > 0) {
-        console.log('PerformanceChart: Fetched', result.rows.length, 'hourly data points');
-        console.log('PerformanceChart: Sample row:', result.rows[0]);
         const hours: QueryStats[] = result.rows.map((row: any[]) => {
           const hourTimestamp = row[0];
           const queryCount = row[1];
@@ -68,11 +66,9 @@ export default function PerformanceChart() {
           };
         });
 
-        console.log('PerformanceChart: Processed stats:', hours);
         setStats(hours);
         setHasData(true);
       } else {
-        console.log('PerformanceChart: No query history found');
         const now = new Date();
         const hours = [];
 
@@ -89,7 +85,6 @@ export default function PerformanceChart() {
         setHasData(false);
       }
     } catch (err) {
-      console.error('PerformanceChart: Error fetching stats:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
       setHasData(false);
     } finally {
@@ -111,7 +106,6 @@ export default function PerformanceChart() {
   useEffect(() => {
     if (!chartRef.current || chartInitializedRef.current) return;
 
-    console.log('PerformanceChart: Initializing chart instance');
     chartInstanceRef.current = echarts.init(chartRef.current, undefined, {
       renderer: 'canvas',
     });
@@ -126,8 +120,7 @@ export default function PerformanceChart() {
       if (chartInstanceRef.current) {
         try {
           chartInstanceRef.current.dispose();
-        } catch (e) {
-          console.error('Error disposing chart:', e);
+        } catch {
         }
         chartInstanceRef.current = null;
         chartInitializedRef.current = false;
@@ -139,7 +132,6 @@ export default function PerformanceChart() {
   useEffect(() => {
     if (!chartInstanceRef.current || stats.length === 0) return;
 
-    console.log('PerformanceChart: Updating chart with', stats.length, 'data points');
     const isDark = document.documentElement.classList.contains('dark');
 
     const timeLabels = stats.map((s) => s.timeLabel);

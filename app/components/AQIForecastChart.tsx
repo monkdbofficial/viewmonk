@@ -48,7 +48,6 @@ export default function AQIForecastChart({ stationId, hoursAhead = 24 }: AQIFore
       const demoData = generateDemoForecast(hoursAhead);
       setForecastData(demoData);
       setError(null);
-      console.log('Using demo forecast data');
     } finally {
       setLoading(false);
     }

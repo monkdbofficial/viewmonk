@@ -69,7 +69,6 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('Alert GET Error:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to fetch alerts', message: error.message },
       { status: 500 }
@@ -121,7 +120,6 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('Alert POST Error:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to create alert', message: error.message },
       { status: 500 }
@@ -198,7 +196,6 @@ export async function PATCH(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('Alert PATCH Error:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to update alert', message: error.message },
       { status: 500 }

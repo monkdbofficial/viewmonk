@@ -134,15 +134,3 @@ export function formatError(error: any): { title: string; message: string } {
     message: dbError.getUserMessage(),
   };
 }
-
-/**
- * Log error to console with context
- */
-export function logError(context: string, error: any): void {
-  const dbError = DatabaseError.from(error);
-  console.error(`[${context}]`, {
-    code: dbError.code,
-    message: dbError.message,
-    details: dbError.details,
-  });
-}

@@ -1,0 +1,197 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - navigation [ref=e3]:
+      - generic [ref=e5]:
+        - link "MonkDB" [ref=e6] [cursor=pointer]:
+          - /url: /
+          - img "MonkDB" [ref=e7]
+        - generic [ref=e8]:
+          - button "Open command palette (⌘K or Ctrl+K)" [ref=e9]:
+            - img [ref=e10]
+          - button "1" [ref=e13]:
+            - img [ref=e14]
+            - generic [ref=e16]: "1"
+          - button "Toggle theme" [ref=e17]:
+            - img [ref=e18]
+          - generic [ref=e22]:
+            - generic [ref=e23]: Playwright QE Test
+            - generic [ref=e24]: localhost:4200
+    - generic [ref=e25]:
+      - complementary [ref=e26]:
+        - generic [ref=e27]:
+          - generic [ref=e28]:
+            - heading "Workbench" [level=2] [ref=e29]
+            - button "Collapse sidebar" [ref=e30]:
+              - img [ref=e31]
+          - navigation [ref=e33]:
+            - generic [ref=e34]:
+              - link "Dashboard" [ref=e35] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e37]
+                - generic [ref=e39]: Dashboard
+              - link "Schema Viewer" [ref=e40] [cursor=pointer]:
+                - /url: /unified-browser
+                - img [ref=e42]
+                - generic [ref=e44]: Schema Viewer
+              - link "Query Editor" [ref=e45] [cursor=pointer]:
+                - /url: /query-editor
+                - img [ref=e48]
+                - generic [ref=e50]: Query Editor
+              - link "Table Designer" [ref=e51] [cursor=pointer]:
+                - /url: /table-designer
+                - img [ref=e53]
+                - generic [ref=e55]: Table Designer
+              - link "Time-Series" [ref=e56] [cursor=pointer]:
+                - /url: /timeseries
+                - img [ref=e58]
+                - generic [ref=e60]: Time-Series
+              - link "Geospatial" [ref=e61] [cursor=pointer]:
+                - /url: /geospatial
+                - img [ref=e63]
+                - generic [ref=e65]: Geospatial
+              - link "Vector Search" [ref=e66] [cursor=pointer]:
+                - /url: /vector-ops
+                - img [ref=e68]
+                - generic [ref=e70]: Vector Search
+              - link "Full-Text Search" [ref=e71] [cursor=pointer]:
+                - /url: /fts
+                - img [ref=e73]
+                - generic [ref=e75]: Full-Text Search
+              - link "BLOB Storage" [ref=e76] [cursor=pointer]:
+                - /url: /blob-storage
+                - img [ref=e78]
+                - generic [ref=e80]: BLOB Storage
+              - link "ER Diagram" [ref=e81] [cursor=pointer]:
+                - /url: /er-diagram
+                - img [ref=e83]
+                - generic [ref=e85]: ER Diagram
+              - link "Connections" [ref=e86] [cursor=pointer]:
+                - /url: /connections
+                - img [ref=e88]
+                - generic [ref=e90]: Connections
+            - generic [ref=e91]:
+              - paragraph [ref=e92]: Developer Tools
+              - link "API Playground" [ref=e94] [cursor=pointer]:
+                - /url: /api-playground
+                - img [ref=e96]
+                - generic [ref=e98]: API Playground
+            - generic [ref=e99]:
+              - paragraph [ref=e100]: System
+              - generic [ref=e101]:
+                - link "User Management" [ref=e102] [cursor=pointer]:
+                  - /url: /user-management
+                  - img [ref=e104]
+                  - generic [ref=e106]: User Management
+                - link "Settings" [ref=e107] [cursor=pointer]:
+                  - /url: /settings
+                  - img [ref=e109]
+                  - generic [ref=e112]: Settings
+      - main [ref=e113]:
+        - generic [ref=e116]:
+          - generic [ref=e117]:
+            - generic [ref=e118]:
+              - generic [ref=e119]:
+                - img [ref=e121]
+                - generic [ref=e125]:
+                  - heading "SQL Editor" [level=3] [ref=e126]
+                  - paragraph [ref=e127]: "Playwright QE Test • Schema: doc"
+              - button "Saved" [ref=e129]:
+                - img [ref=e130]
+                - text: Saved
+              - button "Save" [disabled] [ref=e132]:
+                - img [ref=e133]
+                - text: Save
+              - button "Format" [disabled] [ref=e137]:
+                - img [ref=e138]
+                - text: Format
+              - button "Keyboard shortcuts" [ref=e141]:
+                - img [ref=e142]
+            - generic [ref=e144]:
+              - generic [ref=e145]:
+                - img [ref=e146]
+                - generic [ref=e149]: Connected
+              - button "Explain" [disabled] [ref=e151]:
+                - img [ref=e152]
+                - text: Explain
+              - button "Execute" [disabled] [ref=e154]:
+                - img [ref=e155]
+                - text: Execute
+          - generic [ref=e157]:
+            - generic [ref=e159] [cursor=pointer]:
+              - img [ref=e161]
+              - generic "Untitled — double-click to rename" [ref=e164]: Untitled
+              - button "Close tab" [ref=e165]:
+                - img [ref=e166]
+            - button "New tab (Cmd+T)" [ref=e169]:
+              - img [ref=e170]
+          - generic [ref=e171]:
+            - generic [ref=e172]:
+              - generic [ref=e173]:
+                - button "History" [ref=e174]:
+                  - img [ref=e175]
+                  - generic [ref=e179]: History
+                - button "Schema" [ref=e180]:
+                  - img [ref=e181]
+                  - generic [ref=e185]: Schema
+                - button "Docs" [ref=e186]:
+                  - img [ref=e187]
+                  - generic [ref=e189]: Docs
+              - generic [ref=e191]:
+                - heading "Recent Queries (0)" [level=4] [ref=e193]
+                - paragraph [ref=e194]: No query history yet. Execute queries to build history.
+            - generic [ref=e195]:
+              - code [ref=e201]:
+                - generic [ref=e202]:
+                  - textbox "Editor content" [active] [ref=e203]
+                  - textbox [ref=e204]
+                  - generic [ref=e209]: "1"
+              - generic [ref=e217]:
+                - generic [ref=e218]:
+                  - generic [ref=e220]: Results
+                  - generic [ref=e221]:
+                    - button "Copy" [disabled] [ref=e222]:
+                      - img [ref=e223]
+                      - text: Copy
+                    - button "CSV" [disabled] [ref=e226]:
+                      - img [ref=e227]
+                      - text: CSV
+                    - button "JSON" [disabled] [ref=e230]:
+                      - img [ref=e231]
+                      - text: JSON
+                    - generic [ref=e235]:
+                      - button "Table" [ref=e236]
+                      - button "JSON" [ref=e237]
+                - generic [ref=e238]:
+                  - img [ref=e240]
+                  - generic [ref=e242]:
+                    - paragraph [ref=e243]: Run a query to see results
+                    - paragraph [ref=e244]: Press ⌘ / Ctrl + Enter to execute
+                  - generic [ref=e245]:
+                    - generic [ref=e246]:
+                      - img [ref=e247]
+                      - text: Use Templates for quick queries
+                    - generic [ref=e249]:
+                      - img [ref=e250]
+                      - text: History auto-saves executions
+          - generic [ref=e254]:
+            - generic [ref=e255]:
+              - generic [ref=e256]:
+                - img [ref=e257]
+                - generic [ref=e261]: Playwright QE Test
+              - generic [ref=e263]:
+                - img [ref=e264]
+                - generic [ref=e267]: "-"
+              - generic [ref=e269]:
+                - img [ref=e270]
+                - generic [ref=e273]: No rows
+            - generic [ref=e276]: Ready
+  - button "Open Next.js Dev Tools" [ref=e282] [cursor=pointer]:
+    - img [ref=e283]
+  - alert [ref=e286]
+  - generic [ref=e287]:
+    - alert
+    - alert
+```

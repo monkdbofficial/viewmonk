@@ -21,10 +21,9 @@ export async function loadRuntimeEnv() {
       }
 
       loaded = true;
-      console.log('✅ Runtime environment variables loaded');
     }
-  } catch (err) {
-    console.warn('Failed to load runtime env, using build-time values');
+  } catch {
+    // ignore, fall back to build-time values
   }
 
   return runtimeEnv;

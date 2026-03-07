@@ -172,7 +172,6 @@ export async function GET(request: NextRequest) {
       generated_at: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Agent Activity API Error:', error);
     return NextResponse.json(
       {
         success: false,
@@ -262,7 +261,6 @@ export async function POST(request: NextRequest) {
       activity_id: data.rows[0][0],
     });
   } catch (error) {
-    console.error('Agent Activity POST Error:', error);
     return NextResponse.json(
       {
         success: false,

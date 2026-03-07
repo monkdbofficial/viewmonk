@@ -107,7 +107,6 @@ export function PollutionPointerPanel({
       setPointers(data.pollution_pointers || []);
       setError(null);
     } catch (err: any) {
-      console.error('Error fetching pollution pointers:', err);
       setError(err.message);
     } finally {
       setLoading(false);

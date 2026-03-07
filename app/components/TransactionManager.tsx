@@ -54,9 +54,8 @@ export default function TransactionManager({ onExecute, isExecuting }: Transacti
       setTransactionState('active');
       setTransactionStartTime(Date.now());
       setTransactionDuration('0s');
-    } catch (err) {
+    } catch {
       setTransactionState('error');
-      console.error('Failed to begin transaction:', err);
     }
   };
 
@@ -66,9 +65,8 @@ export default function TransactionManager({ onExecute, isExecuting }: Transacti
       setTransactionState('committed');
       setTransactionStartTime(null);
       setTimeout(() => setTransactionState('none'), 3000);
-    } catch (err) {
+    } catch {
       setTransactionState('error');
-      console.error('Failed to commit transaction:', err);
     }
   };
 
@@ -78,9 +76,8 @@ export default function TransactionManager({ onExecute, isExecuting }: Transacti
       setTransactionState('rolled_back');
       setTransactionStartTime(null);
       setTimeout(() => setTransactionState('none'), 3000);
-    } catch (err) {
+    } catch {
       setTransactionState('error');
-      console.error('Failed to rollback transaction:', err);
     }
   };
 

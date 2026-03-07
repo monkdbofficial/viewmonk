@@ -25,12 +25,9 @@ export class TauriDBClient {
    */
   async connect(request: ConnectRequest): Promise<ConnectResponse> {
     try {
-      console.log('[TauriDB] Connecting to database:', request.name);
       const response = await connectDatabaseCommand(request);
-      console.log('[TauriDB] Connected successfully:', response.connection_id);
       return response;
     } catch (error) {
-      console.error('[TauriDB] Connection failed:', error);
       throw error;
     }
   }
@@ -40,11 +37,8 @@ export class TauriDBClient {
    */
   async disconnect(connectionId: string): Promise<void> {
     try {
-      console.log('[TauriDB] Disconnecting:', connectionId);
       await disconnectDatabaseCommand(connectionId);
-      console.log('[TauriDB] Disconnected successfully');
     } catch (error) {
-      console.error('[TauriDB] Disconnect failed:', error);
       throw error;
     }
   }
@@ -54,12 +48,9 @@ export class TauriDBClient {
    */
   async testConnection(connectionId: string): Promise<TestConnectionResult> {
     try {
-      console.log('[TauriDB] Testing connection:', connectionId);
       const result = await testConnectionCommand(connectionId);
-      console.log('[TauriDB] Connection test result:', result);
       return result;
     } catch (error) {
-      console.error('[TauriDB] Connection test failed:', error);
       throw error;
     }
   }
@@ -70,10 +61,8 @@ export class TauriDBClient {
   async listConnections(): Promise<string[]> {
     try {
       const connections = await listConnectionsCommand();
-      console.log('[TauriDB] Active connections:', connections.length);
       return connections;
     } catch (error) {
-      console.error('[TauriDB] Failed to list connections:', error);
       throw error;
     }
   }
@@ -86,7 +75,6 @@ export class TauriDBClient {
       const info = await getConnectionInfoCommand(connectionId);
       return info;
     } catch (error) {
-      console.error('[TauriDB] Failed to get connection info:', error);
       throw error;
     }
   }
@@ -96,22 +84,9 @@ export class TauriDBClient {
    */
   async executeQuery(request: QueryRequest): Promise<QueryResponse> {
     try {
-      console.log('[TauriDB] Executing query on:', request.connection_id);
-      console.log('[TauriDB] Query:', request.query.substring(0, 100) + '...');
-
       const response = await executeQueryCommand(request);
-
-      console.log(
-        '[TauriDB] Query executed:',
-        response.row_count,
-        'rows in',
-        response.execution_time_ms,
-        'ms'
-      );
-
       return response;
     } catch (error) {
-      console.error('[TauriDB] Query execution failed:', error);
       throw error;
     }
   }
