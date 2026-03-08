@@ -7,6 +7,8 @@ import CommandPalette from './CommandPalette';
 import KeyboardShortcuts from './KeyboardShortcuts';
 import { useRouter, usePathname } from 'next/navigation';
 
+const MonkDBAssistant = dynamic(() => import('./assistant/MonkDBAssistant'), { ssr: false });
+
 const Navigation = dynamic(() => import('./Navigation'), { ssr: false });
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -79,6 +81,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="mx-auto max-w-[1800px] p-8">{children}</div>
         </main>
       </div>
+
+      {/* AI Assistant — floats above all content */}
+      <MonkDBAssistant />
     </div>
   );
 }
