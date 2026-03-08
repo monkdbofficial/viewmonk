@@ -92,6 +92,7 @@ export function useWidgetData(widget: WidgetConfig) {
               rangeMs;
 
             const compareRange: TimeRange = {
+              preset: timeRange.preset,
               from: new Date(timeRange.from.getTime() - offsetMs),
               to:   new Date(timeRange.to.getTime()   - offsetMs),
             };

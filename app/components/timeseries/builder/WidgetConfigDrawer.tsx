@@ -948,7 +948,7 @@ export default function WidgetConfigDrawer({ widget, onSave, onDelete, onClose }
                           >
                             <option value="">Select…</option>
                             {(table?.numericCols ?? []).map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
-                            {columns.filter((c) => !(table?.numericCols ?? []).map((x) => x.name).includes(c)).map((c) => <option key={c} value={c}>{c}</option>)}
+                            {(table?.textCols ?? []).filter((c) => !(table?.numericCols ?? []).map((x) => x.name).includes(c.name)).map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
                           </select>
                         </div>
                         <div>

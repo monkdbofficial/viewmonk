@@ -32,6 +32,8 @@ const WIDGET_META: Record<WidgetType, { icon: React.ReactNode; label: string; co
   'treemap':       { icon: <LayoutGrid className="h-3.5 w-3.5" />,   label: 'Treemap',      color: '#14B8A6', needsGroup: true },
   'candlestick':   { icon: <BarChart className="h-3.5 w-3.5" />,     label: 'Candlestick',  color: '#10B981' },
   'progress-kpi':  { icon: <BarChart className="h-3.5 w-3.5" />,     label: 'Progress KPI', color: '#3B82F6', needsGroup: true },
+  'text-widget':   { icon: <LayoutGrid className="h-3.5 w-3.5" />,   label: 'Text',         color: '#6B7280' },
+  'divider':       { icon: <LayoutGrid className="h-3.5 w-3.5" />,   label: 'Divider',      color: '#6B7280' },
 };
 
 const AGGREGATIONS: { value: AggregationType; label: string }[] = [

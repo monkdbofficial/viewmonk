@@ -173,6 +173,9 @@ const SQL_TEMPLATES: Record<WidgetType, string> = {
     ORDER BY value DESC
     LIMIT {{limit}}
   `,
+
+  'text-widget': '',
+  'divider': '',
 };
 
 // ── Hierarchical treemap SQL (used when parentCol is set) ─────────────────────

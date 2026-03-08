@@ -14,6 +14,7 @@ import {
   Map, Database, Settings, Code, CheckCircle,
   AlertCircle, RefreshCw, Info, Play, X, MapPin,
   EyeOff, Search, Table2, Palette, Download,
+  AlertTriangle, Copy, Check,
 } from 'lucide-react';
 import { useActiveConnection } from '../lib/monkdb-context';
 import { useToast } from '../components/ToastContext';

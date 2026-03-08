@@ -31,7 +31,7 @@ const DRAG_TYPE = 'CANVAS_WIDGET';
 
 // ── Widget metadata ───────────────────────────────────────────────────────────
 
-type WidgetIcon = React.ComponentType<{ className?: string }>;
+type WidgetIcon = React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
 
 const WIDGET_LABELS: Record<WidgetType, { Icon: WidgetIcon; label: string; color: string }> = {
   'stat-card':    { Icon: Activity,         label: 'Stat Card',       color: '#3B82F6' },
