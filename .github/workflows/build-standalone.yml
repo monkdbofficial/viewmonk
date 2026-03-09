@@ -27,11 +27,10 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
-      - name: Show environment info
+      - name: Show environment
         run: |
           node --version
           npm --version
-          uname -a
           df -h
 
       - name: Install dependencies
@@ -42,21 +41,28 @@ jobs:
           NODE_OPTIONS: "--max-old-space-size=4096"
         run: npm run build
 
-      - name: Create dist-standalone directory
+      # ── Package steps — only run on tag push to save artifact storage ──────────
+
+      - name: Create dist-standalone
+        if: startsWith(github.ref, 'refs/tags/standalone-v')
         run: mkdir -p dist-standalone
 
       - name: Copy Next.js build output
+        if: startsWith(github.ref, 'refs/tags/standalone-v')
         run: cp -r .next dist-standalone/
 
       - name: Copy public assets
+        if: startsWith(github.ref, 'refs/tags/standalone-v')
         run: cp -r public dist-standalone/ 2>/dev/null || true
 
       - name: Copy package files
+        if: startsWith(github.ref, 'refs/tags/standalone-v')
         run: |
           cp package.json dist-standalone/
           cp package-lock.json dist-standalone/
 
       - name: Write server.js
+        if: startsWith(github.ref, 'refs/tags/standalone-v')
         run: |
           cat > dist-standalone/server.js << 'EOF'
           const { createServer } = require('http');
@@ -105,6 +111,7 @@ jobs:
           EOF
 
       - name: Write start scripts
+        if: startsWith(github.ref, 'refs/tags/standalone-v')
         run: |
           cat > dist-standalone/start.sh << 'EOF'
           #!/bin/bash
@@ -128,65 +135,71 @@ jobs:
           EOF
 
       - name: Write version file
+        if: startsWith(github.ref, 'refs/tags/standalone-v')
         run: |
           VERSION="${GITHUB_REF#refs/tags/standalone-v}"
-          if [[ "$VERSION" == "$GITHUB_REF" ]]; then
-            VERSION="${GITHUB_SHA:0:7}"
-          fi
           echo "VERSION=$VERSION" > dist-standalone/VERSION.txt
           echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> dist-standalone/VERSION.txt
           echo "BUILD_REF=$GITHUB_REF" >> dist-standalone/VERSION.txt
 
-      - name: Show LITE build size
-        run: du -sh dist-standalone
-
-      - name: Create LITE archives
+      - name: Create LITE archive
+        if: startsWith(github.ref, 'refs/tags/standalone-v')
         run: |
           cd dist-standalone
           zip -r ../monkdb-workbench-standalone-lite.zip . -x "*.DS_Store"
           cd ..
           tar -czf monkdb-workbench-standalone-lite.tar.gz -C dist-standalone .
-          echo "LITE ZIP: $(du -sh monkdb-workbench-standalone-lite.zip | cut -f1)"
+          echo "LITE: $(du -sh monkdb-workbench-standalone-lite.zip | cut -f1)"
 
-      - name: Create FULL package (with node_modules)
+      - name: Create FULL archive (with node_modules)
+        if: startsWith(github.ref, 'refs/tags/standalone-v')
         run: |
           cp -r dist-standalone dist-standalone-full
           cp -r node_modules dist-standalone-full/
-          du -sh dist-standalone-full
           cd dist-standalone-full
           zip -r ../monkdb-workbench-standalone-full.zip . -x "*.DS_Store"
           cd ..
           tar -czf monkdb-workbench-standalone-full.tar.gz -C dist-standalone-full .
-          echo "FULL ZIP: $(du -sh monkdb-workbench-standalone-full.zip | cut -f1)"
+          echo "FULL: $(du -sh monkdb-workbench-standalone-full.zip | cut -f1)"
 
       - name: Calculate checksums
+        if: startsWith(github.ref, 'refs/tags/standalone-v')
         run: |
-          sha256sum monkdb-workbench-standalone-lite.zip    > monkdb-workbench-standalone-lite.zip.sha256
-          sha256sum monkdb-workbench-standalone-lite.tar.gz >> monkdb-workbench-standalone-lite.zip.sha256
-          sha256sum monkdb-workbench-standalone-full.zip    > monkdb-workbench-standalone-full.zip.sha256
-          sha256sum monkdb-workbench-standalone-full.tar.gz >> monkdb-workbench-standalone-full.zip.sha256
-          cat monkdb-workbench-standalone-lite.zip.sha256
-          cat monkdb-workbench-standalone-full.zip.sha256
+          sha256sum monkdb-workbench-standalone-lite.zip    > checksums.txt
+          sha256sum monkdb-workbench-standalone-lite.tar.gz >> checksums.txt
+          sha256sum monkdb-workbench-standalone-full.zip    >> checksums.txt
+          sha256sum monkdb-workbench-standalone-full.tar.gz >> checksums.txt
+          cat checksums.txt
 
       - name: Upload LITE artifact
+        if: startsWith(github.ref, 'refs/tags/standalone-v')
         uses: actions/upload-artifact@v4
         with:
           name: monkdb-workbench-standalone-lite
+          retention-days: 7
           path: |
             monkdb-workbench-standalone-lite.zip
             monkdb-workbench-standalone-lite.tar.gz
-            monkdb-workbench-standalone-lite.zip.sha256
 
       - name: Upload FULL artifact
+        if: startsWith(github.ref, 'refs/tags/standalone-v')
         uses: actions/upload-artifact@v4
         with:
           name: monkdb-workbench-standalone-full
+          retention-days: 7
           path: |
             monkdb-workbench-standalone-full.zip
             monkdb-workbench-standalone-full.tar.gz
-            monkdb-workbench-standalone-full.zip.sha256
 
-  # Upload to Cloudflare R2 when a tag is pushed
+      - name: Upload checksums artifact
+        if: startsWith(github.ref, 'refs/tags/standalone-v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksums
+          retention-days: 7
+          path: checksums.txt
+
+  # ── Upload to R2 — only on tag push ──────────────────────────────────────────
   upload-to-r2:
     name: Upload to Cloudflare R2
     needs: build-standalone
@@ -197,11 +210,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Extract version from tag
+      - name: Extract version
         id: version
         run: |
           VERSION=${GITHUB_REF#refs/tags/standalone-v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Releasing version: $VERSION"
 
       - name: Download LITE artifact
         uses: actions/download-artifact@v4
@@ -222,25 +236,22 @@ jobs:
           aws configure set aws_secret_access_key ${{ secrets.R2_SECRET_ACCESS_KEY }}
           aws configure set default.region auto
 
-      - name: Upload versioned release to R2
+      - name: Upload to R2 (versioned + latest)
         run: |
           V=${{ steps.version.outputs.version }}
           BASE="s3://${{ secrets.R2_BUCKET_NAME }}/releases"
-          ENDPOINT="${{ secrets.R2_ENDPOINT }}"
+          EP="${{ secrets.R2_ENDPOINT }}"
 
           for FILE in \
             monkdb-workbench-standalone-lite.zip \
             monkdb-workbench-standalone-lite.tar.gz \
-            monkdb-workbench-standalone-lite.zip.sha256 \
             monkdb-workbench-standalone-full.zip \
-            monkdb-workbench-standalone-full.tar.gz \
-            monkdb-workbench-standalone-full.zip.sha256; do
-            aws s3 cp "release-files/$FILE" "$BASE/v$V/$FILE" \
-              --endpoint-url "$ENDPOINT" --acl public-read
-            aws s3 cp "release-files/$FILE" "$BASE/latest/$FILE" \
-              --endpoint-url "$ENDPOINT" --acl public-read
+            monkdb-workbench-standalone-full.tar.gz; do
+            echo "Uploading $FILE..."
+            aws s3 cp "release-files/$FILE" "$BASE/v$V/$FILE" --endpoint-url "$EP" --acl public-read
+            aws s3 cp "release-files/$FILE" "$BASE/latest/$FILE" --endpoint-url "$EP" --acl public-read
           done
-          echo "✅ Uploaded all files for v$V"
+          echo "✅ All files uploaded for v$V"
 
       - name: Upload download page
         run: |
@@ -250,9 +261,9 @@ jobs:
             --acl public-read \
             --content-type "text/html; charset=utf-8" \
             --cache-control "no-cache, must-revalidate"
-          echo "✅ Download page live"
+          echo "✅ Download page updated"
 
-  # Update download page on every push to main
+  # ── Update download page on every push to main (no artifact storage used) ────
   update-download-page:
     name: Update Download Page on R2
     runs-on: ubuntu-latest
