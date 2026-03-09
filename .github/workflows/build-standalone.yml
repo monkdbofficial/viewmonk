@@ -41,229 +41,111 @@ jobs:
           NODE_OPTIONS: "--max-old-space-size=4096"
         run: npm run build
 
-      # ── Package steps — only run on tag push to save artifact storage ──────────
+      # ── Packaging + direct R2 upload — only on tag push ───────────────────────
 
-      - name: Create dist-standalone
-        if: startsWith(github.ref, 'refs/tags/standalone-v')
-        run: mkdir -p dist-standalone
-
-      - name: Copy Next.js build output
-        if: startsWith(github.ref, 'refs/tags/standalone-v')
-        run: cp -r .next dist-standalone/
-
-      - name: Copy public assets
-        if: startsWith(github.ref, 'refs/tags/standalone-v')
-        run: cp -r public dist-standalone/ 2>/dev/null || true
-
-      - name: Copy package files
+      - name: Package standalone
         if: startsWith(github.ref, 'refs/tags/standalone-v')
         run: |
-          cp package.json dist-standalone/
-          cp package-lock.json dist-standalone/
+          VERSION="${GITHUB_REF#refs/tags/standalone-v}"
 
-      - name: Write server.js
-        if: startsWith(github.ref, 'refs/tags/standalone-v')
-        run: |
-          cat > dist-standalone/server.js << 'EOF'
+          # ── LITE (no node_modules) ───────────────────────────────────────────
+          mkdir -p dist-standalone
+          cp -r .next dist-standalone/
+          cp -r public dist-standalone/ 2>/dev/null || true
+          cp package.json package-lock.json dist-standalone/
+
+          cat > dist-standalone/server.js << 'SERVEREOF'
           const { createServer } = require('http');
           const { parse } = require('url');
           const next = require('next');
           const fs = require('fs');
           const path = require('path');
-
-          function loadEnvFile(filepath) {
-            if (!fs.existsSync(filepath)) return;
-            const content = fs.readFileSync(filepath, 'utf8');
-            content.split('\n').forEach(line => {
+          function loadEnvFile(p) {
+            if (!fs.existsSync(p)) return;
+            fs.readFileSync(p,'utf8').split('\n').forEach(line => {
               line = line.trim();
               if (!line || line.startsWith('#')) return;
-              const match = line.match(/^([^=]+)=(.*)$/);
-              if (match) {
-                const key = match[1].trim();
-                const value = match[2].trim();
-                if (!process.env[key]) process.env[key] = value;
-              }
+              const m = line.match(/^([^=]+)=(.*)/);
+              if (m && !process.env[m[1].trim()]) process.env[m[1].trim()] = m[2].trim();
             });
           }
-
-          ['.env', '.env.local'].forEach(f => loadEnvFile(path.join(__dirname, f)));
-
-          const dev = false;
-          const hostname = '0.0.0.0';
-          const port = parseInt(process.env.PORT || '3000', 10);
-          const app = next({ dev, hostname, port, dir: __dirname });
+          ['.env','.env.local'].forEach(f => loadEnvFile(path.join(__dirname,f)));
+          const port = parseInt(process.env.PORT||'3000',10);
+          const app = next({ dev:false, hostname:'0.0.0.0', port, dir:__dirname });
           const handle = app.getRequestHandler();
-
           app.prepare().then(() => {
-            createServer(async (req, res) => {
-              try {
-                await handle(req, res, parse(req.url, true));
-              } catch (err) {
-                console.error('Error handling', req.url, err);
-                res.statusCode = 500;
-                res.end('internal server error');
-              }
-            }).listen(port, err => {
-              if (err) throw err;
-              console.log(`> Ready on http://localhost:${port}`);
-            });
+            createServer(async (req,res) => {
+              try { await handle(req,res,parse(req.url,true)); }
+              catch(e) { res.statusCode=500; res.end('error'); }
+            }).listen(port, err => { if(err) throw err; console.log(`> http://localhost:${port}`); });
           });
-          EOF
+          SERVEREOF
 
-      - name: Write start scripts
-        if: startsWith(github.ref, 'refs/tags/standalone-v')
-        run: |
-          cat > dist-standalone/start.sh << 'EOF'
-          #!/bin/bash
-          if [ ! -d "node_modules" ]; then
-            echo "Installing dependencies (first run only)..."
-            npm ci --production --no-audit
-          fi
-          PORT=${PORT:-3000} NODE_ENV=production node server.js
-          EOF
+          printf '#!/bin/bash\n[ ! -d node_modules ] && npm ci --production --no-audit\nPORT=${PORT:-3000} NODE_ENV=production node server.js\n' > dist-standalone/start.sh
           chmod +x dist-standalone/start.sh
+          printf '@echo off\nif not exist "node_modules\\" call npm ci --production --no-audit\nset NODE_ENV=production\nnode server.js\n' > dist-standalone/start.bat
 
-          cat > dist-standalone/start.bat << 'EOF'
-          @echo off
-          if not exist "node_modules\" (
-            echo Installing dependencies...
-            call npm ci --production --no-audit
-          )
-          set PORT=3000
-          set NODE_ENV=production
-          node server.js
-          EOF
-
-      - name: Write version file
-        if: startsWith(github.ref, 'refs/tags/standalone-v')
-        run: |
-          VERSION="${GITHUB_REF#refs/tags/standalone-v}"
           echo "VERSION=$VERSION" > dist-standalone/VERSION.txt
           echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> dist-standalone/VERSION.txt
-          echo "BUILD_REF=$GITHUB_REF" >> dist-standalone/VERSION.txt
 
-      - name: Create LITE archive
-        if: startsWith(github.ref, 'refs/tags/standalone-v')
-        run: |
-          cd dist-standalone
-          zip -r ../monkdb-workbench-standalone-lite.zip . -x "*.DS_Store"
-          cd ..
-          tar -czf monkdb-workbench-standalone-lite.tar.gz -C dist-standalone .
-          echo "LITE: $(du -sh monkdb-workbench-standalone-lite.zip | cut -f1)"
+          echo "LITE size: $(du -sh dist-standalone | cut -f1)"
+          zip -r monkdb-workbench-standalone-lite.zip dist-standalone -x "*.DS_Store"
+          tar -czf monkdb-workbench-standalone-lite.tar.gz dist-standalone
+          echo "LITE ZIP: $(du -sh monkdb-workbench-standalone-lite.zip | cut -f1)"
 
-      - name: Create FULL archive (with node_modules)
-        if: startsWith(github.ref, 'refs/tags/standalone-v')
-        run: |
+          # ── FULL (with node_modules) ─────────────────────────────────────────
           cp -r dist-standalone dist-standalone-full
           cp -r node_modules dist-standalone-full/
-          cd dist-standalone-full
-          zip -r ../monkdb-workbench-standalone-full.zip . -x "*.DS_Store"
-          cd ..
-          tar -czf monkdb-workbench-standalone-full.tar.gz -C dist-standalone-full .
-          echo "FULL: $(du -sh monkdb-workbench-standalone-full.zip | cut -f1)"
+          echo "FULL size: $(du -sh dist-standalone-full | cut -f1)"
+          zip -r monkdb-workbench-standalone-full.zip dist-standalone-full -x "*.DS_Store"
+          tar -czf monkdb-workbench-standalone-full.tar.gz dist-standalone-full
+          echo "FULL ZIP: $(du -sh monkdb-workbench-standalone-full.zip | cut -f1)"
 
-      - name: Calculate checksums
-        if: startsWith(github.ref, 'refs/tags/standalone-v')
-        run: |
+          # ── Checksums ────────────────────────────────────────────────────────
           sha256sum monkdb-workbench-standalone-lite.zip    > checksums.txt
           sha256sum monkdb-workbench-standalone-lite.tar.gz >> checksums.txt
           sha256sum monkdb-workbench-standalone-full.zip    >> checksums.txt
           sha256sum monkdb-workbench-standalone-full.tar.gz >> checksums.txt
           cat checksums.txt
 
-      - name: Upload LITE artifact
+      - name: Upload directly to R2
         if: startsWith(github.ref, 'refs/tags/standalone-v')
-        uses: actions/upload-artifact@v4
-        with:
-          name: monkdb-workbench-standalone-lite
-          retention-days: 7
-          path: |
-            monkdb-workbench-standalone-lite.zip
-            monkdb-workbench-standalone-lite.tar.gz
-
-      - name: Upload FULL artifact
-        if: startsWith(github.ref, 'refs/tags/standalone-v')
-        uses: actions/upload-artifact@v4
-        with:
-          name: monkdb-workbench-standalone-full
-          retention-days: 7
-          path: |
-            monkdb-workbench-standalone-full.zip
-            monkdb-workbench-standalone-full.tar.gz
-
-      - name: Upload checksums artifact
-        if: startsWith(github.ref, 'refs/tags/standalone-v')
-        uses: actions/upload-artifact@v4
-        with:
-          name: checksums
-          retention-days: 7
-          path: checksums.txt
-
-  # ── Upload to R2 — only on tag push ──────────────────────────────────────────
-  upload-to-r2:
-    name: Upload to Cloudflare R2
-    needs: build-standalone
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/standalone-v')
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Extract version
-        id: version
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/standalone-v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Releasing version: $VERSION"
-
-      - name: Download LITE artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: monkdb-workbench-standalone-lite
-          path: release-files
-
-      - name: Download FULL artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: monkdb-workbench-standalone-full
-          path: release-files
-
-      - name: Configure AWS CLI for R2
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
         run: |
           pip install awscli --quiet
-          aws configure set aws_access_key_id ${{ secrets.R2_ACCESS_KEY_ID }}
-          aws configure set aws_secret_access_key ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
+          aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
           aws configure set default.region auto
 
-      - name: Upload to R2 (versioned + latest)
-        run: |
-          V=${{ steps.version.outputs.version }}
-          BASE="s3://${{ secrets.R2_BUCKET_NAME }}/releases"
-          EP="${{ secrets.R2_ENDPOINT }}"
+          VERSION="${GITHUB_REF#refs/tags/standalone-v}"
+          BASE="s3://$R2_BUCKET_NAME/releases"
 
           for FILE in \
             monkdb-workbench-standalone-lite.zip \
             monkdb-workbench-standalone-lite.tar.gz \
             monkdb-workbench-standalone-full.zip \
-            monkdb-workbench-standalone-full.tar.gz; do
-            echo "Uploading $FILE..."
-            aws s3 cp "release-files/$FILE" "$BASE/v$V/$FILE" --endpoint-url "$EP" --acl public-read
-            aws s3 cp "release-files/$FILE" "$BASE/latest/$FILE" --endpoint-url "$EP" --acl public-read
+            monkdb-workbench-standalone-full.tar.gz \
+            checksums.txt; do
+            echo "→ uploading $FILE"
+            aws s3 cp "$FILE" "$BASE/v$VERSION/$FILE" --endpoint-url "$R2_ENDPOINT" --acl public-read
+            aws s3 cp "$FILE" "$BASE/latest/$FILE"    --endpoint-url "$R2_ENDPOINT" --acl public-read
           done
-          echo "✅ All files uploaded for v$V"
 
-      - name: Upload download page
-        run: |
+          # Update download page
           aws s3 cp download-page.html \
-            s3://${{ secrets.R2_BUCKET_NAME }}/downloads/index.html \
-            --endpoint-url ${{ secrets.R2_ENDPOINT }} \
+            "s3://$R2_BUCKET_NAME/downloads/index.html" \
+            --endpoint-url "$R2_ENDPOINT" \
             --acl public-read \
             --content-type "text/html; charset=utf-8" \
             --cache-control "no-cache, must-revalidate"
-          echo "✅ Download page updated"
 
-  # ── Update download page on every push to main (no artifact storage used) ────
+          echo "✅ Released v$VERSION to R2"
+
+  # ── Update download page on push to main (no artifact storage used) ──────────
   update-download-page:
     name: Update Download Page on R2
     runs-on: ubuntu-latest
@@ -280,7 +162,7 @@ jobs:
           aws configure set aws_secret_access_key ${{ secrets.R2_SECRET_ACCESS_KEY }}
           aws configure set default.region auto
 
-      - name: Upload download page to R2
+      - name: Upload download page
         run: |
           aws s3 cp download-page.html \
             s3://${{ secrets.R2_BUCKET_NAME }}/downloads/index.html \
